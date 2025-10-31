@@ -271,6 +271,93 @@ void handleRoot() {
             border: 1px solid #ccc;
             border-radius: 3px;
         }
+
+        /* Toggle Switch Styles */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 30px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 30px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 24px;
+            width: 24px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: #2196F3;
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(30px);
+        }
+
+        .toggle-labels {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .toggle-label {
+            transition: color 0.3s;
+        }
+
+        .toggle-label.active {
+            color: #2196F3;
+            font-weight: bold;
+        }
+
+        /* Underwater Controls Styling */
+        .underwater-controls {
+            background: linear-gradient(135deg, #e3f2fd 0%, #f0f8ff 100%);
+            border: 2px solid #81d4fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+            box-shadow: 0 2px 8px rgba(33, 150, 243, 0.1);
+        }
+
+        .underwater-controls .control {
+            margin: 15px 0;
+        }
+
+        .underwater-controls .control:first-child {
+            margin-top: 0;
+        }
     </style>
 </head>
 <body>
@@ -379,6 +466,64 @@ void handleRoot() {
                 <span id="swimmerIntervalValue">4</span>
             </div>
 
+            <div class="toggle-container">
+                <h3 style="margin: 0;">Underwaters</h3>
+                <div class="toggle-labels">
+                    <span class="toggle-label active" id="toggleOff">OFF</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="underwatersEnabled" onchange="updateUnderwatersEnabled()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label" id="toggleOn">ON</span>
+                </div>
+            </div>
+
+            <div id="underwatersControls" class="underwater-controls" style="display: none;">
+                <div class="control">
+                    <label for="lightSize">Light size (feet):</label>
+                    <input type="range" id="lightSize" min="0.5" max="5" step="0.5" value="1.0" oninput="updateLightSize()">
+                    <span id="lightSizeValue">1.0</span>
+                </div>
+
+                <div class="control">
+                    <label for="firstUnderwaterDistance">First underwater distance (feet):</label>
+                    <input type="range" id="firstUnderwaterDistance" min="1" max="50" step="1" value="20" oninput="updateFirstUnderwaterDistance()">
+                    <span id="firstUnderwaterDistanceValue">20</span>
+                </div>
+
+                <div class="control">
+                    <label for="underwaterDistance">Underwater distance (feet):</label>
+                    <input type="range" id="underwaterDistance" min="1" max="50" step="1" value="20" oninput="updateUnderwaterDistance()">
+                    <span id="underwaterDistanceValue">20</span>
+                </div>
+
+                <div class="control">
+                    <label for="hideAfter">Hide after (seconds):</label>
+                    <input type="range" id="hideAfter" min="1" max="10" step="1" value="3" oninput="updateHideAfter()">
+                    <span id="hideAfterValue">3</span>
+                </div>
+
+                <div class="control">
+                    <label>Underwater Color:</label>
+                    <div class="color-selection-row" style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                        <div class="color-indicator" id="underwaterColorIndicator" 
+                             style="width: 30px; height: 30px; border-radius: 50%; background-color: #0000ff; border: 2px solid #ccc; cursor: pointer;"
+                             onclick="openColorPickerForUnderwater()"></div>
+                        <span>Underwater color</span>
+                    </div>
+                </div>
+
+                <div class="control">
+                    <label>Surface Color:</label>
+                    <div class="color-selection-row" style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                        <div class="color-indicator" id="surfaceColorIndicator" 
+                             style="width: 30px; height: 30px; border-radius: 50%; background-color: #00ff00; border: 2px solid #ccc; cursor: pointer;"
+                             onclick="openColorPickerForSurface()"></div>
+                        <span>Surface color</span>
+                    </div>
+                </div>
+            </div>
+
             <h3>Light Settings</h3>
             <div class="control">
                 <label for="brightness">Brightness:</label>
@@ -469,7 +614,14 @@ void handleRoot() {
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
-            isRunning: false
+            isRunning: false,
+            underwatersEnabled: false,
+            lightSize: 1.0,
+            firstUnderwaterDistance: 20,
+            underwaterDistance: 20,
+            hideAfter: 3,
+            underwaterColor: '#0000ff',
+            surfaceColor: '#00ff00'
         };
 
         // Swimmer set configuration
@@ -593,6 +745,67 @@ void handleRoot() {
             updateSettings();
         }
 
+        function updateUnderwatersEnabled() {
+            const enabled = document.getElementById('underwatersEnabled').checked;
+            currentSettings.underwatersEnabled = enabled;
+            
+            // Show/hide underwaters controls
+            const controls = document.getElementById('underwatersControls');
+            controls.style.display = enabled ? 'block' : 'none';
+            
+            // Update toggle labels
+            const toggleOff = document.getElementById('toggleOff');
+            const toggleOn = document.getElementById('toggleOn');
+            
+            if (enabled) {
+                toggleOff.classList.remove('active');
+                toggleOn.classList.add('active');
+            } else {
+                toggleOff.classList.add('active');
+                toggleOn.classList.remove('active');
+            }
+            
+            updateSettings();
+        }
+
+        function updateLightSize() {
+            const lightSize = document.getElementById('lightSize').value;
+            currentSettings.lightSize = parseFloat(lightSize);
+            document.getElementById('lightSizeValue').textContent = lightSize;
+            updateSettings();
+        }
+
+        function updateFirstUnderwaterDistance() {
+            const distance = document.getElementById('firstUnderwaterDistance').value;
+            currentSettings.firstUnderwaterDistance = parseInt(distance);
+            document.getElementById('firstUnderwaterDistanceValue').textContent = distance;
+            updateSettings();
+        }
+
+        function updateUnderwaterDistance() {
+            const distance = document.getElementById('underwaterDistance').value;
+            currentSettings.underwaterDistance = parseInt(distance);
+            document.getElementById('underwaterDistanceValue').textContent = distance;
+            updateSettings();
+        }
+
+        function updateHideAfter() {
+            const hideAfter = document.getElementById('hideAfter').value;
+            currentSettings.hideAfter = parseInt(hideAfter);
+            document.getElementById('hideAfterValue').textContent = hideAfter;
+            updateSettings();
+        }
+
+        function openColorPickerForUnderwater() {
+            currentColorContext = 'underwater';
+            openColorPicker();
+        }
+
+        function openColorPickerForSurface() {
+            currentColorContext = 'surface';
+            openColorPicker();
+        }
+
         function updateNumSwimmers() {
             const numSwimmers = document.getElementById('numSwimmers').value;
             currentSettings.numSwimmers = parseInt(numSwimmers);
@@ -707,12 +920,24 @@ void handleRoot() {
                 swimmerSet[currentSwimmerIndex].color = hexToColorName(color);
                 displaySwimmerSet();
                 currentSwimmerIndex = -1; // Reset
+            } else if (currentColorContext === 'underwater') {
+                // Updating underwater color
+                currentSettings.underwaterColor = color;
+                document.getElementById('underwaterColorIndicator').style.backgroundColor = color;
+                updateSettings();
+            } else if (currentColorContext === 'surface') {
+                // Updating surface color
+                currentSettings.surfaceColor = color;
+                document.getElementById('surfaceColorIndicator').style.backgroundColor = color;
+                updateSettings();
             } else {
                 // Updating coach config same color setting
                 currentSettings.swimmerColor = color;
                 document.getElementById('colorIndicator').style.backgroundColor = color;
                 updateSettings();
             }
+            
+            currentColorContext = null; // Reset context
             closeColorPicker();
         }
 
@@ -730,6 +955,7 @@ void handleRoot() {
         let pacerStartTime = 0;
         let currentRound = 1;
         let statusUpdateInterval = null;
+        let currentColorContext = null; // Track which color picker context we're in
 
         function togglePacer() {
             currentSettings.isRunning = !currentSettings.isRunning;
