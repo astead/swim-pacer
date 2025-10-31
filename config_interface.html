@@ -102,9 +102,14 @@
 
         <!-- Coach Config Page -->
         <div id="coach" class="page">
-            <h2>Coach Configuration</h2>
-            <p>Adjust display settings and apply changes. Use the Main Pacer page to set pace.</p>
+            <h3>Swim Settings</h3>
+            <div class="control">
+                <label for="swimmerInterval">Swimmer Interval (seconds):</label>
+                <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
+                <span id="swimmerIntervalValue">4</span>
+            </div>
 
+            <h3>Light Settings</h3>
             <div class="control">
                 <label for="brightness">Brightness:</label>
                 <input type="range" id="brightness" min="20" max="255" value="150" oninput="updateBrightness()">
@@ -115,12 +120,6 @@
                 <label for="pulseWidth">Pulse Width (feet):</label>
                 <input type="range" id="pulseWidth" min="0.5" max="5" step="0.5" value="1.0" oninput="updatePulseWidth()">
                 <span id="pulseWidthValue">1.0</span>
-            </div>
-
-            <div class="control">
-                <label for="swimmerInterval">Swimmer Interval (seconds):</label>
-                <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
-                <span id="swimmerIntervalValue">4</span>
             </div>
 
             <div class="control">
