@@ -213,11 +213,9 @@ void handleRoot() {
 </head>
 <body>
     <div class="container">
-        <h1>Swim Pacer</h1>
-
         <!-- Navigation -->
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showPage('main')">Main Pacer</button>
+            <button class="nav-tab active" onclick="showPage('main')">Swim Pacer</button>
             <button class="nav-tab" onclick="showPage('coach')">Coach Config</button>
             <button class="nav-tab" onclick="showPage('advanced')">Advanced</button>
         </div>
