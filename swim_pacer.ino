@@ -272,12 +272,13 @@ void handleRoot() {
         <!-- Advanced Page -->
         <div id="advanced" class="page">
             <h2>Advanced Settings</h2>
+            <p>Configure LED strip and pool dimensions. For 25-yard pools, the light pulse travels down and back to represent a 50-yard swim.</p>
 
             <div class="control">
                 <label for="poolLength">Pool Length (feet):</label>
                 <select id="poolLength" onchange="updateCalculations()">
-                    <option value="150">50 yards (150 feet)</option>
                     <option value="75">25 yards (75 feet)</option>
+                    <option value="150">50 yards (150 feet)</option>
                     <option value="82">25 meters (82 feet)</option>
                     <option value="164">50 meters (164 feet)</option>
                 </select>
@@ -306,7 +307,7 @@ void handleRoot() {
             color: 'red',
             brightness: 150,
             pulseWidth: 1.0,
-            poolLength: 150,
+            poolLength: 75,
             numLeds: 150,
             isRunning: false
         };
