@@ -69,6 +69,12 @@
             </div>
 
             <div class="control">
+                <label for="restTime">Rest Time (seconds):</label>
+                <input type="range" id="restTime" min="0" max="30" step="1" value="5" oninput="updateRestTime()">
+                <span id="restTimeValue">5</span>
+            </div>
+
+            <div class="control">
                 <label>LED Color:</label>
                 <div class="color-wheel">
                     <div class="color-option selected" style="background: red;" onclick="selectColor('red')" data-color="red"></div>
@@ -81,7 +87,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Coach Config Page -->
         <div id="coach" class="page">
             <h2>Coach Configuration</h2>
@@ -147,6 +153,7 @@
             color: 'red',
             brightness: 150,
             pulseWidth: 1.0,
+            restTime: 5,
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
@@ -187,7 +194,7 @@
             const poolLength = document.getElementById('poolLength').value;
             const stripLength = parseFloat(document.getElementById('stripLength').value);
             const ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
-            
+
             // Convert pool length to meters
             let poolLengthMeters;
             let poolDisplay;
@@ -199,18 +206,18 @@
                 poolLengthMeters = parseInt(poolLength) * 0.9144;
                 poolDisplay = poolLength + ` yards (${poolLengthMeters.toFixed(1)}m)`;
             }
-            
+
             // Calculate total LEDs
             const totalLeds = Math.round(stripLength * ledsPerMeter);
-            
+
             // Calculate coverage
             const coverage = ((stripLength / poolLengthMeters) * 100).toFixed(1);
-            
+
             // Update displays
             document.getElementById('totalLeds').textContent = totalLeds;
             document.getElementById('poolLengthDisplay').textContent = poolDisplay;
             document.getElementById('stripCoverage').textContent = coverage + '% of pool';
-            
+
             // Update current settings
             currentSettings.poolLength = poolLength;
             currentSettings.stripLength = stripLength;
@@ -238,9 +245,16 @@
             updateSettings();
         }
 
+        function updateRestTime() {
+            const restTime = document.getElementById('restTime').value;
+            currentSettings.restTime = parseInt(restTime);
+            document.getElementById('restTimeValue').textContent = restTime;
+            updateSettings();
+        }
+
         function togglePacer() {
             currentSettings.isRunning = !currentSettings.isRunning;
-            
+
             // Update UI immediately for better responsiveness
             const status = currentSettings.isRunning ? "Pacer Started" : "Pacer Stopped";
             document.getElementById('status').textContent = status;
@@ -299,6 +313,14 @@
                 body: `ledsPerMeter=${currentSettings.ledsPerMeter}`
             }).catch(error => {
                 console.log('LEDs per meter update - server not available (standalone mode)');
+            });
+
+            fetch('/setRestTime', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `restTime=${currentSettings.restTime}`
+            }).catch(error => {
+                console.log('Rest time update - server not available (standalone mode)');
             });
         }
 

@@ -43,10 +43,11 @@ IPAddress subnet(255, 255, 255, 0);         // Subnet mask
 // ========== DEFAULT SETTINGS ==========
 struct Settings {
   float poolLengthMeters = 22.86;            // Pool length in meters (25 yards)
-  float stripLengthMeters = 23.0;            // LED strip length in meters  
+  float stripLengthMeters = 23.0;            // LED strip length in meters
   int ledsPerMeter = 30;                     // LEDs per meter
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   float speedFeetPerSecond = 5.56;           // Speed in feet per second
+  int restTimeSeconds = 5;                   // Rest time between laps in seconds
   uint8_t colorRed = 0;                      // RGB color values
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
@@ -118,7 +119,7 @@ void loop() {
 void setupLEDs() {
   // Calculate total LEDs first
   totalLEDs = (int)(settings.stripLengthMeters * settings.ledsPerMeter);
-  
+
   // Allocate LED array dynamically based on calculated total LEDs
   if (leds != nullptr) {
     delete[] leds;
@@ -164,6 +165,7 @@ void setupWebServer() {
   server.on("/setPulseWidth", HTTP_POST, handleSetPulseWidth);
   server.on("/setStripLength", HTTP_POST, handleSetStripLength);
   server.on("/setLedsPerMeter", HTTP_POST, handleSetLedsPerMeter);
+  server.on("/setRestTime", HTTP_POST, handleSetRestTime);
 
   server.begin();
   Serial.println("Web server started");
@@ -242,6 +244,12 @@ void handleRoot() {
             </div>
 
             <div class="control">
+                <label for="restTime">Rest Time (seconds):</label>
+                <input type="range" id="restTime" min="0" max="30" step="1" value="5" oninput="updateRestTime()">
+                <span id="restTimeValue">5</span>
+            </div>
+
+            <div class="control">
                 <label>LED Color:</label>
                 <div class="color-wheel">
                     <div class="color-option selected" style="background: red;" onclick="selectColor('red')" data-color="red"></div>
@@ -254,7 +262,7 @@ void handleRoot() {
                 </div>
             </div>
         </div>
-        
+
         <!-- Coach Config Page -->
         <div id="coach" class="page">
             <h2>Coach Configuration</h2>
@@ -320,6 +328,7 @@ void handleRoot() {
             color: 'red',
             brightness: 150,
             pulseWidth: 1.0,
+            restTime: 5,
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
@@ -360,7 +369,7 @@ void handleRoot() {
             const poolLength = document.getElementById('poolLength').value;
             const stripLength = parseFloat(document.getElementById('stripLength').value);
             const ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
-            
+
             // Convert pool length to meters
             let poolLengthMeters;
             let poolDisplay;
@@ -372,18 +381,18 @@ void handleRoot() {
                 poolLengthMeters = parseInt(poolLength) * 0.9144;
                 poolDisplay = poolLength + ` yards (${poolLengthMeters.toFixed(1)}m)`;
             }
-            
+
             // Calculate total LEDs
             const totalLeds = Math.round(stripLength * ledsPerMeter);
-            
+
             // Calculate coverage
             const coverage = ((stripLength / poolLengthMeters) * 100).toFixed(1);
-            
+
             // Update displays
             document.getElementById('totalLeds').textContent = totalLeds;
             document.getElementById('poolLengthDisplay').textContent = poolDisplay;
             document.getElementById('stripCoverage').textContent = coverage + '% of pool';
-            
+
             // Update current settings
             currentSettings.poolLength = poolLength;
             currentSettings.stripLength = stripLength;
@@ -411,9 +420,16 @@ void handleRoot() {
             updateSettings();
         }
 
+        function updateRestTime() {
+            const restTime = document.getElementById('restTime').value;
+            currentSettings.restTime = parseInt(restTime);
+            document.getElementById('restTimeValue').textContent = restTime;
+            updateSettings();
+        }
+
         function togglePacer() {
             currentSettings.isRunning = !currentSettings.isRunning;
-            
+
             // Update UI immediately for better responsiveness
             const status = currentSettings.isRunning ? "Pacer Started" : "Pacer Stopped";
             document.getElementById('status').textContent = status;
@@ -472,6 +488,14 @@ void handleRoot() {
                 body: `ledsPerMeter=${currentSettings.ledsPerMeter}`
             }).catch(error => {
                 console.log('LEDs per meter update - server not available (standalone mode)');
+            });
+
+            fetch('/setRestTime', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `restTime=${currentSettings.restTime}`
+            }).catch(error => {
+                console.log('Rest time update - server not available (standalone mode)');
             });
         }
 
@@ -644,12 +668,23 @@ void handleSetLedsPerMeter() {
   server.send(200, "text/plain", "LEDs per meter updated");
 }
 
+void handleSetRestTime() {
+  if (server.hasArg("restTime")) {
+    int restTime = server.arg("restTime").toInt();
+    settings.restTimeSeconds = restTime;
+    saveSettings();
+    needsRecalculation = true;
+  }
+  server.send(200, "text/plain", "Rest time updated");
+}
+
 void saveSettings() {
   preferences.putFloat("poolLengthM", settings.poolLengthMeters);
   preferences.putFloat("stripLengthM", settings.stripLengthMeters);
   preferences.putInt("ledsPerMeter", settings.ledsPerMeter);
   preferences.putFloat("pulseWidthFeet", settings.pulseWidthFeet);
   preferences.putFloat("speedFPS", settings.speedFeetPerSecond);
+  preferences.putInt("restTimeSeconds", settings.restTimeSeconds);
   preferences.putUChar("colorRed", settings.colorRed);
   preferences.putUChar("colorGreen", settings.colorGreen);
   preferences.putUChar("colorBlue", settings.colorBlue);
@@ -665,6 +700,7 @@ void loadSettings() {
   settings.ledsPerMeter = preferences.getInt("ledsPerMeter", 30);
   settings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
   settings.speedFeetPerSecond = preferences.getFloat("speedFPS", 5.56);
+  settings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
   settings.colorRed = preferences.getUChar("colorRed", 0);
   settings.colorGreen = preferences.getUChar("colorGreen", 0);
   settings.colorBlue = preferences.getUChar("colorBlue", 255);
@@ -677,34 +713,34 @@ void loadSettings() {
 void recalculateValues() {
   // Calculate total LEDs from strip length and density
   totalLEDs = (int)(settings.stripLengthMeters * settings.ledsPerMeter);
-  
+
   // Calculate LED spacing
   ledSpacingCM = 100.0 / settings.ledsPerMeter;
-  
+
   // Calculate pulse width in LEDs
   float pulseWidthCM = settings.pulseWidthFeet * 30.48;
   pulseWidthLEDs = (int)(pulseWidthCM / ledSpacingCM);
-  
+
   // Calculate pool to strip ratio for timing adjustments
   poolToStripRatio = settings.poolLengthMeters / settings.stripLengthMeters;
-  
+
   // Calculate speed and timing based on pool length (50-yard swim = 2x pool length)
   float swimDistanceMeters = settings.poolLengthMeters * 2.0;  // Down and back
   float swimTimeSeconds = swimDistanceMeters / (settings.speedFeetPerSecond * 0.3048);
-  
+
   // LED animation should complete in the same time as the swim
   // If strip is shorter than pool, animation runs faster when "in view"
   // If strip is longer than pool, animation pauses when "out of pool"
   float effectiveStripLength = min(settings.stripLengthMeters, settings.poolLengthMeters);
   float animationDistance = effectiveStripLength * 2.0;  // Down and back on visible portion
-  
+
   // Calculate delay per LED movement
   int totalAnimationSteps = (int)(animationDistance / ledSpacingCM * 100);
   delayMS = (int)((swimTimeSeconds * 1000) / totalAnimationSteps);
-  
+
   // Ensure reasonable bounds
   delayMS = max(10, min(delayMS, 2000));
-  
+
   // Reset position if it's out of bounds
   if (currentPosition >= totalLEDs) {
     currentPosition = totalLEDs - 1;
