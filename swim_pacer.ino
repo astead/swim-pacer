@@ -271,14 +271,6 @@ void handleRoot() {
             border: 1px solid #ccc; 
             border-radius: 3px;
         }
-
-        .calculated-info {
-            background: #e7f3ff;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-            font-size: 14px;
-        }
     </style>
 </head>
 <body>
@@ -397,9 +389,6 @@ void handleRoot() {
 
         <!-- Advanced Page -->
         <div id="advanced" class="page">
-            <h2>Advanced Settings</h2>
-            <p>Configure LED strip and pool dimensions. The pulse timing accounts for pool vs. strip length differences.</p>
-
             <div class="control">
                 <label for="poolLength">Pool Length:</label>
                 <select id="poolLength" onchange="updateCalculations()">
@@ -418,12 +407,6 @@ void handleRoot() {
             <div class="control">
                 <label for="ledsPerMeter">LEDs per Meter:</label>
                 <input type="number" id="ledsPerMeter" value="30" min="10" max="144" onchange="updateCalculations()">
-            </div>
-
-            <div class="calculated-info">
-                <div><strong>Total LEDs:</strong> <span id="totalLeds">690</span></div>
-                <div><strong>Pool Length:</strong> <span id="poolLengthDisplay">25 yards (22.9m)</span></div>
-                <div><strong>Strip covers:</strong> <span id="stripCoverage">100.4% of pool</span></div>
             </div>
         </div>
     </div>
@@ -535,29 +518,6 @@ void handleRoot() {
             const poolLength = document.getElementById('poolLength').value;
             const stripLength = parseFloat(document.getElementById('stripLength').value);
             const ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
-
-            // Convert pool length to meters
-            let poolLengthMeters;
-            let poolDisplay;
-            if (poolLength.endsWith('m')) {
-                poolLengthMeters = parseFloat(poolLength);
-                poolDisplay = poolLength + ` (${(poolLengthMeters * 1.094).toFixed(1)} yards)`;
-            } else {
-                // Yards to meters
-                poolLengthMeters = parseInt(poolLength) * 0.9144;
-                poolDisplay = poolLength + ` yards (${poolLengthMeters.toFixed(1)}m)`;
-            }
-
-            // Calculate total LEDs
-            const totalLeds = Math.round(stripLength * ledsPerMeter);
-
-            // Calculate coverage
-            const coverage = ((stripLength / poolLengthMeters) * 100).toFixed(1);
-
-            // Update displays
-            document.getElementById('totalLeds').textContent = totalLeds;
-            document.getElementById('poolLengthDisplay').textContent = poolDisplay;
-            document.getElementById('stripCoverage').textContent = coverage + '% of pool';
 
             // Update current settings
             currentSettings.poolLength = poolLength;
