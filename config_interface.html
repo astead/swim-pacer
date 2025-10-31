@@ -711,8 +711,13 @@
         function selectColor(color) {
             if (currentSwimmerIndex >= 0) {
                 // Updating individual swimmer color
-                swimmerSet[currentSwimmerIndex].color = hexToColorName(color);
-                displaySwimmerSet();
+                // Defensive programming: ensure we don't accidentally modify all swimmers
+                if (currentSwimmerIndex < swimmerSet.length) {
+                    // Store the hex color directly to avoid shared reference issues
+                    swimmerSet[currentSwimmerIndex].color = color;
+                    console.log(`Updated swimmer ${currentSwimmerIndex} color to ${color}`);
+                    displaySwimmerSet();
+                }
                 currentSwimmerIndex = -1; // Reset
             } else if (currentColorContext === 'underwater') {
                 // Updating underwater color
@@ -905,18 +910,23 @@
                 // Determine color based on color mode
                 let swimmerColor;
                 if (currentSettings.colorMode === 'same') {
-                    // Convert hex color to named color for consistency with existing system
-                    swimmerColor = hexToColorName(currentSettings.swimmerColor);
+                    // Store the actual hex color directly to avoid shared "custom" reference
+                    swimmerColor = currentSettings.swimmerColor;
                 } else {
-                    swimmerColor = swimmerColors[i];
+                    // Use predefined colors for individual mode
+                    swimmerColor = colorHex[swimmerColors[i]];
                 }
 
-                swimmerSet.push({
+                // Create individual swimmer object (no shared references)
+                const newSwimmer = {
                     id: i + 1,
-                    color: swimmerColor,
+                    color: swimmerColor, // Store hex color directly
                     pace: currentPace,
                     interval: i === 0 ? currentSettings.initialDelay : currentSettings.initialDelay + (i * currentSettings.swimmerInterval) // First swimmer uses initial delay, others add swimmer intervals
-                });
+                };
+                
+                swimmerSet.push(newSwimmer);
+                console.log(`Created swimmer ${i + 1} with color: ${swimmerColor}`);
             }
 
             // Display the set
@@ -953,8 +963,18 @@
                     delayFromPrevious = currentSettings.swimmerInterval; // Others show interval between swimmers
                 }
 
+                // Determine the actual color value for display
+                let displayColor;
+                if (swimmer.color.startsWith('#')) {
+                    // It's already a hex color
+                    displayColor = swimmer.color;
+                } else {
+                    // It's a color name, look it up
+                    displayColor = colorHex[swimmer.color] || swimmer.color;
+                }
+
                 row.innerHTML = `
-                    <div class="swimmer-color" style="background-color: ${colorHex[swimmer.color]}"
+                    <div class="swimmer-color" style="background-color: ${displayColor}"
                          onclick="cycleSwimmerColor(${index})" title="Click to change color"></div>
                     <div class="swimmer-info">Swimmer ${swimmer.id}</div>
                     <div>Delay: ${delayFromPrevious}s</div>
@@ -967,8 +987,15 @@
         }
 
         function cycleSwimmerColor(swimmerIndex) {
+            // Defensive programming: validate swimmer index
+            if (swimmerIndex < 0 || swimmerIndex >= swimmerSet.length) {
+                console.error(`Invalid swimmer index: ${swimmerIndex}`);
+                return;
+            }
+            
             // Set the current swimmer being edited and open color picker
             currentSwimmerIndex = swimmerIndex;
+            console.log(`Opening color picker for swimmer ${swimmerIndex}`);
             populateColorGrid();
             document.getElementById('customColorPicker').style.display = 'block';
         }
