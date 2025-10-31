@@ -571,7 +571,7 @@ void handleRoot() {
                     id: i + 1,
                     color: swimmerColors[i],
                     pace: currentPace,
-                    interval: i * currentSettings.swimmerInterval // Start time offset
+                    interval: i === 0 ? 0 : currentSettings.swimmerInterval // First swimmer has no delay, others delay from previous
                 });
             }
             
@@ -594,7 +594,7 @@ void handleRoot() {
                     <div class="swimmer-color" style="background-color: ${colorHex[swimmer.color]}" 
                          onclick="cycleSwimmerColor(${index})" title="Click to change color"></div>
                     <div class="swimmer-info">Swimmer ${swimmer.id}</div>
-                    <div>Start: ${swimmer.interval}s</div>
+                    <div>Delay: ${swimmer.interval}s</div>
                     <div>Pace: <input type="number" class="swimmer-pace-input" value="${swimmer.pace}" 
                          min="20" max="300" step="0.5" onchange="updateSwimmerPace(${index}, this.value)"> sec</div>
                 `;
