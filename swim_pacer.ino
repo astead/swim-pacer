@@ -51,6 +51,7 @@ struct Settings {
   int paceDistanceYards = 50;                // Distance for pace calculation in yards
   int initialDelaySeconds = 10;              // Initial delay before first swimmer starts
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
+  bool delayIndicatorsEnabled = true;        // Whether to show delay countdown indicators
   int numSwimmers = 3;                       // Number of swimmers (light pulses)
   int numRounds = 10;                        // Number of rounds/sets to complete
   uint8_t colorRed = 0;                      // RGB color values
@@ -195,6 +196,7 @@ void setupWebServer() {
   server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
   server.on("/setInitialDelay", HTTP_POST, handleSetInitialDelay);
   server.on("/setSwimmerInterval", HTTP_POST, handleSetSwimmerInterval);
+  server.on("/setDelayIndicators", HTTP_POST, handleSetDelayIndicators);
   server.on("/setNumSwimmers", HTTP_POST, handleSetNumSwimmers);
   server.on("/setNumRounds", HTTP_POST, handleSetNumRounds);
 
@@ -467,6 +469,18 @@ void handleRoot() {
             </div>
 
             <div class="toggle-container">
+                <h3 style="margin: 0;">Delay Indicators</h3>
+                <div class="toggle-labels">
+                    <span class="toggle-label" id="delayIndicatorOff">OFF</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="delayIndicatorsEnabled" checked onchange="updateDelayIndicatorsEnabled()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label active" id="delayIndicatorOn">ON</span>
+                </div>
+            </div>
+
+            <div class="toggle-container" style="margin-top: 20px;">
                 <h3 style="margin: 0;">Underwaters</h3>
                 <div class="toggle-labels">
                     <span class="toggle-label active" id="toggleOff">OFF</span>
@@ -506,7 +520,7 @@ void handleRoot() {
                 <div class="control">
                     <label>Underwater Color:</label>
                     <div class="color-selection-row" style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
-                        <div class="color-indicator" id="underwaterColorIndicator" 
+                        <div class="color-indicator" id="underwaterColorIndicator"
                              style="width: 30px; height: 30px; border-radius: 50%; background-color: #0000ff; border: 2px solid #ccc; cursor: pointer;"
                              onclick="openColorPickerForUnderwater()"></div>
                         <span>Underwater color</span>
@@ -516,7 +530,7 @@ void handleRoot() {
                 <div class="control">
                     <label>Surface Color:</label>
                     <div class="color-selection-row" style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
-                        <div class="color-indicator" id="surfaceColorIndicator" 
+                        <div class="color-indicator" id="surfaceColorIndicator"
                              style="width: 30px; height: 30px; border-radius: 50%; background-color: #00ff00; border: 2px solid #ccc; cursor: pointer;"
                              onclick="openColorPickerForSurface()"></div>
                         <span>Surface color</span>
@@ -607,6 +621,7 @@ void handleRoot() {
             paceDistance: 50,
             initialDelay: 10,
             swimmerInterval: 4,
+            delayIndicatorsEnabled: true,
             numSwimmers: 3,
             numRounds: 10,
             colorMode: 'individual',
@@ -712,11 +727,11 @@ void handleRoot() {
 
         function updateBrightness() {
             const brightnessPercent = document.getElementById('brightness').value;
-            
+
             // Convert percentage (0-100) to internal value (20-255)
             // Formula: internal = 20 + (percent / 100) * (255 - 20)
             const internalBrightness = Math.round(20 + (brightnessPercent / 100) * (255 - 20));
-            
+
             currentSettings.brightness = internalBrightness;
             document.getElementById('brightnessValue').textContent = brightnessPercent + '%';
             updateSettings();
@@ -726,7 +741,7 @@ void handleRoot() {
             // Convert internal brightness (20-255) back to percentage (0-100)
             // Formula: percent = (internal - 20) * 100 / (255 - 20)
             const brightnessPercent = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
-            
+
             document.getElementById('brightness').value = brightnessPercent;
             document.getElementById('brightnessValue').textContent = brightnessPercent + '%';
         }
@@ -759,17 +774,13 @@ void handleRoot() {
             updateSettings();
         }
 
-        function updateUnderwatersEnabled() {
-            const enabled = document.getElementById('underwatersEnabled').checked;
-            currentSettings.underwatersEnabled = enabled;
-            
-            // Show/hide underwaters controls
-            const controls = document.getElementById('underwatersControls');
-            controls.style.display = enabled ? 'block' : 'none';
-            
+        function updateDelayIndicatorsEnabled() {
+            const enabled = document.getElementById('delayIndicatorsEnabled').checked;
+            currentSettings.delayIndicatorsEnabled = enabled;
+
             // Update toggle labels
-            const toggleOff = document.getElementById('toggleOff');
-            const toggleOn = document.getElementById('toggleOn');
+            const toggleOff = document.getElementById('delayIndicatorOff');
+            const toggleOn = document.getElementById('delayIndicatorOn');
             
             if (enabled) {
                 toggleOff.classList.remove('active');
@@ -778,7 +789,30 @@ void handleRoot() {
                 toggleOff.classList.add('active');
                 toggleOn.classList.remove('active');
             }
-            
+
+            updateSettings();
+        }
+
+        function updateUnderwatersEnabled() {
+            const enabled = document.getElementById('underwatersEnabled').checked;
+            currentSettings.underwatersEnabled = enabled;
+
+            // Show/hide underwaters controls
+            const controls = document.getElementById('underwatersControls');
+            controls.style.display = enabled ? 'block' : 'none';
+
+            // Update toggle labels
+            const toggleOff = document.getElementById('toggleOff');
+            const toggleOn = document.getElementById('toggleOn');
+
+            if (enabled) {
+                toggleOff.classList.remove('active');
+                toggleOn.classList.add('active');
+            } else {
+                toggleOff.classList.add('active');
+                toggleOn.classList.remove('active');
+            }
+
             updateSettings();
         }
 
@@ -955,7 +989,7 @@ void handleRoot() {
                 document.getElementById('colorIndicator').style.backgroundColor = color;
                 updateSettings();
             }
-            
+
             currentColorContext = null; // Reset context
             closeColorPicker();
         }
@@ -1018,7 +1052,7 @@ void handleRoot() {
             document.getElementById('totalRounds').textContent = currentSettings.numRounds;
             document.getElementById('roundProgress').textContent = '0%';
             document.getElementById('activeSwimmers').textContent = '0';
-            
+
             // Show initial delay countdown
             if (currentSettings.initialDelay > 0) {
                 document.getElementById('nextEvent').textContent = `Starting in ${currentSettings.initialDelay}s`;
@@ -1027,7 +1061,7 @@ void handleRoot() {
                 document.getElementById('nextEvent').textContent = 'Starting now';
                 document.getElementById('currentPhase').textContent = 'Swimming';
             }
-            
+
             document.getElementById('elapsedTime').textContent = '00:00';
         }
 
@@ -1048,7 +1082,7 @@ void handleRoot() {
             const elapsedSeconds = Math.floor((Date.now() - pacerStartTime) / 1000);
             const minutes = Math.floor(elapsedSeconds / 60);
             const seconds = elapsedSeconds % 60;
-            document.getElementById('elapsedTime').textContent = 
+            document.getElementById('elapsedTime').textContent =
                 `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
             // Account for initial delay
@@ -1070,12 +1104,12 @@ void handleRoot() {
             const paceSeconds = parseFloat(document.getElementById('pacePer50').value);
             const restSeconds = currentSettings.restTime;
             const totalRoundTime = paceSeconds + restSeconds;
-            
+
             const timeInCurrentRound = timeAfterInitialDelay % totalRoundTime;
             const progressPercent = Math.floor((timeInCurrentRound / totalRoundTime) * 100);
-            
+
             document.getElementById('roundProgress').textContent = `${progressPercent}%`;
-            
+
             // Determine current phase
             if (timeInCurrentRound < paceSeconds) {
                 document.getElementById('currentPhase').textContent = 'Swimming';
@@ -1088,14 +1122,14 @@ void handleRoot() {
                 const remainingRestTime = totalRoundTime - timeInCurrentRound;
                 document.getElementById('nextEvent').textContent = `Next round in ${Math.ceil(remainingRestTime)}s`;
             }
-            
+
             // Update current round (after initial delay)
             const calculatedRound = Math.floor(timeAfterInitialDelay / totalRoundTime) + 1;
             if (calculatedRound !== currentRound && calculatedRound <= currentSettings.numRounds) {
                 currentRound = calculatedRound;
                 document.getElementById('currentRound').textContent = currentRound;
             }
-            
+
             // Check if set is complete
             if (calculatedRound > currentSettings.numRounds) {
                 document.getElementById('currentPhase').textContent = 'Set Complete!';
@@ -1144,7 +1178,7 @@ void handleRoot() {
                     pace: currentPace,
                     interval: i === 0 ? currentSettings.initialDelay : currentSettings.initialDelay + (i * currentSettings.swimmerInterval) // First swimmer uses initial delay, others add swimmer intervals
                 };
-                
+
                 swimmerSet.push(newSwimmer);
                 console.log(`Created swimmer ${i + 1} with color: ${swimmerColor}`);
             }
@@ -1212,7 +1246,7 @@ void handleRoot() {
                 console.error(`Invalid swimmer index: ${swimmerIndex}`);
                 return;
             }
-            
+
             // Set the current swimmer being edited and open color picker
             currentSwimmerIndex = swimmerIndex;
             console.log(`Opening color picker for swimmer ${swimmerIndex}`);
@@ -1279,6 +1313,14 @@ void handleRoot() {
                 body: `swimmerInterval=${currentSettings.swimmerInterval}`
             }).catch(error => {
                 console.log('Swimmer interval update - server not available (standalone mode)');
+            });
+
+            fetch('/setDelayIndicators', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `enabled=${currentSettings.delayIndicatorsEnabled}`
+            }).catch(error => {
+                console.log('Delay indicators update - server not available (standalone mode)');
             });
 
             fetch('/setNumSwimmers', {
@@ -1485,6 +1527,15 @@ void handleSetSwimmerInterval() {
   server.send(200, "text/plain", "Swimmer interval updated");
 }
 
+void handleSetDelayIndicators() {
+  if (server.hasArg("enabled")) {
+    bool enabled = server.arg("enabled") == "true";
+    settings.delayIndicatorsEnabled = enabled;
+    saveSettings();
+  }
+  server.send(200, "text/plain", "Delay indicators updated");
+}
+
 void handleSetNumSwimmers() {
   if (server.hasArg("numSwimmers")) {
     int numSwimmers = server.arg("numSwimmers").toInt();
@@ -1598,6 +1649,11 @@ void updateLEDEffect() {
   // Clear all LEDs
   FastLED.clear();
 
+  // Draw delay indicators if enabled
+  if (settings.delayIndicatorsEnabled) {
+    drawDelayIndicators(currentTime);
+  }
+
   // Update and draw each active swimmer
   for (int i = 0; i < settings.numSwimmers; i++) {
     updateSwimmer(i, currentTime);
@@ -1606,6 +1662,91 @@ void updateLEDEffect() {
 
   // Update FastLED
   FastLED.show();
+}
+
+void drawDelayIndicators(unsigned long currentTime) {
+  // Convert feet to meters for calculations
+  const float feetToMeters = 0.3048;
+  const float maxDelayDistanceFeet = 5.0;
+  const float maxDelayDistanceMeters = maxDelayDistanceFeet * feetToMeters;
+  
+  // Calculate LEDs for maximum delay distance (5 feet)
+  int maxDelayLEDs = (int)(maxDelayDistanceMeters * settings.ledsPerMeter);
+  
+  // Check each swimmer (including swimmer 0 for initial delay)
+  for (int i = 0; i < settings.numSwimmers; i++) {
+    unsigned long swimmerStartTime = swimmers[i].lastUpdate;
+    unsigned long delayStartTime;
+    int delaySeconds;
+    
+    if (i == 0) {
+      // First swimmer uses initial delay
+      delaySeconds = settings.initialDelaySeconds;
+      delayStartTime = swimmerStartTime - (settings.initialDelaySeconds * 1000);
+    } else {
+      // Subsequent swimmers use swimmer interval delay
+      delaySeconds = settings.swimmerIntervalSeconds;
+      delayStartTime = swimmerStartTime - (settings.swimmerIntervalSeconds * 1000);
+    }
+    
+    // Check if we're in the delay period for this swimmer
+    if (currentTime >= delayStartTime && currentTime < swimmerStartTime) {
+      // Calculate remaining delay time in seconds
+      float remainingDelaySeconds = (float)(swimmerStartTime - currentTime) / 1000.0;
+      
+      // Determine the delay distance based on remaining time
+      float delayDistanceFeet;
+      if (delaySeconds <= 5) {
+        // For delays 5 seconds or less, start at the delay time in feet
+        delayDistanceFeet = remainingDelaySeconds;
+      } else {
+        // For delays more than 5 seconds, use full 5 feet and scale down
+        delayDistanceFeet = (remainingDelaySeconds / delaySeconds) * maxDelayDistanceFeet;
+      }
+      
+      // Ensure minimum of 0 feet
+      if (delayDistanceFeet < 0) delayDistanceFeet = 0;
+      
+      // Convert to LEDs
+      float delayDistanceMeters = delayDistanceFeet * feetToMeters;
+      int delayLEDs = (int)(delayDistanceMeters * settings.ledsPerMeter);
+      
+      // Limit to available space and ensure minimum visibility
+      if (delayLEDs > maxDelayLEDs) delayLEDs = maxDelayLEDs;
+      if (delayLEDs < 1 && delayDistanceFeet > 0) delayLEDs = 1; // Ensure at least 1 LED if there's time left
+      
+      // Check for conflicts with active swimmers and draw delay indicator
+      CRGB swimmerColor = swimmers[i].color;
+      for (int ledIndex = 0; ledIndex < delayLEDs && ledIndex < totalLEDs; ledIndex++) {
+        // Check if this LED position conflicts with any active swimmer
+        bool hasConflict = false;
+        
+        for (int j = 0; j < settings.numSwimmers; j++) {
+          // Skip if this swimmer hasn't started yet
+          if (currentTime < swimmers[j].lastUpdate) continue;
+          
+          // Check if this LED is within the swimmer's pulse range
+          int swimmerCenter = swimmers[j].position;
+          int halfWidth = pulseWidthLEDs / 2;
+          int swimmerStart = swimmerCenter - halfWidth;
+          int swimmerEnd = swimmerCenter + halfWidth;
+          
+          if (ledIndex >= swimmerStart && ledIndex <= swimmerEnd) {
+            hasConflict = true;
+            break;
+          }
+        }
+        
+        // Only draw delay indicator if there's no conflict with active swimmers
+        if (!hasConflict) {
+          // Create a dimmed version of the swimmer's color for the delay indicator
+          CRGB delayColor = swimmerColor;
+          delayColor.nscale8(128); // 50% brightness for delay indicator
+          leds[ledIndex] = delayColor;
+        }
+      }
+    }
+  }
 }
 
 void initializeSwimmers() {

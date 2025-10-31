@@ -261,6 +261,18 @@
             </div>
 
             <div class="toggle-container">
+                <h3 style="margin: 0;">Delay Indicators</h3>
+                <div class="toggle-labels">
+                    <span class="toggle-label" id="delayIndicatorOff">OFF</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="delayIndicatorsEnabled" checked onchange="updateDelayIndicatorsEnabled()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label active" id="delayIndicatorOn">ON</span>
+                </div>
+            </div>
+
+            <div class="toggle-container" style="margin-top: 20px;">
                 <h3 style="margin: 0;">Underwaters</h3>
                 <div class="toggle-labels">
                     <span class="toggle-label active" id="toggleOff">OFF</span>
@@ -300,7 +312,7 @@
                 <div class="control">
                     <label>Underwater Color:</label>
                     <div class="color-selection-row" style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
-                        <div class="color-indicator" id="underwaterColorIndicator" 
+                        <div class="color-indicator" id="underwaterColorIndicator"
                              style="width: 30px; height: 30px; border-radius: 50%; background-color: #0000ff; border: 2px solid #ccc; cursor: pointer;"
                              onclick="openColorPickerForUnderwater()"></div>
                         <span>Underwater color</span>
@@ -310,7 +322,7 @@
                 <div class="control">
                     <label>Surface Color:</label>
                     <div class="color-selection-row" style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
-                        <div class="color-indicator" id="surfaceColorIndicator" 
+                        <div class="color-indicator" id="surfaceColorIndicator"
                              style="width: 30px; height: 30px; border-radius: 50%; background-color: #00ff00; border: 2px solid #ccc; cursor: pointer;"
                              onclick="openColorPickerForSurface()"></div>
                         <span>Surface color</span>
@@ -401,6 +413,7 @@
             paceDistance: 50,
             initialDelay: 10,
             swimmerInterval: 4,
+            delayIndicatorsEnabled: true,
             numSwimmers: 3,
             numRounds: 10,
             colorMode: 'individual',
@@ -506,11 +519,11 @@
 
         function updateBrightness() {
             const brightnessPercent = document.getElementById('brightness').value;
-            
+
             // Convert percentage (0-100) to internal value (20-255)
             // Formula: internal = 20 + (percent / 100) * (255 - 20)
             const internalBrightness = Math.round(20 + (brightnessPercent / 100) * (255 - 20));
-            
+
             currentSettings.brightness = internalBrightness;
             document.getElementById('brightnessValue').textContent = brightnessPercent + '%';
             updateSettings();
@@ -520,7 +533,7 @@
             // Convert internal brightness (20-255) back to percentage (0-100)
             // Formula: percent = (internal - 20) * 100 / (255 - 20)
             const brightnessPercent = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
-            
+
             document.getElementById('brightness').value = brightnessPercent;
             document.getElementById('brightnessValue').textContent = brightnessPercent + '%';
         }
@@ -553,17 +566,13 @@
             updateSettings();
         }
 
-        function updateUnderwatersEnabled() {
-            const enabled = document.getElementById('underwatersEnabled').checked;
-            currentSettings.underwatersEnabled = enabled;
-            
-            // Show/hide underwaters controls
-            const controls = document.getElementById('underwatersControls');
-            controls.style.display = enabled ? 'block' : 'none';
-            
+        function updateDelayIndicatorsEnabled() {
+            const enabled = document.getElementById('delayIndicatorsEnabled').checked;
+            currentSettings.delayIndicatorsEnabled = enabled;
+
             // Update toggle labels
-            const toggleOff = document.getElementById('toggleOff');
-            const toggleOn = document.getElementById('toggleOn');
+            const toggleOff = document.getElementById('delayIndicatorOff');
+            const toggleOn = document.getElementById('delayIndicatorOn');
             
             if (enabled) {
                 toggleOff.classList.remove('active');
@@ -572,7 +581,30 @@
                 toggleOff.classList.add('active');
                 toggleOn.classList.remove('active');
             }
-            
+
+            updateSettings();
+        }
+
+        function updateUnderwatersEnabled() {
+            const enabled = document.getElementById('underwatersEnabled').checked;
+            currentSettings.underwatersEnabled = enabled;
+
+            // Show/hide underwaters controls
+            const controls = document.getElementById('underwatersControls');
+            controls.style.display = enabled ? 'block' : 'none';
+
+            // Update toggle labels
+            const toggleOff = document.getElementById('toggleOff');
+            const toggleOn = document.getElementById('toggleOn');
+
+            if (enabled) {
+                toggleOff.classList.remove('active');
+                toggleOn.classList.add('active');
+            } else {
+                toggleOff.classList.add('active');
+                toggleOn.classList.remove('active');
+            }
+
             updateSettings();
         }
 
@@ -749,7 +781,7 @@
                 document.getElementById('colorIndicator').style.backgroundColor = color;
                 updateSettings();
             }
-            
+
             currentColorContext = null; // Reset context
             closeColorPicker();
         }
@@ -812,7 +844,7 @@
             document.getElementById('totalRounds').textContent = currentSettings.numRounds;
             document.getElementById('roundProgress').textContent = '0%';
             document.getElementById('activeSwimmers').textContent = '0';
-            
+
             // Show initial delay countdown
             if (currentSettings.initialDelay > 0) {
                 document.getElementById('nextEvent').textContent = `Starting in ${currentSettings.initialDelay}s`;
@@ -821,7 +853,7 @@
                 document.getElementById('nextEvent').textContent = 'Starting now';
                 document.getElementById('currentPhase').textContent = 'Swimming';
             }
-            
+
             document.getElementById('elapsedTime').textContent = '00:00';
         }
 
@@ -842,7 +874,7 @@
             const elapsedSeconds = Math.floor((Date.now() - pacerStartTime) / 1000);
             const minutes = Math.floor(elapsedSeconds / 60);
             const seconds = elapsedSeconds % 60;
-            document.getElementById('elapsedTime').textContent = 
+            document.getElementById('elapsedTime').textContent =
                 `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
             // Account for initial delay
@@ -864,12 +896,12 @@
             const paceSeconds = parseFloat(document.getElementById('pacePer50').value);
             const restSeconds = currentSettings.restTime;
             const totalRoundTime = paceSeconds + restSeconds;
-            
+
             const timeInCurrentRound = timeAfterInitialDelay % totalRoundTime;
             const progressPercent = Math.floor((timeInCurrentRound / totalRoundTime) * 100);
-            
+
             document.getElementById('roundProgress').textContent = `${progressPercent}%`;
-            
+
             // Determine current phase
             if (timeInCurrentRound < paceSeconds) {
                 document.getElementById('currentPhase').textContent = 'Swimming';
@@ -882,14 +914,14 @@
                 const remainingRestTime = totalRoundTime - timeInCurrentRound;
                 document.getElementById('nextEvent').textContent = `Next round in ${Math.ceil(remainingRestTime)}s`;
             }
-            
+
             // Update current round (after initial delay)
             const calculatedRound = Math.floor(timeAfterInitialDelay / totalRoundTime) + 1;
             if (calculatedRound !== currentRound && calculatedRound <= currentSettings.numRounds) {
                 currentRound = calculatedRound;
                 document.getElementById('currentRound').textContent = currentRound;
             }
-            
+
             // Check if set is complete
             if (calculatedRound > currentSettings.numRounds) {
                 document.getElementById('currentPhase').textContent = 'Set Complete!';
@@ -938,7 +970,7 @@
                     pace: currentPace,
                     interval: i === 0 ? currentSettings.initialDelay : currentSettings.initialDelay + (i * currentSettings.swimmerInterval) // First swimmer uses initial delay, others add swimmer intervals
                 };
-                
+
                 swimmerSet.push(newSwimmer);
                 console.log(`Created swimmer ${i + 1} with color: ${swimmerColor}`);
             }
@@ -1006,7 +1038,7 @@
                 console.error(`Invalid swimmer index: ${swimmerIndex}`);
                 return;
             }
-            
+
             // Set the current swimmer being edited and open color picker
             currentSwimmerIndex = swimmerIndex;
             console.log(`Opening color picker for swimmer ${swimmerIndex}`);
@@ -1073,6 +1105,14 @@
                 body: `swimmerInterval=${currentSettings.swimmerInterval}`
             }).catch(error => {
                 console.log('Swimmer interval update - server not available (standalone mode)');
+            });
+
+            fetch('/setDelayIndicators', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `enabled=${currentSettings.delayIndicatorsEnabled}`
+            }).catch(error => {
+                console.log('Delay indicators update - server not available (standalone mode)');
             });
 
             fetch('/setNumSwimmers', {
