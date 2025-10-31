@@ -42,7 +42,8 @@ IPAddress subnet(255, 255, 255, 0);         // Subnet mask
 
 // ========== DEFAULT SETTINGS ==========
 struct Settings {
-  int totalLEDs = 150;                       // Total number of LEDs
+  float poolLengthMeters = 22.86;            // Pool length in meters (25 yards)
+  float stripLengthMeters = 23.0;            // LED strip length in meters  
   int ledsPerMeter = 30;                     // LEDs per meter
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   float speedFeetPerSecond = 5.56;           // Speed in feet per second
@@ -58,9 +59,11 @@ Preferences preferences;
 WebServer server(80);
 
 // ========== CALCULATED VALUES ==========
-float ledSpacingCM;
-int pulseWidthLEDs;
-int delayMS;
+int totalLEDs;                    // Total number of LEDs (calculated)
+float ledSpacingCM;               // Spacing between LEDs in cm
+int pulseWidthLEDs;               // Width of pulse in LEDs
+int delayMS;                      // Delay between LED updates
+float poolToStripRatio;           // Ratio of pool to strip length
 
 // ========== GLOBAL VARIABLES ==========
 CRGB* leds;
@@ -113,13 +116,16 @@ void loop() {
 }
 
 void setupLEDs() {
-  // Allocate LED array dynamically based on total LEDs
+  // Calculate total LEDs first
+  totalLEDs = (int)(settings.stripLengthMeters * settings.ledsPerMeter);
+  
+  // Allocate LED array dynamically based on calculated total LEDs
   if (leds != nullptr) {
     delete[] leds;
   }
-  leds = new CRGB[settings.totalLEDs];
+  leds = new CRGB[totalLEDs];
 
-  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, settings.totalLEDs);
+  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, totalLEDs);
   FastLED.setBrightness(settings.brightness);
   FastLED.clear();
   FastLED.show();
@@ -156,6 +162,8 @@ void setupWebServer() {
   server.on("/setColor", HTTP_POST, handleSetColor);
   server.on("/setBrightness", HTTP_POST, handleSetBrightness);
   server.on("/setPulseWidth", HTTP_POST, handleSetPulseWidth);
+  server.on("/setStripLength", HTTP_POST, handleSetStripLength);
+  server.on("/setLedsPerMeter", HTTP_POST, handleSetLedsPerMeter);
 
   server.begin();
   Serial.println("Web server started");
@@ -272,26 +280,32 @@ void handleRoot() {
         <!-- Advanced Page -->
         <div id="advanced" class="page">
             <h2>Advanced Settings</h2>
-            <p>Configure LED strip and pool dimensions. For 25-yard pools, the light pulse travels down and back to represent a 50-yard swim.</p>
+            <p>Configure LED strip and pool dimensions. The pulse timing accounts for pool vs. strip length differences.</p>
 
             <div class="control">
-                <label for="poolLength">Pool Length (feet):</label>
+                <label for="poolLength">Pool Length:</label>
                 <select id="poolLength" onchange="updateCalculations()">
-                    <option value="75">25 yards (75 feet)</option>
-                    <option value="150">50 yards (150 feet)</option>
-                    <option value="82">25 meters (82 feet)</option>
-                    <option value="164">50 meters (164 feet)</option>
+                    <option value="25">25 yards</option>
+                    <option value="50">50 yards</option>
+                    <option value="25m">25 meters</option>
+                    <option value="50m">50 meters</option>
                 </select>
             </div>
 
             <div class="control">
-                <label for="numLeds">Number of LEDs:</label>
-                <input type="number" id="numLeds" value="150" min="10" max="300" onchange="updateSettings()">
+                <label for="stripLength">LED Strip Length (meters):</label>
+                <input type="number" id="stripLength" value="23" min="1" max="50" step="0.5" onchange="updateCalculations()">
+            </div>
+
+            <div class="control">
+                <label for="ledsPerMeter">LEDs per Meter:</label>
+                <input type="number" id="ledsPerMeter" value="30" min="10" max="144" onchange="updateCalculations()">
             </div>
 
             <div class="calculated-info">
-                <div><strong>LEDs per foot:</strong> <span id="ledsPerFoot">1.0</span></div>
-                <div><strong>Time per LED:</strong> <span id="timePerLed">0.20 seconds</span></div>
+                <div><strong>Total LEDs:</strong> <span id="totalLeds">690</span></div>
+                <div><strong>Pool Length:</strong> <span id="poolLengthDisplay">25 yards (22.9m)</span></div>
+                <div><strong>Strip covers:</strong> <span id="stripCoverage">100.4% of pool</span></div>
             </div>
 
             <div class="control">
@@ -306,8 +320,9 @@ void handleRoot() {
             color: 'red',
             brightness: 150,
             pulseWidth: 1.0,
-            poolLength: 75,
-            numLeds: 150,
+            poolLength: '25',
+            stripLength: 23,
+            ledsPerMeter: 30,
             isRunning: false
         };
 
@@ -342,15 +357,37 @@ void handleRoot() {
         }
 
         function updateCalculations() {
-            const speed = currentSettings.speed;
-            const poolLength = parseInt(document.getElementById('poolLength').value);
-            const numLeds = parseInt(document.getElementById('numLeds').value);
-
-            // Update LED metrics
-            const ledsPerFoot = numLeds / poolLength;
-            const timePerLed = 1 / (speed * ledsPerFoot);
-            document.getElementById('ledsPerFoot').textContent = ledsPerFoot.toFixed(1);
-            document.getElementById('timePerLed').textContent = (timePerLed * 1000).toFixed(0) + ' ms';
+            const poolLength = document.getElementById('poolLength').value;
+            const stripLength = parseFloat(document.getElementById('stripLength').value);
+            const ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
+            
+            // Convert pool length to meters
+            let poolLengthMeters;
+            let poolDisplay;
+            if (poolLength.endsWith('m')) {
+                poolLengthMeters = parseFloat(poolLength);
+                poolDisplay = poolLength + ` (${(poolLengthMeters * 1.094).toFixed(1)} yards)`;
+            } else {
+                // Yards to meters
+                poolLengthMeters = parseInt(poolLength) * 0.9144;
+                poolDisplay = poolLength + ` yards (${poolLengthMeters.toFixed(1)}m)`;
+            }
+            
+            // Calculate total LEDs
+            const totalLeds = Math.round(stripLength * ledsPerMeter);
+            
+            // Calculate coverage
+            const coverage = ((stripLength / poolLengthMeters) * 100).toFixed(1);
+            
+            // Update displays
+            document.getElementById('totalLeds').textContent = totalLeds;
+            document.getElementById('poolLengthDisplay').textContent = poolDisplay;
+            document.getElementById('stripCoverage').textContent = coverage + '% of pool';
+            
+            // Update current settings
+            currentSettings.poolLength = poolLength;
+            currentSettings.stripLength = stripLength;
+            currentSettings.ledsPerMeter = ledsPerMeter;
         }
 
         function selectColor(color) {
@@ -419,6 +456,22 @@ void handleRoot() {
                 body: `pulseWidth=${currentSettings.pulseWidth}`
             }).catch(error => {
                 console.log('Pulse width update - server not available (standalone mode)');
+            });
+
+            fetch('/setStripLength', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `stripLength=${currentSettings.stripLength}`
+            }).catch(error => {
+                console.log('Strip length update - server not available (standalone mode)');
+            });
+
+            fetch('/setLedsPerMeter', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `ledsPerMeter=${currentSettings.ledsPerMeter}`
+            }).catch(error => {
+                console.log('LEDs per meter update - server not available (standalone mode)');
             });
         }
 
@@ -569,8 +622,31 @@ void handleSetPulseWidth() {
   server.send(200, "text/plain", "Pulse width updated");
 }
 
+void handleSetStripLength() {
+  if (server.hasArg("stripLength")) {
+    float stripLength = server.arg("stripLength").toFloat();
+    settings.stripLengthMeters = stripLength;
+    saveSettings();
+    needsRecalculation = true;
+    setupLEDs();  // Reinitialize LED array with new length
+  }
+  server.send(200, "text/plain", "Strip length updated");
+}
+
+void handleSetLedsPerMeter() {
+  if (server.hasArg("ledsPerMeter")) {
+    int ledsPerMeter = server.arg("ledsPerMeter").toInt();
+    settings.ledsPerMeter = ledsPerMeter;
+    saveSettings();
+    needsRecalculation = true;
+    setupLEDs();  // Reinitialize LED array with new density
+  }
+  server.send(200, "text/plain", "LEDs per meter updated");
+}
+
 void saveSettings() {
-  preferences.putInt("totalLEDs", settings.totalLEDs);
+  preferences.putFloat("poolLengthM", settings.poolLengthMeters);
+  preferences.putFloat("stripLengthM", settings.stripLengthMeters);
   preferences.putInt("ledsPerMeter", settings.ledsPerMeter);
   preferences.putFloat("pulseWidthFeet", settings.pulseWidthFeet);
   preferences.putFloat("speedFPS", settings.speedFeetPerSecond);
@@ -584,7 +660,8 @@ void saveSettings() {
 }
 
 void loadSettings() {
-  settings.totalLEDs = preferences.getInt("totalLEDs", 150);
+  settings.poolLengthMeters = preferences.getFloat("poolLengthM", 22.86);  // 25 yards
+  settings.stripLengthMeters = preferences.getFloat("stripLengthM", 23.0);
   settings.ledsPerMeter = preferences.getInt("ledsPerMeter", 30);
   settings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
   settings.speedFeetPerSecond = preferences.getFloat("speedFPS", 5.56);
@@ -598,20 +675,46 @@ void loadSettings() {
 }
 
 void recalculateValues() {
+  // Calculate total LEDs from strip length and density
+  totalLEDs = (int)(settings.stripLengthMeters * settings.ledsPerMeter);
+  
+  // Calculate LED spacing
   ledSpacingCM = 100.0 / settings.ledsPerMeter;
+  
+  // Calculate pulse width in LEDs
   float pulseWidthCM = settings.pulseWidthFeet * 30.48;
   pulseWidthLEDs = (int)(pulseWidthCM / ledSpacingCM);
-  float speedCMPerSecond = settings.speedFeetPerSecond * 30.48;
-  delayMS = (int)(ledSpacingCM / speedCMPerSecond * 1000);
-
+  
+  // Calculate pool to strip ratio for timing adjustments
+  poolToStripRatio = settings.poolLengthMeters / settings.stripLengthMeters;
+  
+  // Calculate speed and timing based on pool length (50-yard swim = 2x pool length)
+  float swimDistanceMeters = settings.poolLengthMeters * 2.0;  // Down and back
+  float swimTimeSeconds = swimDistanceMeters / (settings.speedFeetPerSecond * 0.3048);
+  
+  // LED animation should complete in the same time as the swim
+  // If strip is shorter than pool, animation runs faster when "in view"
+  // If strip is longer than pool, animation pauses when "out of pool"
+  float effectiveStripLength = min(settings.stripLengthMeters, settings.poolLengthMeters);
+  float animationDistance = effectiveStripLength * 2.0;  // Down and back on visible portion
+  
+  // Calculate delay per LED movement
+  int totalAnimationSteps = (int)(animationDistance / ledSpacingCM * 100);
+  delayMS = (int)((swimTimeSeconds * 1000) / totalAnimationSteps);
+  
+  // Ensure reasonable bounds
+  delayMS = max(10, min(delayMS, 2000));
+  
   // Reset position if it's out of bounds
-  if (currentPosition >= settings.totalLEDs) {
-    currentPosition = settings.totalLEDs - 1;
+  if (currentPosition >= totalLEDs) {
+    currentPosition = totalLEDs - 1;
   }
 
   Serial.println("Values recalculated:");
+  Serial.println("  Total LEDs: " + String(totalLEDs));
   Serial.println("  LED spacing: " + String(ledSpacingCM) + " cm");
   Serial.println("  Pulse width: " + String(pulseWidthLEDs) + " LEDs");
+  Serial.println("  Pool/Strip ratio: " + String(poolToStripRatio));
   Serial.println("  Update delay: " + String(delayMS) + " ms");
 }
 
