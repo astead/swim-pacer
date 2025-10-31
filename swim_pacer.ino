@@ -380,6 +380,7 @@ void handleRoot() {
                     <div style="display: flex; align-items: center; margin-bottom: 8px;">
                         <input type="radio" id="sameColor" name="colorMode" value="same" onchange="updateColorMode()" style="margin: 0;">
                         <label for="sameColor" style="margin: 0; margin-left: 6px;">Same color</label>
+                        <div id="colorIndicator" class="swimmer-color" style="background-color: #0000ff; margin-left: 8px; cursor: default; flex-shrink: 0; min-width: 30px; min-height: 30px;"></div>
                     </div>
                     <div id="colorPickerSection" style="display: none; margin-top: 10px; margin-left: 24px;">
                         <label for="swimmerColorPicker">Choose color:</label>
@@ -621,6 +622,10 @@ void handleRoot() {
         function updateSwimmerColor() {
             const swimmerColor = document.getElementById('swimmerColorPicker').value;
             currentSettings.swimmerColor = swimmerColor;
+            
+            // Update the color indicator
+            document.getElementById('colorIndicator').style.backgroundColor = swimmerColor;
+            
             updateSettings();
         }
 
