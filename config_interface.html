@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Swim Pacer Configuration</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial; margin: 20px; background: #f0f0f0; }
+        .container { background: white; padding: 20px; border-radius: 10px; max-width: 500px; margin: 0 auto; }
+        .control { margin: 15px 0; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, button { padding: 8px; border-radius: 5px; border: 1px solid #ccc; width: 100%; box-sizing: border-box; }
+        button { background: #007bff; color: white; cursor: pointer; margin: 5px 0; }
+        button:hover { background: #0056b3; }
+        .status { padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .running { background: #d4edda; color: #155724; }
+        .stopped { background: #f8d7da; color: #721c24; }
+        .color-preview { width: 50px; height: 30px; border: 1px solid #ccc; display: inline-block; margin-left: 10px; }
+        
+        /* Additional styling for development preview */
+        .dev-note { 
+            background: #fff3cd; 
+            color: #856404; 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin-bottom: 20px; 
+            border: 1px solid #ffeaa7; 
+        }
+        .calculated-info {
+            background: #e7f3ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="dev-note">
+            <strong>Development Preview:</strong> This is a standalone version of the swim pacer configuration interface. 
+            The ESP32 backend functions are simulated with mock data for design testing.
+        </div>
+        
+        <h1>🏊‍♂️ Swim Pacer Configuration</h1>
+        
+        <div class="status running" id="status">Status: RUNNING</div>
+        
+        <div class="control">
+            <button onclick="togglePacer()" id="toggleBtn">Stop Pacer</button>
+        </div>
+        
+        <form onsubmit="updateSettings(event)">
+            <div class="control">
+                <label>Total LEDs:</label>
+                <input type="number" id="totalLEDs" min="1" max="1000" value="150">
+            </div>
+            
+            <div class="control">
+                <label>LEDs per Meter:</label>
+                <input type="number" id="ledsPerMeter" min="1" max="200" value="30">
+            </div>
+            
+            <div class="control">
+                <label>Pulse Width (feet):</label>
+                <input type="number" id="pulseWidthFeet" step="0.1" min="0.1" max="10" value="1.0">
+            </div>
+            
+            <div class="control">
+                <label>Speed (feet per second):</label>
+                <input type="number" id="speedFeetPerSecond" step="0.1" min="0.1" max="20" value="5.56">
+            </div>
+            
+            <div class="control">
+                <label>Color - Red (0-255):</label>
+                <input type="number" id="colorRed" min="0" max="255" value="0">
+            </div>
+            
+            <div class="control">
+                <label>Color - Green (0-255):</label>
+                <input type="number" id="colorGreen" min="0" max="255" value="0">
+            </div>
+            
+            <div class="control">
+                <label>Color - Blue (0-255):</label>
+                <input type="number" id="colorBlue" min="0" max="255" value="255">
+                <div class="color-preview" id="colorPreview"></div>
+            </div>
+            
+            <div class="control">
+                <label>Brightness (0-255):</label>
+                <input type="number" id="brightness" min="0" max="255" value="100">
+            </div>
+            
+            <button type="submit">Update Settings</button>
+        </form>
+        
+        <div class="calculated-info" id="calculatedInfo">
+            <strong>Calculated Values:</strong><br>
+            LED Spacing: <span id="ledSpacing">3.33 cm</span><br>
+            Pulse Width: <span id="pulseWidthLEDs">9 LEDs</span><br>
+            Update Delay: <span id="updateDelay">59 ms</span><br>
+            Full Traverse Time: <span id="traverseTime">14.8 seconds each direction</span>
+        </div>
+    </div>
+
+    <script>
+        // Mock data for development
+        let mockSettings = {
+            totalLEDs: 150,
+            ledsPerMeter: 30,
+            pulseWidthFeet: 1.0,
+            speedFeetPerSecond: 5.56,
+            colorRed: 0,
+            colorGreen: 0,
+            colorBlue: 255,
+            brightness: 100,
+            isRunning: true
+        };
+
+        function loadSettings() {
+            // Simulate loading from ESP32 - use mock data
+            console.log('Loading mock settings...');
+            
+            document.getElementById('totalLEDs').value = mockSettings.totalLEDs;
+            document.getElementById('ledsPerMeter').value = mockSettings.ledsPerMeter;
+            document.getElementById('pulseWidthFeet').value = mockSettings.pulseWidthFeet;
+            document.getElementById('speedFeetPerSecond').value = mockSettings.speedFeetPerSecond;
+            document.getElementById('colorRed').value = mockSettings.colorRed;
+            document.getElementById('colorGreen').value = mockSettings.colorGreen;
+            document.getElementById('colorBlue').value = mockSettings.colorBlue;
+            document.getElementById('brightness').value = mockSettings.brightness;
+            
+            updateStatus(mockSettings.isRunning);
+            updateColorPreview();
+            updateCalculatedValues();
+        }
+        
+        function updateSettings(event) {
+            event.preventDefault();
+            
+            // Update mock settings from form
+            mockSettings.totalLEDs = parseInt(document.getElementById('totalLEDs').value);
+            mockSettings.ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
+            mockSettings.pulseWidthFeet = parseFloat(document.getElementById('pulseWidthFeet').value);
+            mockSettings.speedFeetPerSecond = parseFloat(document.getElementById('speedFeetPerSecond').value);
+            mockSettings.colorRed = parseInt(document.getElementById('colorRed').value);
+            mockSettings.colorGreen = parseInt(document.getElementById('colorGreen').value);
+            mockSettings.colorBlue = parseInt(document.getElementById('colorBlue').value);
+            mockSettings.brightness = parseInt(document.getElementById('brightness').value);
+            
+            console.log('Mock settings updated:', mockSettings);
+            alert('Settings updated! (This is a simulation - actual ESP32 would save to flash memory)');
+            
+            updateCalculatedValues();
+        }
+        
+        function togglePacer() {
+            mockSettings.isRunning = !mockSettings.isRunning;
+            updateStatus(mockSettings.isRunning);
+            console.log('Pacer toggled:', mockSettings.isRunning ? 'RUNNING' : 'STOPPED');
+        }
+        
+        function updateStatus(isRunning) {
+            const status = document.getElementById('status');
+            const toggleBtn = document.getElementById('toggleBtn');
+            
+            if (isRunning) {
+                status.textContent = 'Status: RUNNING';
+                status.className = 'status running';
+                toggleBtn.textContent = 'Stop Pacer';
+            } else {
+                status.textContent = 'Status: STOPPED';
+                status.className = 'status stopped';
+                toggleBtn.textContent = 'Start Pacer';
+            }
+        }
+        
+        function updateColorPreview() {
+            const r = document.getElementById('colorRed').value;
+            const g = document.getElementById('colorGreen').value;
+            const b = document.getElementById('colorBlue').value;
+            
+            document.getElementById('colorPreview').style.backgroundColor = 
+                `rgb(${r}, ${g}, ${b})`;
+        }
+        
+        function updateCalculatedValues() {
+            // Calculate values like the ESP32 would
+            const ledSpacingCM = 100.0 / mockSettings.ledsPerMeter;
+            const pulseWidthCM = mockSettings.pulseWidthFeet * 30.48;
+            const pulseWidthLEDs = Math.round(pulseWidthCM / ledSpacingCM);
+            const speedCMPerSecond = mockSettings.speedFeetPerSecond * 30.48;
+            const delayMS = Math.round(ledSpacingCM / speedCMPerSecond * 1000);
+            const traverseTimeSeconds = (mockSettings.totalLEDs * delayMS) / 1000;
+            
+            document.getElementById('ledSpacing').textContent = ledSpacingCM.toFixed(2) + ' cm';
+            document.getElementById('pulseWidthLEDs').textContent = pulseWidthLEDs + ' LEDs';
+            document.getElementById('updateDelay').textContent = delayMS + ' ms';
+            document.getElementById('traverseTime').textContent = traverseTimeSeconds.toFixed(1) + ' seconds each direction';
+        }
+        
+        // Update color preview when values change
+        document.getElementById('colorRed').addEventListener('input', updateColorPreview);
+        document.getElementById('colorGreen').addEventListener('input', updateColorPreview);
+        document.getElementById('colorBlue').addEventListener('input', updateColorPreview);
+        
+        // Update calculated values when relevant inputs change
+        document.getElementById('totalLEDs').addEventListener('input', updateCalculatedValues);
+        document.getElementById('ledsPerMeter').addEventListener('input', updateCalculatedValues);
+        document.getElementById('pulseWidthFeet').addEventListener('input', updateCalculatedValues);
+        document.getElementById('speedFeetPerSecond').addEventListener('input', updateCalculatedValues);
+        
+        // Load initial settings on page load
+        loadSettings();
+    </script>
+</body>
+</html>
