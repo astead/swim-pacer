@@ -251,13 +251,7 @@ void handleRoot() {
         <!-- Coach Config Page -->
         <div id="coach" class="page">
             <h2>Coach Configuration</h2>
-            <p>View current pace settings and swimming calculations. Use the Main Pacer page to adjust pace.</p>
-
-            <div class="calculated-info">
-                <div><strong>Current Pace:</strong> <span id="currentPaceCoach">30.0 sec/50yd</span></div>
-                <div><strong>Pool Length:</strong> 50 yards (150 feet)</div>
-                <div><strong>Time per length:</strong> <span id="timePerLength">26.4 seconds</span></div>
-            </div>
+            <p>Adjust display settings and apply changes. Use the Main Pacer page to set pace.</p>
 
             <div class="control">
                 <label for="brightness">Brightness:</label>
@@ -346,18 +340,9 @@ void handleRoot() {
             const poolLength = parseInt(document.getElementById('poolLength').value);
             const numLeds = parseInt(document.getElementById('numLeds').value);
 
-            // Update swimming metrics
-            document.getElementById('timePerLength').textContent = (poolLength / speed).toFixed(1) + ' seconds';
-
             // Update pace display
             const paceSeconds = speedToPace(speed);
             document.getElementById('currentPace').textContent = paceSeconds.toFixed(1) + ' sec/50yd';
-
-            // Also update coach page pace display
-            const coachPaceElement = document.getElementById('currentPaceCoach');
-            if (coachPaceElement) {
-                coachPaceElement.textContent = paceSeconds.toFixed(1) + ' sec/50yd';
-            }
 
             // Update LED metrics
             const ledsPerFoot = numLeds / poolLength;
@@ -382,13 +367,23 @@ void handleRoot() {
 
         function togglePacer() {
             currentSettings.isRunning = !currentSettings.isRunning;
+            
+            // Update UI immediately for better responsiveness
+            const status = currentSettings.isRunning ? "Pacer Started" : "Pacer Stopped";
+            document.getElementById('status').textContent = status;
+            document.getElementById('status').className = 'status ' + (currentSettings.isRunning ? 'running' : 'stopped');
+            document.getElementById('toggleBtn').textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
 
+            // Try to notify server (will fail gracefully in standalone mode)
             fetch('/toggle', { method: 'POST' })
             .then(response => response.text())
             .then(result => {
+                // Server responded, update status with server message
                 document.getElementById('status').textContent = result;
-                document.getElementById('status').className = 'status ' + (currentSettings.isRunning ? 'running' : 'stopped');
-                document.getElementById('toggleBtn').textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
+            })
+            .catch(error => {
+                // Server not available (standalone mode), keep local status
+                console.log('Running in standalone mode - server not available');
             });
         }
 
@@ -405,6 +400,8 @@ void handleRoot() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `speed=${currentSettings.speed}`
+            }).catch(error => {
+                console.log('Speed update - server not available (standalone mode)');
             });
         }
 
@@ -415,12 +412,16 @@ void handleRoot() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `color=${currentSettings.color}`
+            }).catch(error => {
+                console.log('Color update - server not available (standalone mode)');
             });
 
             fetch('/setBrightness', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `brightness=${currentSettings.brightness}`
+            }).catch(error => {
+                console.log('Brightness update - server not available (standalone mode)');
             });
 
             alert('Settings saved!');
