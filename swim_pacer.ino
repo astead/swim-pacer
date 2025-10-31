@@ -255,7 +255,6 @@ void handleRoot() {
 
             <div class="calculated-info">
                 <div><strong>Current Pace:</strong> <span id="currentPaceCoach">30.0 sec/50yd</span></div>
-                <div><strong>Swimming Speed:</strong> <span id="swimmingSpeed">5.68 ft/s</span></div>
                 <div><strong>Pool Length:</strong> 50 yards (150 feet)</div>
                 <div><strong>Time per length:</strong> <span id="timePerLength">26.4 seconds</span></div>
             </div>
@@ -348,7 +347,6 @@ void handleRoot() {
             const numLeds = parseInt(document.getElementById('numLeds').value);
 
             // Update swimming metrics
-            document.getElementById('swimmingSpeed').textContent = speed.toFixed(2) + ' ft/s';
             document.getElementById('timePerLength').textContent = (poolLength / speed).toFixed(1) + ' seconds';
 
             // Update pace display
