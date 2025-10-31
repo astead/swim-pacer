@@ -50,6 +50,7 @@ struct Settings {
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
   int paceDistanceYards = 50;                // Distance for pace calculation in yards
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
+  int numSwimmers = 1;                       // Number of swimmers (light pulses)
   uint8_t colorRed = 0;                      // RGB color values
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
@@ -75,6 +76,24 @@ int direction = 1;
 unsigned long lastUpdate = 0;
 bool needsRecalculation = true;
 
+// ========== MULTI-SWIMMER VARIABLES ==========
+struct Swimmer {
+  int position;
+  int direction;
+  unsigned long lastUpdate;
+  CRGB color;
+};
+
+Swimmer swimmers[6]; // Support up to 6 swimmers
+CRGB swimmerColors[] = {
+  CRGB::Red,
+  CRGB::Green, 
+  CRGB::Blue,
+  CRGB::Yellow,
+  CRGB::Purple,
+  CRGB::Cyan
+};
+
 void setup() {
   Serial.begin(115200);
   Serial.println("ESP32 Swim Pacer Starting...");
@@ -94,6 +113,9 @@ void setup() {
 
   // Calculate initial values
   recalculateValues();
+
+  // Initialize swimmers
+  initializeSwimmers();
 
   Serial.println("Setup complete!");
   Serial.println("Connect to WiFi: " + String(ssid));
@@ -170,6 +192,7 @@ void setupWebServer() {
   server.on("/setRestTime", HTTP_POST, handleSetRestTime);
   server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
   server.on("/setSwimmerInterval", HTTP_POST, handleSetSwimmerInterval);
+  server.on("/setNumSwimmers", HTTP_POST, handleSetNumSwimmers);
 
   server.begin();
   Serial.println("Web server started");
@@ -266,16 +289,9 @@ void handleRoot() {
             </div>
 
             <div class="control">
-                <label>LED Color:</label>
-                <div class="color-wheel">
-                    <div class="color-option selected" style="background: red;" onclick="selectColor('red')" data-color="red"></div>
-                    <div class="color-option" style="background: green;" onclick="selectColor('green')" data-color="green"></div>
-                    <div class="color-option" style="background: blue;" onclick="selectColor('blue')" data-color="blue"></div>
-                    <div class="color-option" style="background: yellow;" onclick="selectColor('yellow')" data-color="yellow"></div>
-                    <div class="color-option" style="background: purple;" onclick="selectColor('purple')" data-color="purple"></div>
-                    <div class="color-option" style="background: cyan;" onclick="selectColor('cyan')" data-color="cyan"></div>
-                    <div class="color-option" style="background: white; border: 1px solid #ccc;" onclick="selectColor('white')" data-color="white"></div>
-                </div>
+                <label for="numSwimmers">Number of Swimmers:</label>
+                <input type="range" id="numSwimmers" min="1" max="6" step="1" value="1" oninput="updateNumSwimmers()">
+                <span id="numSwimmersValue">1</span>
             </div>
         </div>
 
@@ -352,6 +368,7 @@ void handleRoot() {
             restTime: 5,
             paceDistance: 50,
             swimmerInterval: 4,
+            numSwimmers: 1,
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
@@ -437,13 +454,6 @@ void handleRoot() {
             currentSettings.ledsPerMeter = ledsPerMeter;
         }
 
-        function selectColor(color) {
-            currentSettings.color = color;
-            document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('selected'));
-            document.querySelector(`[data-color="${color}"]`).classList.add('selected');
-            updateSettings();
-        }
-
         function updateBrightness() {
             const brightness = document.getElementById('brightness').value;
             currentSettings.brightness = parseInt(brightness);
@@ -469,6 +479,13 @@ void handleRoot() {
             const swimmerInterval = document.getElementById('swimmerInterval').value;
             currentSettings.swimmerInterval = parseInt(swimmerInterval);
             document.getElementById('swimmerIntervalValue').textContent = swimmerInterval;
+            updateSettings();
+        }
+
+        function updateNumSwimmers() {
+            const numSwimmers = document.getElementById('numSwimmers').value;
+            currentSettings.numSwimmers = parseInt(numSwimmers);
+            document.getElementById('numSwimmersValue').textContent = numSwimmers;
             updateSettings();
         }
 
@@ -557,6 +574,14 @@ void handleRoot() {
                 body: `swimmerInterval=${currentSettings.swimmerInterval}`
             }).catch(error => {
                 console.log('Swimmer interval update - server not available (standalone mode)');
+            });
+
+            fetch('/setNumSwimmers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `numSwimmers=${currentSettings.numSwimmers}`
+            }).catch(error => {
+                console.log('Number of swimmers update - server not available (standalone mode)');
             });
         }
 
@@ -758,6 +783,15 @@ void handleSetSwimmerInterval() {
   server.send(200, "text/plain", "Swimmer interval updated");
 }
 
+void handleSetNumSwimmers() {
+  if (server.hasArg("numSwimmers")) {
+    int numSwimmers = server.arg("numSwimmers").toInt();
+    settings.numSwimmers = numSwimmers;
+    saveSettings();
+  }
+  server.send(200, "text/plain", "Number of swimmers updated");
+}
+
 void saveSettings() {
   preferences.putFloat("poolLengthM", settings.poolLengthMeters);
   preferences.putFloat("stripLengthM", settings.stripLengthMeters);
@@ -767,6 +801,7 @@ void saveSettings() {
   preferences.putInt("restTimeSeconds", settings.restTimeSeconds);
   preferences.putInt("paceDistanceYards", settings.paceDistanceYards);
   preferences.putInt("swimmerInterval", settings.swimmerIntervalSeconds);
+  preferences.putInt("numSwimmers", settings.numSwimmers);
   preferences.putUChar("colorRed", settings.colorRed);
   preferences.putUChar("colorGreen", settings.colorGreen);
   preferences.putUChar("colorBlue", settings.colorBlue);
@@ -785,6 +820,7 @@ void loadSettings() {
   settings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
   settings.paceDistanceYards = preferences.getInt("paceDistanceYards", 50);
   settings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
+  settings.numSwimmers = preferences.getInt("numSwimmers", 1);
   settings.colorRed = preferences.getUChar("colorRed", 0);
   settings.colorGreen = preferences.getUChar("colorGreen", 0);
   settings.colorBlue = preferences.getUChar("colorBlue", 255);
@@ -836,33 +872,72 @@ void recalculateValues() {
   Serial.println("  Pulse width: " + String(pulseWidthLEDs) + " LEDs");
   Serial.println("  Pool/Strip ratio: " + String(poolToStripRatio));
   Serial.println("  Update delay: " + String(delayMS) + " ms");
+  
+  // Reinitialize swimmers when values change
+  initializeSwimmers();
 }
 
 void updateLEDEffect() {
   unsigned long currentTime = millis();
 
-  if (currentTime - lastUpdate >= delayMS) {
-    lastUpdate = currentTime;
+  // Clear all LEDs
+  FastLED.clear();
 
-    // Clear all LEDs
-    FastLED.clear();
+  // Update and draw each active swimmer
+  for (int i = 0; i < settings.numSwimmers; i++) {
+    updateSwimmer(i, currentTime);
+    drawSwimmerPulse(i);
+  }
 
-    // Draw the current pulse
-    drawPulse(currentPosition);
+  // Update FastLED
+  FastLED.show();
+}
 
-    // Update FastLED
-    FastLED.show();
+void initializeSwimmers() {
+  for (int i = 0; i < 6; i++) {
+    swimmers[i].position = 0;
+    swimmers[i].direction = 1;
+    swimmers[i].lastUpdate = millis() + (i * settings.swimmerIntervalSeconds * 1000); // Stagger start times
+    swimmers[i].color = swimmerColors[i];
+  }
+}
+
+void updateSwimmer(int swimmerIndex, unsigned long currentTime) {
+  if (currentTime - swimmers[swimmerIndex].lastUpdate >= delayMS) {
+    swimmers[swimmerIndex].lastUpdate = currentTime;
 
     // Move to next position
-    currentPosition += direction;
+    swimmers[swimmerIndex].position += swimmers[swimmerIndex].direction;
 
     // Check for bouncing at ends
-    if (currentPosition >= settings.totalLEDs - 1) {
-      direction = -1;
-      currentPosition = settings.totalLEDs - 1;
-    } else if (currentPosition <= 0) {
-      direction = 1;
-      currentPosition = 0;
+    if (swimmers[swimmerIndex].position >= totalLEDs - 1) {
+      swimmers[swimmerIndex].direction = -1;
+      swimmers[swimmerIndex].position = totalLEDs - 1;
+    } else if (swimmers[swimmerIndex].position <= 0) {
+      swimmers[swimmerIndex].direction = 1;
+      swimmers[swimmerIndex].position = 0;
+    }
+  }
+}
+
+void drawSwimmerPulse(int swimmerIndex) {
+  int centerPos = swimmers[swimmerIndex].position;
+  int halfWidth = pulseWidthLEDs / 2;
+  CRGB pulseColor = swimmers[swimmerIndex].color;
+
+  for (int i = 0; i < pulseWidthLEDs; i++) {
+    int ledIndex = centerPos - halfWidth + i;
+
+    if (ledIndex >= 0 && ledIndex < totalLEDs) {
+      int distanceFromCenter = abs(i - halfWidth);
+      float brightnessFactor = 1.0 - (float)distanceFromCenter / (float)halfWidth;
+      brightnessFactor = max(0.0f, brightnessFactor);
+
+      CRGB color = pulseColor;
+      color.nscale8((uint8_t)(brightnessFactor * 255));
+
+      // Add this swimmer's color to existing LED (allows overlapping)
+      leds[ledIndex] += color;
     }
   }
 }

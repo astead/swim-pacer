@@ -87,16 +87,9 @@
             </div>
 
             <div class="control">
-                <label>LED Color:</label>
-                <div class="color-wheel">
-                    <div class="color-option selected" style="background: red;" onclick="selectColor('red')" data-color="red"></div>
-                    <div class="color-option" style="background: green;" onclick="selectColor('green')" data-color="green"></div>
-                    <div class="color-option" style="background: blue;" onclick="selectColor('blue')" data-color="blue"></div>
-                    <div class="color-option" style="background: yellow;" onclick="selectColor('yellow')" data-color="yellow"></div>
-                    <div class="color-option" style="background: purple;" onclick="selectColor('purple')" data-color="purple"></div>
-                    <div class="color-option" style="background: cyan;" onclick="selectColor('cyan')" data-color="cyan"></div>
-                    <div class="color-option" style="background: white; border: 1px solid #ccc;" onclick="selectColor('white')" data-color="white"></div>
-                </div>
+                <label for="numSwimmers">Number of Swimmers:</label>
+                <input type="range" id="numSwimmers" min="1" max="6" step="1" value="1" oninput="updateNumSwimmers()">
+                <span id="numSwimmersValue">1</span>
             </div>
         </div>
 
@@ -173,6 +166,7 @@
             restTime: 5,
             paceDistance: 50,
             swimmerInterval: 4,
+            numSwimmers: 1,
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
@@ -258,13 +252,6 @@
             currentSettings.ledsPerMeter = ledsPerMeter;
         }
 
-        function selectColor(color) {
-            currentSettings.color = color;
-            document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('selected'));
-            document.querySelector(`[data-color="${color}"]`).classList.add('selected');
-            updateSettings();
-        }
-
         function updateBrightness() {
             const brightness = document.getElementById('brightness').value;
             currentSettings.brightness = parseInt(brightness);
@@ -290,6 +277,13 @@
             const swimmerInterval = document.getElementById('swimmerInterval').value;
             currentSettings.swimmerInterval = parseInt(swimmerInterval);
             document.getElementById('swimmerIntervalValue').textContent = swimmerInterval;
+            updateSettings();
+        }
+
+        function updateNumSwimmers() {
+            const numSwimmers = document.getElementById('numSwimmers').value;
+            currentSettings.numSwimmers = parseInt(numSwimmers);
+            document.getElementById('numSwimmersValue').textContent = numSwimmers;
             updateSettings();
         }
 
@@ -378,6 +372,14 @@
                 body: `swimmerInterval=${currentSettings.swimmerInterval}`
             }).catch(error => {
                 console.log('Swimmer interval update - server not available (standalone mode)');
+            });
+
+            fetch('/setNumSwimmers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `numSwimmers=${currentSettings.numSwimmers}`
+            }).catch(error => {
+                console.log('Number of swimmers update - server not available (standalone mode)');
             });
         }
 
