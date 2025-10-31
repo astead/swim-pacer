@@ -246,14 +246,8 @@ void handleRoot() {
                     <div class="color-option" style="background: white; border: 1px solid #ccc;" onclick="selectColor('white')" data-color="white"></div>
                 </div>
             </div>
-
-            <div class="control">
-                <label for="brightness">Brightness:</label>
-                <input type="range" id="brightness" min="20" max="255" value="150" oninput="updateBrightness()">
-                <span id="brightnessValue">150</span>
-            </div>
         </div>
-
+        
         <!-- Coach Config Page -->
         <div id="coach" class="page">
             <h2>Coach Configuration</h2>
@@ -264,6 +258,12 @@ void handleRoot() {
                 <div><strong>Swimming Speed:</strong> <span id="swimmingSpeed">5.68 ft/s</span></div>
                 <div><strong>Pool Length:</strong> 50 yards (150 feet)</div>
                 <div><strong>Time per length:</strong> <span id="timePerLength">26.4 seconds</span></div>
+            </div>
+
+            <div class="control">
+                <label for="brightness">Brightness:</label>
+                <input type="range" id="brightness" min="20" max="255" value="150" oninput="updateBrightness()">
+                <span id="brightnessValue">150</span>
             </div>
 
             <div class="control">
