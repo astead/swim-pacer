@@ -477,6 +477,7 @@ void handleRoot() {
                         <span class="toggle-slider"></span>
                     </label>
                     <span class="toggle-label active" id="delayIndicatorOn">ON</span>
+                    <small style="color: #666; margin-left: 10px; font-size: 12px;">max 5 seconds</small>
                 </div>
             </div>
 
