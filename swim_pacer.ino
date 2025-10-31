@@ -1695,17 +1695,23 @@ void drawDelayIndicators(unsigned long currentTime) {
       float remainingDelaySeconds = (float)(swimmerStartTime - currentTime) / 1000.0;
       
       // Determine the delay distance based on remaining time
-      float delayDistanceFeet;
+      float delayDistanceFeet = 0;
+      
       if (delaySeconds <= 5) {
-        // For delays 5 seconds or less, start at the delay time in feet
+        // For delays 5 seconds or less, show full countdown at 1 foot per second
         delayDistanceFeet = remainingDelaySeconds;
       } else {
-        // For delays more than 5 seconds, use full 5 feet and scale down
-        delayDistanceFeet = (remainingDelaySeconds / delaySeconds) * maxDelayDistanceFeet;
+        // For delays more than 5 seconds, only show indicator during final 5 seconds
+        if (remainingDelaySeconds <= 5.0) {
+          delayDistanceFeet = remainingDelaySeconds;
+        }
+        // If more than 5 seconds remain, delayDistanceFeet stays 0 (no indicator)
       }
       
-      // Ensure minimum of 0 feet
-      if (delayDistanceFeet < 0) delayDistanceFeet = 0;
+      // Only proceed if we should show an indicator
+      if (delayDistanceFeet > 0) {
+        // Ensure minimum of 0 feet
+        if (delayDistanceFeet < 0) delayDistanceFeet = 0;
       
       // Convert to LEDs
       float delayDistanceMeters = delayDistanceFeet * feetToMeters;
@@ -1745,6 +1751,7 @@ void drawDelayIndicators(unsigned long currentTime) {
           leds[ledIndex] = delayColor;
         }
       }
+      } // Close the "if (delayDistanceFeet > 0)" condition
     }
   }
 }
