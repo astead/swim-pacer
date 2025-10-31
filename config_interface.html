@@ -37,6 +37,34 @@
         .color-option { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; }
         .color-option.selected { border-color: #333; }
 
+        /* Swimmer set styles */
+        .swimmer-row { 
+            display: flex; 
+            align-items: center; 
+            padding: 10px; 
+            margin: 5px 0; 
+            background: #f8f9fa; 
+            border-radius: 5px; 
+            gap: 15px;
+        }
+        .swimmer-color { 
+            width: 30px; 
+            height: 30px; 
+            border-radius: 50%; 
+            border: 2px solid #333; 
+            cursor: pointer;
+        }
+        .swimmer-info { 
+            flex: 1; 
+            font-weight: bold;
+        }
+        .swimmer-pace-input { 
+            width: 80px; 
+            padding: 5px; 
+            border: 1px solid #ccc; 
+            border-radius: 3px;
+        }
+
         .calculated-info {
             background: #e7f3ff;
             padding: 10px;
@@ -61,6 +89,7 @@
 
             <div class="control">
                 <button class="big-button" onclick="togglePacer()" id="toggleBtn">Start Pacer</button>
+                <button class="big-button" onclick="createSet()" id="createSetBtn" style="margin-left: 10px;">Create Set</button>
             </div>
 
             <div class="control">
@@ -90,6 +119,12 @@
                 <label for="numSwimmers">Number of Swimmers:</label>
                 <input type="range" id="numSwimmers" min="1" max="6" step="1" value="1" oninput="updateNumSwimmers()">
                 <span id="numSwimmersValue">1</span>
+            </div>
+
+            <!-- Swimmer Set Display -->
+            <div id="swimmerSet" style="display: none;">
+                <h3>Swimmer Set Configuration</h3>
+                <div id="swimmerList"></div>
             </div>
         </div>
 
@@ -171,6 +206,18 @@
             stripLength: 23,
             ledsPerMeter: 30,
             isRunning: false
+        };
+
+        // Swimmer set configuration
+        let swimmerSet = [];
+        const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan'];
+        const colorHex = {
+            'red': '#ff0000',
+            'green': '#00ff00', 
+            'blue': '#0000ff',
+            'yellow': '#ffff00',
+            'purple': '#800080',
+            'cyan': '#00ffff'
         };
 
         // Page navigation
@@ -307,6 +354,62 @@
                 // Server not available (standalone mode), keep local status
                 console.log('Running in standalone mode - server not available');
             });
+        }
+
+        function createSet() {
+            // Clear existing set
+            swimmerSet = [];
+            
+            // Get current pace from the main settings
+            const currentPace = parseFloat(document.getElementById('pacePer50').value);
+            
+            // Create swimmer configurations
+            for (let i = 0; i < currentSettings.numSwimmers; i++) {
+                swimmerSet.push({
+                    id: i + 1,
+                    color: swimmerColors[i],
+                    pace: currentPace,
+                    interval: i * currentSettings.swimmerInterval // Start time offset
+                });
+            }
+            
+            // Display the set
+            displaySwimmerSet();
+            
+            // Show the swimmer set section
+            document.getElementById('swimmerSet').style.display = 'block';
+        }
+
+        function displaySwimmerSet() {
+            const swimmerList = document.getElementById('swimmerList');
+            swimmerList.innerHTML = '';
+            
+            swimmerSet.forEach((swimmer, index) => {
+                const row = document.createElement('div');
+                row.className = 'swimmer-row';
+                
+                row.innerHTML = `
+                    <div class="swimmer-color" style="background-color: ${colorHex[swimmer.color]}" 
+                         onclick="cycleSwimmerColor(${index})" title="Click to change color"></div>
+                    <div class="swimmer-info">Swimmer ${swimmer.id}</div>
+                    <div>Start: ${swimmer.interval}s</div>
+                    <div>Pace: <input type="number" class="swimmer-pace-input" value="${swimmer.pace}" 
+                         min="20" max="300" step="0.5" onchange="updateSwimmerPace(${index}, this.value)"> sec</div>
+                `;
+                
+                swimmerList.appendChild(row);
+            });
+        }
+
+        function cycleSwimmerColor(swimmerIndex) {
+            const currentColorIndex = swimmerColors.indexOf(swimmerSet[swimmerIndex].color);
+            const nextColorIndex = (currentColorIndex + 1) % swimmerColors.length;
+            swimmerSet[swimmerIndex].color = swimmerColors[nextColorIndex];
+            displaySwimmerSet();
+        }
+
+        function updateSwimmerPace(swimmerIndex, newPace) {
+            swimmerSet[swimmerIndex].pace = parseFloat(newPace);
         }
 
         function applyPaceSettings() {
