@@ -290,7 +290,6 @@ void handleRoot() {
             </div>
 
             <div class="calculated-info">
-                <div><strong>Current Pace:</strong> <span id="currentPace">30.0 sec/50yd</span></div>
                 <div><strong>LEDs per foot:</strong> <span id="ledsPerFoot">1.0</span></div>
                 <div><strong>Time per LED:</strong> <span id="timePerLed">0.20 seconds</span></div>
             </div>
@@ -346,10 +345,6 @@ void handleRoot() {
             const speed = currentSettings.speed;
             const poolLength = parseInt(document.getElementById('poolLength').value);
             const numLeds = parseInt(document.getElementById('numLeds').value);
-
-            // Update pace display
-            const paceSeconds = speedToPace(speed);
-            document.getElementById('currentPace').textContent = paceSeconds.toFixed(1) + ' sec/50yd';
 
             // Update LED metrics
             const ledsPerFoot = numLeds / poolLength;
