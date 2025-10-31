@@ -1,0 +1,20 @@
+# Arduino build files
+build/
+*.hex
+*.bin
+*.elf
+*.map
+
+# Arduino IDE temporary files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*~
+*.bak
+*.tmp
+*.temp
+
+# IDE files
+.vscode/
+*.sublime-*
