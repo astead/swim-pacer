@@ -50,7 +50,7 @@ struct Settings {
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
   int paceDistanceYards = 50;                // Distance for pace calculation in yards
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
-  int numSwimmers = 1;                       // Number of swimmers (light pulses)
+  int numSwimmers = 3;                       // Number of swimmers (light pulses)
   int numRounds = 1;                         // Number of rounds/sets to complete
   uint8_t colorRed = 0;                      // RGB color values
   uint8_t colorGreen = 0;
@@ -329,8 +329,8 @@ void handleRoot() {
 
             <div class="control">
                 <label for="numSwimmers">Number of Swimmers:</label>
-                <input type="range" id="numSwimmers" min="1" max="6" step="1" value="1" oninput="updateNumSwimmers()">
-                <span id="numSwimmersValue">1</span>
+                <input type="range" id="numSwimmers" min="1" max="6" step="1" value="3" oninput="updateNumSwimmers()">
+                <span id="numSwimmersValue">3</span>
             </div>
 
             <!-- Swimmer Set Display -->
@@ -414,7 +414,7 @@ void handleRoot() {
             restTime: 5,
             paceDistance: 50,
             swimmerInterval: 4,
-            numSwimmers: 1,
+            numSwimmers: 3,
             numRounds: 1,
             poolLength: '25',
             stripLength: 23,
@@ -968,7 +968,7 @@ void loadSettings() {
   settings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
   settings.paceDistanceYards = preferences.getInt("paceDistanceYards", 50);
   settings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
-  settings.numSwimmers = preferences.getInt("numSwimmers", 1);
+  settings.numSwimmers = preferences.getInt("numSwimmers", 3);
   settings.numRounds = preferences.getInt("numRounds", 1);
   settings.colorRed = preferences.getUChar("colorRed", 0);
   settings.colorGreen = preferences.getUChar("colorGreen", 0);
