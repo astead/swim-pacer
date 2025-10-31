@@ -51,7 +51,7 @@ struct Settings {
   int paceDistanceYards = 50;                // Distance for pace calculation in yards
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
   int numSwimmers = 3;                       // Number of swimmers (light pulses)
-  int numRounds = 1;                         // Number of rounds/sets to complete
+  int numRounds = 10;                        // Number of rounds/sets to complete
   uint8_t colorRed = 0;                      // RGB color values
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
@@ -301,7 +301,7 @@ void handleRoot() {
 
             <div class="control">
                 <label for="numRounds">Number of Rounds:</label>
-                <input type="number" id="numRounds" min="1" max="20" step="1" value="1" oninput="updateNumRounds()">
+                <input type="number" id="numRounds" min="1" max="20" step="1" value="10" oninput="updateNumRounds()">
             </div>
 
             <div class="control">
@@ -415,7 +415,7 @@ void handleRoot() {
             paceDistance: 50,
             swimmerInterval: 4,
             numSwimmers: 3,
-            numRounds: 1,
+            numRounds: 10,
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
@@ -969,7 +969,7 @@ void loadSettings() {
   settings.paceDistanceYards = preferences.getInt("paceDistanceYards", 50);
   settings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
   settings.numSwimmers = preferences.getInt("numSwimmers", 3);
-  settings.numRounds = preferences.getInt("numRounds", 1);
+  settings.numRounds = preferences.getInt("numRounds", 10);
   settings.colorRed = preferences.getUChar("colorRed", 0);
   settings.colorGreen = preferences.getUChar("colorGreen", 0);
   settings.colorBlue = preferences.getUChar("colorBlue", 255);
