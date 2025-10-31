@@ -187,10 +187,6 @@
                     </div>
                 </div>
             </div>
-
-            <div class="control">
-                <button onclick="applyPaceSettings()">Apply Settings</button>
-            </div>
         </div>
 
         <!-- Advanced Page -->
@@ -637,14 +633,6 @@
 
         function updateSwimmerPace(swimmerIndex, newPace) {
             swimmerSet[swimmerIndex].pace = parseFloat(newPace);
-        }
-
-        function applyPaceSettings() {
-            updateSettings();
-            showPage('main');
-            // Switch to main tab
-            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
-            document.querySelector('.nav-tab').classList.add('active');
         }
 
         function updateSettings() {

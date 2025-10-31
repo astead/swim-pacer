@@ -373,7 +373,7 @@ void handleRoot() {
             <div class="control">
                 <label>Swimmer Colors:</label>
                 <div style="margin-top: 10px;">
-                    <div style="display: flex; align-items: center; margin-bottom: 8px; cursor: pointer;" onclick="selectIndividualColors()">
+                    <div id="individualColorsRow" style="display: flex; align-items: center; margin-bottom: 8px; cursor: pointer; padding: 8px; border-radius: 5px;" onclick="selectIndividualColors()">
                         <div id="individualColorsIcon" style="width: 30px; height: 30px; border: 2px solid #333; border-radius: 50%; position: relative; flex-shrink: 0; min-width: 30px; min-height: 30px; overflow: hidden;">
                             <div style="position: absolute; top: 0; left: 0; width: 50%; height: 50%; background-color: #ff0000;"></div>
                             <div style="position: absolute; top: 0; right: 0; width: 50%; height: 50%; background-color: #00ff00;"></div>
@@ -383,19 +383,15 @@ void handleRoot() {
                         <input type="radio" id="individualColors" name="colorMode" value="individual" checked onchange="updateColorMode()" style="display: none;">
                         <label for="individualColors" style="margin: 0; margin-left: 8px; cursor: pointer;">Individual colors</label>
                     </div>
-                    <div style="display: flex; align-items: center; margin-bottom: 8px; cursor: pointer;" onclick="selectSameColor()">
-                        <div id="colorIndicator" class="swimmer-color" style="background-color: #0000ff; cursor: pointer; flex-shrink: 0; min-width: 30px; min-height: 30px;"></div>
+                    <div id="sameColorRow" style="display: flex; align-items: center; margin-bottom: 8px; cursor: pointer; padding: 8px; border-radius: 5px;">
+                        <div id="colorIndicator" class="swimmer-color" style="background-color: #0000ff; cursor: pointer; flex-shrink: 0; min-width: 30px; min-height: 30px;" onclick="selectSameColorAndOpenPicker(event)"></div>
                         <input type="radio" id="sameColor" name="colorMode" value="same" onchange="updateColorMode()" style="display: none;">
-                        <label for="sameColor" style="margin: 0; margin-left: 8px; cursor: pointer;">Same color</label>
+                        <label for="sameColor" style="margin: 0; margin-left: 8px; cursor: pointer;" onclick="selectSameColor()">Same color</label>
                     </div>
                     <div id="colorPickerSection" style="display: none; margin-top: 10px; margin-left: 24px;">
                         <input type="color" id="swimmerColorPicker" value="#0000ff" onchange="updateSwimmerColor()" style="opacity: 0; pointer-events: none;">
                     </div>
                 </div>
-            </div>
-
-            <div class="control">
-                <button onclick="applyPaceSettings()">Apply Settings</button>
             </div>
         </div>
 
@@ -638,18 +634,34 @@ void handleRoot() {
             updateColorMode();
         }
 
+        function selectSameColorAndOpenPicker(event) {
+            // Prevent the row click from triggering
+            event.stopPropagation();
+            
+            // Select same color mode
+            document.getElementById('sameColor').checked = true;
+            updateColorMode();
+            
+            // Open color picker
+            openColorPicker();
+        }
+
         function updateVisualSelection() {
             const isIndividual = document.getElementById('individualColors').checked;
-            const individualIcon = document.getElementById('individualColorsIcon');
-            const colorIndicator = document.getElementById('colorIndicator');
+            const individualRow = document.getElementById('individualColorsRow');
+            const sameColorRow = document.getElementById('sameColorRow');
             
-            // Update visual feedback
+            // Update visual feedback by highlighting the selected row
             if (isIndividual) {
-                individualIcon.style.border = '3px solid #007bff';
-                colorIndicator.style.border = '2px solid #333';
+                individualRow.style.backgroundColor = '#e3f2fd';
+                individualRow.style.border = '2px solid #007bff';
+                sameColorRow.style.backgroundColor = 'transparent';
+                sameColorRow.style.border = '2px solid transparent';
             } else {
-                individualIcon.style.border = '2px solid #333';
-                colorIndicator.style.border = '3px solid #007bff';
+                individualRow.style.backgroundColor = 'transparent';
+                individualRow.style.border = '2px solid transparent';
+                sameColorRow.style.backgroundColor = '#e3f2fd';
+                sameColorRow.style.border = '2px solid #007bff';
             }
         }
 
@@ -827,14 +839,6 @@ void handleRoot() {
 
         function updateSwimmerPace(swimmerIndex, newPace) {
             swimmerSet[swimmerIndex].pace = parseFloat(newPace);
-        }
-
-        function applyPaceSettings() {
-            updateSettings();
-            showPage('main');
-            // Switch to main tab
-            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
-            document.querySelector('.nav-tab').classList.add('active');
         }
 
         function updateSettings() {
