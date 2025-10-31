@@ -56,7 +56,7 @@ struct Settings {
   uint8_t colorRed = 0;                      // RGB color values
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
-  uint8_t brightness = 100;                  // Overall brightness (0-255)
+  uint8_t brightness = 196;                  // Overall brightness (0-255)
   bool isRunning = false;                    // Whether the effect is active (default: stopped)
 };
 
@@ -527,8 +527,8 @@ void handleRoot() {
             <h3>Light Settings</h3>
             <div class="control">
                 <label for="brightness">Brightness:</label>
-                <input type="range" id="brightness" min="20" max="255" value="150" oninput="updateBrightness()">
-                <span id="brightnessValue">150</span>
+                <input type="range" id="brightness" min="0" max="100" value="75" oninput="updateBrightness()">
+                <span id="brightnessValue">75%</span>
             </div>
 
             <div class="control">
@@ -601,7 +601,7 @@ void handleRoot() {
         let currentSettings = {
             speed: 5.0,
             color: 'red',
-            brightness: 150,
+            brightness: 196,
             pulseWidth: 1.0,
             restTime: 5,
             paceDistance: 50,
@@ -711,10 +711,24 @@ void handleRoot() {
         }
 
         function updateBrightness() {
-            const brightness = document.getElementById('brightness').value;
-            currentSettings.brightness = parseInt(brightness);
-            document.getElementById('brightnessValue').textContent = brightness;
+            const brightnessPercent = document.getElementById('brightness').value;
+            
+            // Convert percentage (0-100) to internal value (20-255)
+            // Formula: internal = 20 + (percent / 100) * (255 - 20)
+            const internalBrightness = Math.round(20 + (brightnessPercent / 100) * (255 - 20));
+            
+            currentSettings.brightness = internalBrightness;
+            document.getElementById('brightnessValue').textContent = brightnessPercent + '%';
             updateSettings();
+        }
+
+        function initializeBrightnessDisplay() {
+            // Convert internal brightness (20-255) back to percentage (0-100)
+            // Formula: percent = (internal - 20) * 100 / (255 - 20)
+            const brightnessPercent = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
+            
+            document.getElementById('brightness').value = brightnessPercent;
+            document.getElementById('brightnessValue').textContent = brightnessPercent + '%';
         }
 
         function updatePulseWidth() {
@@ -1287,6 +1301,7 @@ void handleRoot() {
         // Initialize
         updateCalculations();
         updateVisualSelection();
+        initializeBrightnessDisplay();
     </script>
 </body>
 </html>
