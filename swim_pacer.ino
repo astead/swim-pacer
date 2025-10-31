@@ -373,14 +373,20 @@ void handleRoot() {
             <div class="control">
                 <label>Swimmer Colors:</label>
                 <div style="margin-top: 10px;">
-                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                        <input type="radio" id="individualColors" name="colorMode" value="individual" checked onchange="updateColorMode()" style="margin: 0;">
-                        <label for="individualColors" style="margin: 0; margin-left: 6px;">Individual colors</label>
+                    <div style="display: flex; align-items: center; margin-bottom: 8px; cursor: pointer;" onclick="selectIndividualColors()">
+                        <div id="individualColorsIcon" style="width: 30px; height: 30px; border: 2px solid #333; border-radius: 50%; position: relative; flex-shrink: 0; min-width: 30px; min-height: 30px; overflow: hidden;">
+                            <div style="position: absolute; top: 0; left: 0; width: 50%; height: 50%; background-color: #ff0000;"></div>
+                            <div style="position: absolute; top: 0; right: 0; width: 50%; height: 50%; background-color: #00ff00;"></div>
+                            <div style="position: absolute; bottom: 0; left: 0; width: 50%; height: 50%; background-color: #0000ff;"></div>
+                            <div style="position: absolute; bottom: 0; right: 0; width: 50%; height: 50%; background-color: #ffff00;"></div>
+                        </div>
+                        <input type="radio" id="individualColors" name="colorMode" value="individual" checked onchange="updateColorMode()" style="display: none;">
+                        <label for="individualColors" style="margin: 0; margin-left: 8px; cursor: pointer;">Individual colors</label>
                     </div>
-                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                        <input type="radio" id="sameColor" name="colorMode" value="same" onchange="updateColorMode()" style="margin: 0;">
-                        <label for="sameColor" style="margin: 0; margin-left: 6px;">Same color</label>
-                        <div id="colorIndicator" class="swimmer-color" style="background-color: #0000ff; margin-left: 8px; cursor: pointer; flex-shrink: 0; min-width: 30px; min-height: 30px;" onclick="openColorPicker()" title="Click to choose color"></div>
+                    <div style="display: flex; align-items: center; margin-bottom: 8px; cursor: pointer;" onclick="selectSameColor()">
+                        <div id="colorIndicator" class="swimmer-color" style="background-color: #0000ff; cursor: pointer; flex-shrink: 0; min-width: 30px; min-height: 30px;"></div>
+                        <input type="radio" id="sameColor" name="colorMode" value="same" onchange="updateColorMode()" style="display: none;">
+                        <label for="sameColor" style="margin: 0; margin-left: 8px; cursor: pointer;">Same color</label>
                     </div>
                     <div id="colorPickerSection" style="display: none; margin-top: 10px; margin-left: 24px;">
                         <input type="color" id="swimmerColorPicker" value="#0000ff" onchange="updateSwimmerColor()" style="opacity: 0; pointer-events: none;">
@@ -618,7 +624,33 @@ void handleRoot() {
         function updateColorMode() {
             const colorMode = document.querySelector('input[name="colorMode"]:checked').value;
             currentSettings.colorMode = colorMode;
+            updateVisualSelection();
             updateSettings();
+        }
+
+        function selectIndividualColors() {
+            document.getElementById('individualColors').checked = true;
+            updateColorMode();
+        }
+
+        function selectSameColor() {
+            document.getElementById('sameColor').checked = true;
+            updateColorMode();
+        }
+
+        function updateVisualSelection() {
+            const isIndividual = document.getElementById('individualColors').checked;
+            const individualIcon = document.getElementById('individualColorsIcon');
+            const colorIndicator = document.getElementById('colorIndicator');
+            
+            // Update visual feedback
+            if (isIndividual) {
+                individualIcon.style.border = '3px solid #007bff';
+                colorIndicator.style.border = '2px solid #333';
+            } else {
+                individualIcon.style.border = '2px solid #333';
+                colorIndicator.style.border = '3px solid #007bff';
+            }
         }
 
         function openColorPicker() {
@@ -903,6 +935,7 @@ void handleRoot() {
 
         // Initialize
         updateCalculations();
+        updateVisualSelection();
     </script>
 </body>
 </html>
