@@ -118,6 +118,12 @@
             </div>
 
             <div class="control">
+                <label for="swimmerInterval">Swimmer Interval (seconds):</label>
+                <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
+                <span id="swimmerIntervalValue">4</span>
+            </div>
+
+            <div class="control">
                 <button onclick="applyPaceSettings()">Apply Settings</button>
             </div>
         </div>
@@ -167,6 +173,7 @@
             pulseWidth: 1.0,
             restTime: 5,
             paceDistance: 50,
+            swimmerInterval: 4,
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
@@ -280,6 +287,13 @@
             updateSettings();
         }
 
+        function updateSwimmerInterval() {
+            const swimmerInterval = document.getElementById('swimmerInterval').value;
+            currentSettings.swimmerInterval = parseInt(swimmerInterval);
+            document.getElementById('swimmerIntervalValue').textContent = swimmerInterval;
+            updateSettings();
+        }
+
         function togglePacer() {
             currentSettings.isRunning = !currentSettings.isRunning;
 
@@ -357,6 +371,14 @@
                 body: `paceDistance=${currentSettings.paceDistance}`
             }).catch(error => {
                 console.log('Pace distance update - server not available (standalone mode)');
+            });
+
+            fetch('/setSwimmerInterval', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `swimmerInterval=${currentSettings.swimmerInterval}`
+            }).catch(error => {
+                console.log('Swimmer interval update - server not available (standalone mode)');
             });
         }
 

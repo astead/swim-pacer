@@ -49,6 +49,7 @@ struct Settings {
   float speedFeetPerSecond = 5.56;           // Speed in feet per second
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
   int paceDistanceYards = 50;                // Distance for pace calculation in yards
+  int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
   uint8_t colorRed = 0;                      // RGB color values
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
@@ -168,6 +169,7 @@ void setupWebServer() {
   server.on("/setLedsPerMeter", HTTP_POST, handleSetLedsPerMeter);
   server.on("/setRestTime", HTTP_POST, handleSetRestTime);
   server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
+  server.on("/setSwimmerInterval", HTTP_POST, handleSetSwimmerInterval);
 
   server.begin();
   Serial.println("Web server started");
@@ -295,6 +297,12 @@ void handleRoot() {
             </div>
 
             <div class="control">
+                <label for="swimmerInterval">Swimmer Interval (seconds):</label>
+                <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
+                <span id="swimmerIntervalValue">4</span>
+            </div>
+
+            <div class="control">
                 <button onclick="applyPaceSettings()">Apply Settings</button>
             </div>
         </div>
@@ -344,6 +352,7 @@ void handleRoot() {
             pulseWidth: 1.0,
             restTime: 5,
             paceDistance: 50,
+            swimmerInterval: 4,
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
@@ -457,6 +466,13 @@ void handleRoot() {
             updateSettings();
         }
 
+        function updateSwimmerInterval() {
+            const swimmerInterval = document.getElementById('swimmerInterval').value;
+            currentSettings.swimmerInterval = parseInt(swimmerInterval);
+            document.getElementById('swimmerIntervalValue').textContent = swimmerInterval;
+            updateSettings();
+        }
+
         function togglePacer() {
             currentSettings.isRunning = !currentSettings.isRunning;
 
@@ -534,6 +550,14 @@ void handleRoot() {
                 body: `paceDistance=${currentSettings.paceDistance}`
             }).catch(error => {
                 console.log('Pace distance update - server not available (standalone mode)');
+            });
+
+            fetch('/setSwimmerInterval', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `swimmerInterval=${currentSettings.swimmerInterval}`
+            }).catch(error => {
+                console.log('Swimmer interval update - server not available (standalone mode)');
             });
         }
 
@@ -726,6 +750,15 @@ void handleSetPaceDistance() {
   server.send(200, "text/plain", "Pace distance updated");
 }
 
+void handleSetSwimmerInterval() {
+  if (server.hasArg("swimmerInterval")) {
+    int swimmerInterval = server.arg("swimmerInterval").toInt();
+    settings.swimmerIntervalSeconds = swimmerInterval;
+    saveSettings();
+  }
+  server.send(200, "text/plain", "Swimmer interval updated");
+}
+
 void saveSettings() {
   preferences.putFloat("poolLengthM", settings.poolLengthMeters);
   preferences.putFloat("stripLengthM", settings.stripLengthMeters);
@@ -734,6 +767,7 @@ void saveSettings() {
   preferences.putFloat("speedFPS", settings.speedFeetPerSecond);
   preferences.putInt("restTimeSeconds", settings.restTimeSeconds);
   preferences.putInt("paceDistanceYards", settings.paceDistanceYards);
+  preferences.putInt("swimmerInterval", settings.swimmerIntervalSeconds);
   preferences.putUChar("colorRed", settings.colorRed);
   preferences.putUChar("colorGreen", settings.colorGreen);
   preferences.putUChar("colorBlue", settings.colorBlue);
@@ -751,6 +785,7 @@ void loadSettings() {
   settings.speedFeetPerSecond = preferences.getFloat("speedFPS", 5.56);
   settings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
   settings.paceDistanceYards = preferences.getInt("paceDistanceYards", 50);
+  settings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
   settings.colorRed = preferences.getUChar("colorRed", 0);
   settings.colorGreen = preferences.getUChar("colorGreen", 0);
   settings.colorBlue = preferences.getUChar("colorBlue", 255);
