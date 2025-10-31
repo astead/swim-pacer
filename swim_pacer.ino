@@ -380,12 +380,22 @@ void handleRoot() {
                     <div style="display: flex; align-items: center; margin-bottom: 8px;">
                         <input type="radio" id="sameColor" name="colorMode" value="same" onchange="updateColorMode()" style="margin: 0;">
                         <label for="sameColor" style="margin: 0; margin-left: 6px;">Same color</label>
-                        <div id="colorIndicator" class="swimmer-color" style="background-color: #0000ff; margin-left: 8px; cursor: default; flex-shrink: 0; min-width: 30px; min-height: 30px;"></div>
+                        <div id="colorIndicator" class="swimmer-color" style="background-color: #0000ff; margin-left: 8px; cursor: pointer; flex-shrink: 0; min-width: 30px; min-height: 30px;" onclick="openColorPicker()" title="Click to choose color"></div>
                     </div>
                     <div id="colorPickerSection" style="display: none; margin-top: 10px; margin-left: 24px;">
-                        <label for="swimmerColorPicker">Choose color:</label>
-                        <input type="color" id="swimmerColorPicker" value="#0000ff" onchange="updateSwimmerColor()" style="margin-left: 8px;">
+                        <input type="color" id="swimmerColorPicker" value="#0000ff" onchange="updateSwimmerColor()" style="opacity: 0; pointer-events: none;">
                     </div>
+                </div>
+            </div>
+
+            <!-- Custom Color Picker Modal -->
+            <div id="customColorPicker" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;" onclick="closeColorPicker()">
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" onclick="event.stopPropagation()">
+                    <h4 style="margin: 0 0 15px 0; text-align: center;">Choose Color</h4>
+                    <div id="colorGrid" style="display: grid; grid-template-columns: repeat(6, 40px); gap: 8px; margin-bottom: 15px;">
+                        <!-- Colors will be populated by JavaScript -->
+                    </div>
+                    <button onclick="closeColorPicker()" style="width: 100%; padding: 8px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">Close</button>
                 </div>
             </div>
 
@@ -607,15 +617,56 @@ void handleRoot() {
         function updateColorMode() {
             const colorMode = document.querySelector('input[name="colorMode"]:checked').value;
             currentSettings.colorMode = colorMode;
+            updateSettings();
+        }
+
+        function openColorPicker() {
+            // Populate color grid if not already done
+            populateColorGrid();
             
-            // Show/hide color picker based on selection
-            const colorPickerSection = document.getElementById('colorPickerSection');
-            if (colorMode === 'same') {
-                colorPickerSection.style.display = 'block';
-            } else {
-                colorPickerSection.style.display = 'none';
-            }
+            // Show the custom color picker modal
+            document.getElementById('customColorPicker').style.display = 'block';
+        }
+
+        function closeColorPicker() {
+            document.getElementById('customColorPicker').style.display = 'none';
+        }
+
+        function populateColorGrid() {
+            const colorGrid = document.getElementById('colorGrid');
+            if (colorGrid.children.length > 0) return; // Already populated
             
+            // Define a palette of common colors
+            const colors = [
+                '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff',
+                '#800000', '#008000', '#000080', '#808000', '#800080', '#008080',
+                '#ff8000', '#80ff00', '#8000ff', '#ff0080', '#0080ff', '#ff8080',
+                '#ffa500', '#90ee90', '#add8e6', '#f0e68c', '#dda0dd', '#afeeee',
+                '#ffffff', '#c0c0c0', '#808080', '#404040', '#202020', '#000000'
+            ];
+            
+            colors.forEach(color => {
+                const colorDiv = document.createElement('div');
+                colorDiv.style.cssText = `
+                    width: 40px; 
+                    height: 40px; 
+                    background-color: ${color}; 
+                    border: 2px solid #333; 
+                    border-radius: 50%; 
+                    cursor: pointer;
+                    transition: transform 0.1s;
+                `;
+                colorDiv.onmouseover = () => colorDiv.style.transform = 'scale(1.1)';
+                colorDiv.onmouseout = () => colorDiv.style.transform = 'scale(1)';
+                colorDiv.onclick = () => selectColor(color);
+                colorGrid.appendChild(colorDiv);
+            });
+        }
+
+        function selectColor(color) {
+            currentSettings.swimmerColor = color;
+            document.getElementById('colorIndicator').style.backgroundColor = color;
+            closeColorPicker();
             updateSettings();
         }
 
