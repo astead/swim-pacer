@@ -150,6 +150,12 @@ void setupWebServer() {
   // Handle start/stop commands
   server.on("/control", HTTP_POST, handleControl);
 
+  // New simplified handlers for the updated interface
+  server.on("/toggle", HTTP_POST, handleToggle);
+  server.on("/setSpeed", HTTP_POST, handleSetSpeed);
+  server.on("/setColor", HTTP_POST, handleSetColor);
+  server.on("/setBrightness", HTTP_POST, handleSetBrightness);
+
   server.begin();
   Serial.println("Web server started");
 }
@@ -159,162 +165,274 @@ void handleRoot() {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Swim Pacer Configuration</title>
+    <title>Swim Pacer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: Arial; margin: 20px; background: #f0f0f0; }
         .container { background: white; padding: 20px; border-radius: 10px; max-width: 500px; margin: 0 auto; }
         .control { margin: 15px 0; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input, button { padding: 8px; border-radius: 5px; border: 1px solid #ccc; width: 100%; box-sizing: border-box; }
+        input, button, select { padding: 8px; border-radius: 5px; border: 1px solid #ccc; width: 100%; box-sizing: border-box; }
         button { background: #007bff; color: white; cursor: pointer; margin: 5px 0; }
         button:hover { background: #0056b3; }
+        button.secondary { background: #6c757d; }
+        button.secondary:hover { background: #545b62; }
         .status { padding: 10px; border-radius: 5px; margin: 10px 0; }
         .running { background: #d4edda; color: #155724; }
         .stopped { background: #f8d7da; color: #721c24; }
         .color-preview { width: 50px; height: 30px; border: 1px solid #ccc; display: inline-block; margin-left: 10px; }
+        
+        /* Navigation */
+        .nav-tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #dee2e6; }
+        .nav-tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; background: #f8f9fa; border: none; border-bottom: 3px solid transparent; }
+        .nav-tab.active { background: white; border-bottom-color: #007bff; color: #007bff; font-weight: bold; }
+        .nav-tab:hover { background: #e9ecef; }
+        
+        /* Page content */
+        .page { display: none; }
+        .page.active { display: block; }
+        
+        /* Main page specific */
+        .big-button { font-size: 18px; padding: 15px; margin: 10px 0; }
+        .color-wheel { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+        .color-option { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; }
+        .color-option.selected { border-color: #333; }
+        
+        .calculated-info {
+            background: #e7f3ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🏊‍♂️ Swim Pacer Configuration</h1>
-
-        <div class="status" id="status">Loading...</div>
-
-        <div class="control">
-            <button onclick="togglePacer()" id="toggleBtn">Toggle</button>
+        <h1>Swim Pacer</h1>
+        
+        <!-- Navigation -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showPage('main')">Main Pacer</button>
+            <button class="nav-tab" onclick="showPage('coach')">Coach Config</button>
+            <button class="nav-tab" onclick="showPage('advanced')">Advanced</button>
         </div>
-
-        <form onsubmit="updateSettings(event)">
+        
+        <!-- Main Pacer Page -->
+        <div id="main" class="page active">
+            <div class="status stopped" id="status">Pacer Stopped</div>
+            
             <div class="control">
-                <label>Total LEDs:</label>
-                <input type="number" id="totalLEDs" min="1" max="1000">
+                <button class="big-button" onclick="togglePacer()" id="toggleBtn">Start Pacer</button>
             </div>
-
+            
             <div class="control">
-                <label>LEDs per Meter:</label>
-                <input type="number" id="ledsPerMeter" min="1" max="200">
+                <label>LED Color:</label>
+                <div class="color-wheel">
+                    <div class="color-option selected" style="background: red;" onclick="selectColor('red')" data-color="red"></div>
+                    <div class="color-option" style="background: green;" onclick="selectColor('green')" data-color="green"></div>
+                    <div class="color-option" style="background: blue;" onclick="selectColor('blue')" data-color="blue"></div>
+                    <div class="color-option" style="background: yellow;" onclick="selectColor('yellow')" data-color="yellow"></div>
+                    <div class="color-option" style="background: purple;" onclick="selectColor('purple')" data-color="purple"></div>
+                    <div class="color-option" style="background: cyan;" onclick="selectColor('cyan')" data-color="cyan"></div>
+                    <div class="color-option" style="background: white; border: 1px solid #ccc;" onclick="selectColor('white')" data-color="white"></div>
+                </div>
             </div>
-
+            
             <div class="control">
-                <label>Pulse Width (feet):</label>
-                <input type="number" id="pulseWidthFeet" step="0.1" min="0.1" max="10">
+                <label for="brightness">Brightness:</label>
+                <input type="range" id="brightness" min="20" max="255" value="150" oninput="updateBrightness()">
+                <span id="brightnessValue">150</span>
             </div>
-
+        </div>
+        
+        <!-- Coach Config Page -->
+        <div id="coach" class="page">
+            <h2>Coach Configuration</h2>
             <div class="control">
-                <label>Speed (feet per second):</label>
-                <input type="number" id="speedFeetPerSecond" step="0.1" min="0.1" max="20">
+                <label for="pacePer50">Target Pace (seconds per 50 yards):</label>
+                <input type="number" id="pacePer50" value="30" min="20" max="60" step="0.5" oninput="updateFromPace()">
             </div>
-
+            
+            <div class="calculated-info">
+                <div><strong>Swimming Speed:</strong> <span id="swimmingSpeed">5.68 ft/s</span></div>
+                <div><strong>Pool Length:</strong> 50 yards (150 feet)</div>
+                <div><strong>Time per length:</strong> <span id="timePerLength">26.4 seconds</span></div>
+            </div>
+            
             <div class="control">
-                <label>Color - Red (0-255):</label>
-                <input type="number" id="colorRed" min="0" max="255">
+                <button onclick="applyPaceSettings()">Apply Settings</button>
             </div>
-
+        </div>
+        
+        <!-- Advanced Page -->
+        <div id="advanced" class="page">
+            <h2>Advanced Settings</h2>
+            
             <div class="control">
-                <label>Color - Green (0-255):</label>
-                <input type="number" id="colorGreen" min="0" max="255">
+                <label for="speed">Speed (feet per second):</label>
+                <input type="number" id="speed" value="5.0" min="1" max="20" step="0.1" oninput="updateFromSpeed()">
             </div>
-
+            
             <div class="control">
-                <label>Color - Blue (0-255):</label>
-                <input type="number" id="colorBlue" min="0" max="255">
-                <div class="color-preview" id="colorPreview"></div>
+                <label for="poolLength">Pool Length (feet):</label>
+                <select id="poolLength" onchange="updateCalculations()">
+                    <option value="150">50 yards (150 feet)</option>
+                    <option value="75">25 yards (75 feet)</option>
+                    <option value="82">25 meters (82 feet)</option>
+                    <option value="164">50 meters (164 feet)</option>
+                </select>
             </div>
-
+            
             <div class="control">
-                <label>Brightness (0-255):</label>
-                <input type="number" id="brightness" min="0" max="255">
+                <label for="numLeds">Number of LEDs:</label>
+                <input type="number" id="numLeds" value="150" min="10" max="300" onchange="updateSettings()">
             </div>
-
-            <button type="submit">Update Settings</button>
-        </form>
+            
+            <div class="calculated-info">
+                <div><strong>Current Pace:</strong> <span id="currentPace">30.0 sec/50yd</span></div>
+                <div><strong>LEDs per foot:</strong> <span id="ledsPerFoot">1.0</span></div>
+                <div><strong>Time per LED:</strong> <span id="timePerLed">0.20 seconds</span></div>
+            </div>
+            
+            <div class="control">
+                <button onclick="saveSettings()">Save Settings</button>
+            </div>
+        </div>
     </div>
 
     <script>
-        function loadSettings() {
-            fetch('/settings')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('totalLEDs').value = data.totalLEDs;
-                    document.getElementById('ledsPerMeter').value = data.ledsPerMeter;
-                    document.getElementById('pulseWidthFeet').value = data.pulseWidthFeet;
-                    document.getElementById('speedFeetPerSecond').value = data.speedFeetPerSecond;
-                    document.getElementById('colorRed').value = data.colorRed;
-                    document.getElementById('colorGreen').value = data.colorGreen;
-                    document.getElementById('colorBlue').value = data.colorBlue;
-                    document.getElementById('brightness').value = data.brightness;
+        let currentSettings = {
+            speed: 5.0,
+            color: 'red',
+            brightness: 150,
+            poolLength: 150,
+            numLeds: 150,
+            isRunning: false
+        };
 
-                    updateStatus(data.isRunning);
-                    updateColorPreview();
-                });
+        // Page navigation
+        function showPage(pageId) {
+            // Hide all pages
+            document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+            
+            // Show selected page
+            document.getElementById(pageId).classList.add('active');
+            event.target.classList.add('active');
         }
 
-        function updateSettings(event) {
-            event.preventDefault();
+        // Conversion functions for swimming
+        function paceToSpeed(paceSeconds, poolYards = 50) {
+            const poolFeet = poolYards * 3; // Convert yards to feet
+            return poolFeet / paceSeconds;
+        }
 
-            const formData = new FormData();
-            formData.append('totalLEDs', document.getElementById('totalLEDs').value);
-            formData.append('ledsPerMeter', document.getElementById('ledsPerMeter').value);
-            formData.append('pulseWidthFeet', document.getElementById('pulseWidthFeet').value);
-            formData.append('speedFeetPerSecond', document.getElementById('speedFeetPerSecond').value);
-            formData.append('colorRed', document.getElementById('colorRed').value);
-            formData.append('colorGreen', document.getElementById('colorGreen').value);
-            formData.append('colorBlue', document.getElementById('colorBlue').value);
-            formData.append('brightness', document.getElementById('brightness').value);
+        function speedToPace(speedFps, poolYards = 50) {
+            const poolFeet = poolYards * 3; // Convert yards to feet
+            return poolFeet / speedFps;
+        }
 
-            fetch('/update', {
-                method: 'POST',
-                body: formData
-            }).then(() => {
-                alert('Settings updated!');
-                loadSettings();
-            });
+        function updateFromPace() {
+            const pace = parseFloat(document.getElementById('pacePer50').value);
+            const speed = paceToSpeed(pace);
+            currentSettings.speed = speed;
+            
+            document.getElementById('speed').value = speed.toFixed(1);
+            updateCalculations();
+        }
+
+        function updateFromSpeed() {
+            const speed = parseFloat(document.getElementById('speed').value);
+            currentSettings.speed = speed;
+            
+            const pace = speedToPace(speed);
+            document.getElementById('pacePer50').value = pace.toFixed(1);
+            updateCalculations();
+        }
+
+        function updateCalculations() {
+            const speed = currentSettings.speed;
+            const poolLength = parseInt(document.getElementById('poolLength').value);
+            const numLeds = parseInt(document.getElementById('numLeds').value);
+            
+            // Update swimming metrics
+            document.getElementById('swimmingSpeed').textContent = speed.toFixed(2) + ' ft/s';
+            document.getElementById('timePerLength').textContent = (poolLength / speed).toFixed(1) + ' seconds';
+            
+            // Update pace display
+            const paceSeconds = speedToPace(speed);
+            document.getElementById('currentPace').textContent = paceSeconds.toFixed(1) + ' sec/50yd';
+            
+            // Update LED metrics
+            const ledsPerFoot = numLeds / poolLength;
+            const timePerLed = 1 / (speed * ledsPerFoot);
+            document.getElementById('ledsPerFoot').textContent = ledsPerFoot.toFixed(1);
+            document.getElementById('timePerLed').textContent = (timePerLed * 1000).toFixed(0) + ' ms';
+        }
+
+        function selectColor(color) {
+            currentSettings.color = color;
+            document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('selected'));
+            document.querySelector(`[data-color="${color}"]`).classList.add('selected');
+            updateSettings();
+        }
+
+        function updateBrightness() {
+            const brightness = document.getElementById('brightness').value;
+            currentSettings.brightness = parseInt(brightness);
+            document.getElementById('brightnessValue').textContent = brightness;
+            updateSettings();
         }
 
         function togglePacer() {
-            const formData = new FormData();
-            formData.append('action', 'toggle');
-
-            fetch('/control', {
-                method: 'POST',
-                body: formData
-            }).then(() => {
-                loadSettings();
+            currentSettings.isRunning = !currentSettings.isRunning;
+            
+            fetch('/toggle', { method: 'POST' })
+            .then(response => response.text())
+            .then(result => {
+                document.getElementById('status').textContent = result;
+                document.getElementById('status').className = 'status ' + (currentSettings.isRunning ? 'running' : 'stopped');
+                document.getElementById('toggleBtn').textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
             });
         }
 
-        function updateStatus(isRunning) {
-            const status = document.getElementById('status');
-            const toggleBtn = document.getElementById('toggleBtn');
-
-            if (isRunning) {
-                status.textContent = 'Status: RUNNING';
-                status.className = 'status running';
-                toggleBtn.textContent = 'Stop Pacer';
-            } else {
-                status.textContent = 'Status: STOPPED';
-                status.className = 'status stopped';
-                toggleBtn.textContent = 'Start Pacer';
-            }
+        function applyPaceSettings() {
+            updateSettings();
+            showPage('main');
+            // Switch to main tab
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelector('.nav-tab').classList.add('active');
         }
 
-        function updateColorPreview() {
-            const r = document.getElementById('colorRed').value;
-            const g = document.getElementById('colorGreen').value;
-            const b = document.getElementById('colorBlue').value;
-
-            document.getElementById('colorPreview').style.backgroundColor =
-                `rgb(${r}, ${g}, ${b})`;
+        function updateSettings() {
+            fetch('/setSpeed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `speed=${currentSettings.speed}`
+            });
         }
 
-        // Update color preview when values change
-        document.getElementById('colorRed').addEventListener('input', updateColorPreview);
-        document.getElementById('colorGreen').addEventListener('input', updateColorPreview);
-        document.getElementById('colorBlue').addEventListener('input', updateColorPreview);
+        function saveSettings() {
+            updateSettings();
+            
+            fetch('/setColor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `color=${currentSettings.color}`
+            });
+            
+            fetch('/setBrightness', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `brightness=${currentSettings.brightness}`
+            });
+            
+            alert('Settings saved!');
+        }
 
-        // Load initial settings
-        loadSettings();
+        // Initialize
+        updateCalculations();
     </script>
 </body>
 </html>
@@ -372,6 +490,59 @@ void handleControl() {
   }
 
   server.send(200, "text/plain", "Control updated");
+}
+
+// New simplified handlers for the updated interface
+void handleToggle() {
+  settings.isRunning = !settings.isRunning;
+  saveSettings();
+  
+  String status = settings.isRunning ? "Pacer Started" : "Pacer Stopped";
+  server.send(200, "text/plain", status);
+}
+
+void handleSetSpeed() {
+  if (server.hasArg("speed")) {
+    float speed = server.arg("speed").toFloat();
+    settings.speedFeetPerSecond = speed;
+    saveSettings();
+    needsRecalculation = true;
+  }
+  server.send(200, "text/plain", "Speed updated");
+}
+
+void handleSetColor() {
+  if (server.hasArg("color")) {
+    String color = server.arg("color");
+    // Convert color name to RGB values
+    if (color == "red") {
+      settings.colorRed = 255; settings.colorGreen = 0; settings.colorBlue = 0;
+    } else if (color == "green") {
+      settings.colorRed = 0; settings.colorGreen = 255; settings.colorBlue = 0;
+    } else if (color == "blue") {
+      settings.colorRed = 0; settings.colorGreen = 0; settings.colorBlue = 255;
+    } else if (color == "yellow") {
+      settings.colorRed = 255; settings.colorGreen = 255; settings.colorBlue = 0;
+    } else if (color == "purple") {
+      settings.colorRed = 128; settings.colorGreen = 0; settings.colorBlue = 128;
+    } else if (color == "cyan") {
+      settings.colorRed = 0; settings.colorGreen = 255; settings.colorBlue = 255;
+    } else if (color == "white") {
+      settings.colorRed = 255; settings.colorGreen = 255; settings.colorBlue = 255;
+    }
+    saveSettings();
+  }
+  server.send(200, "text/plain", "Color updated");
+}
+
+void handleSetBrightness() {
+  if (server.hasArg("brightness")) {
+    int brightness = server.arg("brightness").toInt();
+    settings.brightness = brightness;
+    FastLED.setBrightness(brightness);
+    saveSettings();
+  }
+  server.send(200, "text/plain", "Brightness updated");
 }
 
 void saveSettings() {
