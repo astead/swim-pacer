@@ -335,7 +335,8 @@ void handleRoot() {
 
             <!-- Swimmer Set Display -->
             <div id="swimmerSet" style="display: none;">
-                <h3>Swimmer Set Configuration</h3>
+                <h3>Swim Set</h3>
+                <div id="setDetails" style="font-size: 16px; font-weight: bold; margin: 10px 0; padding: 10px; background: #f0f8ff; border-radius: 5px;"></div>
                 <div id="swimmerList"></div>
             </div>
         </div>
@@ -600,6 +601,15 @@ void handleRoot() {
         }
 
         function displaySwimmerSet() {
+            // Update set details in swim practice nomenclature
+            const setDetails = document.getElementById('setDetails');
+            const paceDistance = currentSettings.paceDistance;
+            const avgPace = swimmerSet.length > 0 ? swimmerSet[0].pace : parseFloat(document.getElementById('pacePer50').value);
+            const restTime = currentSettings.restTime;
+            const numRounds = currentSettings.numRounds;
+            
+            setDetails.innerHTML = `${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
+            
             const swimmerList = document.getElementById('swimmerList');
             swimmerList.innerHTML = '';
             
