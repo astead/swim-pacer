@@ -80,6 +80,33 @@
         <div id="main" class="page active">
             <div class="status stopped" id="status">Pacer Stopped</div>
 
+            <!-- Detailed Status (shown when running) -->
+            <div id="detailedStatus" style="display: none; background: #e7f3ff; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #2196F3;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h4 style="margin: 0; color: #1976D2;">Current Status</h4>
+                    <div id="elapsedTime" style="font-weight: bold; color: #1976D2;">00:00</div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
+                    <div>
+                        <strong>Round:</strong> <span id="currentRound">1</span> of <span id="totalRounds">10</span>
+                    </div>
+                    <div>
+                        <strong>Progress:</strong> <span id="roundProgress">0%</span>
+                    </div>
+                    <div>
+                        <strong>Active Swimmers:</strong> <span id="activeSwimmers">0</span>
+                    </div>
+                    <div>
+                        <strong>Next Event:</strong> <span id="nextEvent">Starting...</span>
+                    </div>
+                </div>
+                <div style="margin-top: 10px;">
+                    <div style="background: #fff; border-radius: 4px; padding: 8px; font-size: 12px;">
+                        <strong>Current Phase:</strong> <span id="currentPhase">Preparing to start</span>
+                    </div>
+                </div>
+            </div>
+
             <div class="control">
                 <div class="button-group">
                     <button class="big-button" onclick="togglePacer()" id="toggleBtn">Start Pacer</button>
@@ -493,6 +520,11 @@
             updateSettings();
         }
 
+        // Pacer status tracking variables
+        let pacerStartTime = 0;
+        let currentRound = 1;
+        let statusUpdateInterval = null;
+
         function togglePacer() {
             currentSettings.isRunning = !currentSettings.isRunning;
 
@@ -501,6 +533,21 @@
             document.getElementById('status').textContent = status;
             document.getElementById('status').className = 'status ' + (currentSettings.isRunning ? 'running' : 'stopped');
             document.getElementById('toggleBtn').textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
+
+            // Handle detailed status display
+            const detailedStatus = document.getElementById('detailedStatus');
+            if (currentSettings.isRunning) {
+                // Starting pacer
+                pacerStartTime = Date.now();
+                currentRound = 1;
+                detailedStatus.style.display = 'block';
+                initializePacerStatus();
+                startStatusUpdates();
+            } else {
+                // Stopping pacer
+                detailedStatus.style.display = 'none';
+                stopStatusUpdates();
+            }
 
             // Try to notify server (will fail gracefully in standalone mode)
             fetch('/toggle', { method: 'POST' })
@@ -513,6 +560,74 @@
                 // Server not available (standalone mode), keep local status
                 console.log('Running in standalone mode - server not available');
             });
+        }
+
+        function initializePacerStatus() {
+            document.getElementById('currentRound').textContent = currentRound;
+            document.getElementById('totalRounds').textContent = currentSettings.numRounds;
+            document.getElementById('roundProgress').textContent = '0%';
+            document.getElementById('activeSwimmers').textContent = '0';
+            document.getElementById('nextEvent').textContent = 'Starting...';
+            document.getElementById('currentPhase').textContent = 'Preparing to start';
+            document.getElementById('elapsedTime').textContent = '00:00';
+        }
+
+        function startStatusUpdates() {
+            statusUpdateInterval = setInterval(updatePacerStatus, 1000); // Update every second
+        }
+
+        function stopStatusUpdates() {
+            if (statusUpdateInterval) {
+                clearInterval(statusUpdateInterval);
+                statusUpdateInterval = null;
+            }
+        }
+
+        function updatePacerStatus() {
+            if (!currentSettings.isRunning) return;
+
+            const elapsedSeconds = Math.floor((Date.now() - pacerStartTime) / 1000);
+            const minutes = Math.floor(elapsedSeconds / 60);
+            const seconds = elapsedSeconds % 60;
+            document.getElementById('elapsedTime').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+            // Calculate current phase and progress
+            const paceSeconds = parseFloat(document.getElementById('pacePer50').value);
+            const restSeconds = currentSettings.restTime;
+            const totalRoundTime = paceSeconds + restSeconds;
+            
+            const timeInCurrentRound = elapsedSeconds % totalRoundTime;
+            const progressPercent = Math.floor((timeInCurrentRound / totalRoundTime) * 100);
+            
+            document.getElementById('roundProgress').textContent = `${progressPercent}%`;
+            
+            // Determine current phase
+            if (timeInCurrentRound < paceSeconds) {
+                document.getElementById('currentPhase').textContent = 'Swimming';
+                document.getElementById('activeSwimmers').textContent = currentSettings.numSwimmers;
+                const remainingSwimTime = paceSeconds - timeInCurrentRound;
+                document.getElementById('nextEvent').textContent = `Rest in ${Math.ceil(remainingSwimTime)}s`;
+            } else {
+                document.getElementById('currentPhase').textContent = 'Rest Period';
+                document.getElementById('activeSwimmers').textContent = '0';
+                const remainingRestTime = totalRoundTime - timeInCurrentRound;
+                document.getElementById('nextEvent').textContent = `Next round in ${Math.ceil(remainingRestTime)}s`;
+            }
+            
+            // Update current round
+            const calculatedRound = Math.floor(elapsedSeconds / totalRoundTime) + 1;
+            if (calculatedRound !== currentRound && calculatedRound <= currentSettings.numRounds) {
+                currentRound = calculatedRound;
+                document.getElementById('currentRound').textContent = currentRound;
+            }
+            
+            // Check if set is complete
+            if (calculatedRound > currentSettings.numRounds) {
+                document.getElementById('currentPhase').textContent = 'Set Complete!';
+                document.getElementById('nextEvent').textContent = 'Finished';
+                document.getElementById('activeSwimmers').textContent = '0';
+            }
         }
 
         function createSet() {
