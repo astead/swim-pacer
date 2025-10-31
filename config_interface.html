@@ -78,13 +78,8 @@
             </div>
 
             <div class="control">
-                <label>Speed (feet per second):</label>
-                <input type="number" id="speedFeetPerSecond" step="0.1" min="0.1" max="20" value="5.56">
-                <div class="speed-controls">
-                    <button class="speed-btn secondary" onclick="setSpeed(2.0)">Slow (2.0)</button>
-                    <button class="speed-btn secondary" onclick="setSpeed(5.56)">Medium (5.56)</button>
-                    <button class="speed-btn secondary" onclick="setSpeed(8.0)">Fast (8.0)</button>
-                </div>
+                <label>Pace (seconds per 50 yards):</label>
+                <input type="number" id="paceSecondsPerFiftyYards" step="0.5" min="15" max="120" value="27">
             </div>
 
             <div class="control">
@@ -183,6 +178,19 @@
             event.target.classList.add('active');
         }
 
+        // Conversion functions between pace and speed
+        function paceToSpeed(secondsPerFiftyYards) {
+            // 50 yards = 150 feet
+            // Speed (ft/s) = Distance (ft) / Time (s)
+            return 150 / secondsPerFiftyYards;
+        }
+
+        function speedToPace(feetPerSecond) {
+            // 50 yards = 150 feet
+            // Time (s) = Distance (ft) / Speed (ft/s)
+            return 150 / feetPerSecond;
+        }
+
         // Main Page Functions
         function togglePacer() {
             mockSettings.isRunning = !mockSettings.isRunning;
@@ -190,9 +198,16 @@
             console.log('Pacer toggled:', mockSettings.isRunning ? 'RUNNING' : 'STOPPED');
         }
 
+        function setPace(secondsPerFiftyYards) {
+            // Convert pace to speed for internal storage
+            mockSettings.speedFeetPerSecond = paceToSpeed(secondsPerFiftyYards);
+            document.getElementById('paceSecondsPerFiftyYards').value = secondsPerFiftyYards;
+            console.log('Pace set to:', secondsPerFiftyYards, 'seconds (', mockSettings.speedFeetPerSecond.toFixed(2), 'ft/s)');
+        }
+
         function setSpeed(speed) {
             mockSettings.speedFeetPerSecond = speed;
-            document.getElementById('speedFeetPerSecond').value = speed;
+            document.getElementById('paceSecondsPerFiftyYards').value = speedToPace(speed).toFixed(1);
             console.log('Speed set to:', speed);
         }
 
@@ -269,7 +284,7 @@
             document.getElementById('totalLEDs').value = mockSettings.totalLEDs;
             document.getElementById('ledsPerMeter').value = mockSettings.ledsPerMeter;
             document.getElementById('pulseWidthFeet').value = mockSettings.pulseWidthFeet;
-            document.getElementById('speedFeetPerSecond').value = mockSettings.speedFeetPerSecond;
+            document.getElementById('paceSecondsPerFiftyYards').value = speedToPace(mockSettings.speedFeetPerSecond).toFixed(1);
             document.getElementById('colorRed').value = mockSettings.colorRed;
             document.getElementById('colorGreen').value = mockSettings.colorGreen;
             document.getElementById('colorBlue').value = mockSettings.colorBlue;
@@ -333,7 +348,14 @@
         document.getElementById('totalLEDs').addEventListener('input', updateCalculatedValues);
         document.getElementById('ledsPerMeter').addEventListener('input', updateCalculatedValues);
         document.getElementById('pulseWidthFeet').addEventListener('input', updateCalculatedValues);
-        document.getElementById('speedFeetPerSecond').addEventListener('input', updateCalculatedValues);
+        document.getElementById('paceSecondsPerFiftyYards').addEventListener('input', function() {
+            // Convert pace to speed when user changes pace input
+            const pace = parseFloat(this.value);
+            if (pace > 0) {
+                mockSettings.speedFeetPerSecond = paceToSpeed(pace);
+                updateCalculatedValues();
+            }
+        });
 
         // Load initial settings on page load
         loadSettings();
