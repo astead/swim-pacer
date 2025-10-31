@@ -51,6 +51,7 @@ struct Settings {
   int paceDistanceYards = 50;                // Distance for pace calculation in yards
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
   int numSwimmers = 1;                       // Number of swimmers (light pulses)
+  int numRounds = 1;                         // Number of rounds/sets to complete
   uint8_t colorRed = 0;                      // RGB color values
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
@@ -193,6 +194,7 @@ void setupWebServer() {
   server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
   server.on("/setSwimmerInterval", HTTP_POST, handleSetSwimmerInterval);
   server.on("/setNumSwimmers", HTTP_POST, handleSetNumSwimmers);
+  server.on("/setNumRounds", HTTP_POST, handleSetNumRounds);
 
   server.begin();
   Serial.println("Web server started");
@@ -298,7 +300,13 @@ void handleRoot() {
             </div>
 
             <div class="control">
-                <label for="paceDistance">Pace Distance:</label>
+                <label for="numRounds">Number of Rounds:</label>
+                <input type="range" id="numRounds" min="1" max="10" step="1" value="1" oninput="updateNumRounds()">
+                <span id="numRoundsValue">1</span>
+            </div>
+
+            <div class="control">
+                <label for="paceDistance">Distance:</label>
                 <select id="paceDistance" onchange="updatePaceDistance()">
                     <option value="25">25 yards</option>
                     <option value="50" selected>50 yards</option>
@@ -310,7 +318,7 @@ void handleRoot() {
             </div>
 
             <div class="control">
-                <label for="pacePer50">Target Pace (seconds per <span id="paceDistanceLabel">50 yards</span>):</label>
+                <label for="pacePer50">Pace (seconds per <span id="paceDistanceLabel">50 yards</span>):</label>
                 <input type="number" id="pacePer50" value="30" min="20" max="300" step="0.5" oninput="updateFromPace()">
             </div>
 
@@ -407,6 +415,7 @@ void handleRoot() {
             paceDistance: 50,
             swimmerInterval: 4,
             numSwimmers: 1,
+            numRounds: 1,
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
@@ -536,6 +545,13 @@ void handleRoot() {
             const numSwimmers = document.getElementById('numSwimmers').value;
             currentSettings.numSwimmers = parseInt(numSwimmers);
             document.getElementById('numSwimmersValue').textContent = numSwimmers;
+            updateSettings();
+        }
+
+        function updateNumRounds() {
+            const numRounds = document.getElementById('numRounds').value;
+            currentSettings.numRounds = parseInt(numRounds);
+            document.getElementById('numRoundsValue').textContent = numRounds;
             updateSettings();
         }
 
@@ -688,6 +704,14 @@ void handleRoot() {
                 body: `numSwimmers=${currentSettings.numSwimmers}`
             }).catch(error => {
                 console.log('Number of swimmers update - server not available (standalone mode)');
+            });
+
+            fetch('/setNumRounds', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `numRounds=${currentSettings.numRounds}`
+            }).catch(error => {
+                console.log('Number of rounds update - server not available (standalone mode)');
             });
         }
 
@@ -898,6 +922,15 @@ void handleSetNumSwimmers() {
   server.send(200, "text/plain", "Number of swimmers updated");
 }
 
+void handleSetNumRounds() {
+  if (server.hasArg("numRounds")) {
+    int numRounds = server.arg("numRounds").toInt();
+    settings.numRounds = numRounds;
+    saveSettings();
+  }
+  server.send(200, "text/plain", "Number of rounds updated");
+}
+
 void saveSettings() {
   preferences.putFloat("poolLengthM", settings.poolLengthMeters);
   preferences.putFloat("stripLengthM", settings.stripLengthMeters);
@@ -908,6 +941,7 @@ void saveSettings() {
   preferences.putInt("paceDistanceYards", settings.paceDistanceYards);
   preferences.putInt("swimmerInterval", settings.swimmerIntervalSeconds);
   preferences.putInt("numSwimmers", settings.numSwimmers);
+  preferences.putInt("numRounds", settings.numRounds);
   preferences.putUChar("colorRed", settings.colorRed);
   preferences.putUChar("colorGreen", settings.colorGreen);
   preferences.putUChar("colorBlue", settings.colorBlue);
@@ -927,6 +961,7 @@ void loadSettings() {
   settings.paceDistanceYards = preferences.getInt("paceDistanceYards", 50);
   settings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
   settings.numSwimmers = preferences.getInt("numSwimmers", 1);
+  settings.numRounds = preferences.getInt("numRounds", 1);
   settings.colorRed = preferences.getUChar("colorRed", 0);
   settings.colorGreen = preferences.getUChar("colorGreen", 0);
   settings.colorBlue = preferences.getUChar("colorBlue", 255);
