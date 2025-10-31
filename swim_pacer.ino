@@ -301,8 +301,7 @@ void handleRoot() {
 
             <div class="control">
                 <label for="numRounds">Number of Rounds:</label>
-                <input type="range" id="numRounds" min="1" max="10" step="1" value="1" oninput="updateNumRounds()">
-                <span id="numRoundsValue">1</span>
+                <input type="number" id="numRounds" min="1" max="20" step="1" value="1" oninput="updateNumRounds()">
             </div>
 
             <div class="control">
@@ -551,7 +550,6 @@ void handleRoot() {
         function updateNumRounds() {
             const numRounds = document.getElementById('numRounds').value;
             currentSettings.numRounds = parseInt(numRounds);
-            document.getElementById('numRoundsValue').textContent = numRounds;
             updateSettings();
         }
 
