@@ -388,17 +388,6 @@ void handleRoot() {
                 </div>
             </div>
 
-            <!-- Custom Color Picker Modal -->
-            <div id="customColorPicker" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;" onclick="closeColorPicker()">
-                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" onclick="event.stopPropagation()">
-                    <h4 style="margin: 0 0 15px 0; text-align: center;">Choose Color</h4>
-                    <div id="colorGrid" style="display: grid; grid-template-columns: repeat(6, 40px); gap: 8px; margin-bottom: 15px;">
-                        <!-- Colors will be populated by JavaScript -->
-                    </div>
-                    <button onclick="closeColorPicker()" style="width: 100%; padding: 8px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">Close</button>
-                </div>
-            </div>
-
             <div class="control">
                 <button onclick="applyPaceSettings()">Apply Settings</button>
             </div>
@@ -441,6 +430,17 @@ void handleRoot() {
         </div>
     </div>
 
+    <!-- Custom Color Picker Modal (Global) -->
+    <div id="customColorPicker" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;" onclick="closeColorPicker()">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" onclick="event.stopPropagation()">
+            <h4 style="margin: 0 0 15px 0; text-align: center;">Choose Color</h4>
+            <div id="colorGrid" style="display: grid; grid-template-columns: repeat(6, 40px); gap: 8px; margin-bottom: 15px;">
+                <!-- Colors will be populated by JavaScript -->
+            </div>
+            <button onclick="closeColorPicker()" style="width: 100%; padding: 8px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">Close</button>
+        </div>
+    </div>
+
     <script>
         let currentSettings = {
             speed: 5.0,
@@ -463,6 +463,7 @@ void handleRoot() {
 
         // Swimmer set configuration
         let swimmerSet = [];
+        let currentSwimmerIndex = -1; // Track which swimmer is being edited
         const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan'];
         const colorHex = {
             'red': '#ff0000',
@@ -621,6 +622,9 @@ void handleRoot() {
         }
 
         function openColorPicker() {
+            // Reset swimmer index (this is called from coach config)
+            currentSwimmerIndex = -1;
+            
             // Populate color grid if not already done
             populateColorGrid();
             
@@ -630,6 +634,7 @@ void handleRoot() {
 
         function closeColorPicker() {
             document.getElementById('customColorPicker').style.display = 'none';
+            currentSwimmerIndex = -1; // Reset swimmer index when closing
         }
 
         function populateColorGrid() {
@@ -664,10 +669,18 @@ void handleRoot() {
         }
 
         function selectColor(color) {
-            currentSettings.swimmerColor = color;
-            document.getElementById('colorIndicator').style.backgroundColor = color;
+            if (currentSwimmerIndex >= 0) {
+                // Updating individual swimmer color
+                swimmerSet[currentSwimmerIndex].color = hexToColorName(color);
+                displaySwimmerSet();
+                currentSwimmerIndex = -1; // Reset
+            } else {
+                // Updating coach config same color setting
+                currentSettings.swimmerColor = color;
+                document.getElementById('colorIndicator').style.backgroundColor = color;
+                updateSettings();
+            }
             closeColorPicker();
-            updateSettings();
         }
 
         function updateSwimmerColor() {
@@ -774,10 +787,10 @@ void handleRoot() {
         }
 
         function cycleSwimmerColor(swimmerIndex) {
-            const currentColorIndex = swimmerColors.indexOf(swimmerSet[swimmerIndex].color);
-            const nextColorIndex = (currentColorIndex + 1) % swimmerColors.length;
-            swimmerSet[swimmerIndex].color = swimmerColors[nextColorIndex];
-            displaySwimmerSet();
+            // Set the current swimmer being edited and open color picker
+            currentSwimmerIndex = swimmerIndex;
+            populateColorGrid();
+            document.getElementById('customColorPicker').style.display = 'block';
         }
 
         function updateSwimmerPace(swimmerIndex, newPace) {
