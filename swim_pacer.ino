@@ -48,6 +48,7 @@ struct Settings {
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   float speedFeetPerSecond = 5.56;           // Speed in feet per second
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
+  int paceDistanceYards = 50;                // Distance for pace calculation in yards
   uint8_t colorRed = 0;                      // RGB color values
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
@@ -166,6 +167,7 @@ void setupWebServer() {
   server.on("/setStripLength", HTTP_POST, handleSetStripLength);
   server.on("/setLedsPerMeter", HTTP_POST, handleSetLedsPerMeter);
   server.on("/setRestTime", HTTP_POST, handleSetRestTime);
+  server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
 
   server.begin();
   Serial.println("Web server started");
@@ -239,8 +241,20 @@ void handleRoot() {
             </div>
 
             <div class="control">
-                <label for="pacePer50">Target Pace (seconds per 50 yards):</label>
-                <input type="number" id="pacePer50" value="30" min="20" max="60" step="0.5" oninput="updateFromPace()">
+                <label for="paceDistance">Pace Distance:</label>
+                <select id="paceDistance" onchange="updatePaceDistance()">
+                    <option value="25">25 yards</option>
+                    <option value="50" selected>50 yards</option>
+                    <option value="75">75 yards</option>
+                    <option value="100">100 yards</option>
+                    <option value="200">200 yards</option>
+                    <option value="500">500 yards</option>
+                </select>
+            </div>
+
+            <div class="control">
+                <label for="pacePer50">Target Pace (seconds per <span id="paceDistanceLabel">50 yards</span>):</label>
+                <input type="number" id="pacePer50" value="30" min="20" max="300" step="0.5" oninput="updateFromPace()">
             </div>
 
             <div class="control">
@@ -329,6 +343,7 @@ void handleRoot() {
             brightness: 150,
             pulseWidth: 1.0,
             restTime: 5,
+            paceDistance: 50,
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
@@ -359,10 +374,25 @@ void handleRoot() {
 
         function updateFromPace() {
             const pace = parseFloat(document.getElementById('pacePer50').value);
-            const speed = paceToSpeed(pace);
+            const paceDistance = currentSettings.paceDistance;
+            // Convert pace to speed (feet per second) based on selected distance
+            const distanceFeet = paceDistance * 3; // yards to feet
+            const speed = distanceFeet / pace;
             currentSettings.speed = speed;
 
             updateCalculations();
+        }
+
+        function updatePaceDistance() {
+            const paceDistance = parseInt(document.getElementById('paceDistance').value);
+            currentSettings.paceDistance = paceDistance;
+            
+            // Update the pace label
+            document.getElementById('paceDistanceLabel').textContent = paceDistance + ' yards';
+            
+            // Recalculate speed based on current pace input and new distance
+            updateFromPace();
+            updateSettings();
         }
 
         function updateCalculations() {
@@ -496,6 +526,14 @@ void handleRoot() {
                 body: `restTime=${currentSettings.restTime}`
             }).catch(error => {
                 console.log('Rest time update - server not available (standalone mode)');
+            });
+
+            fetch('/setPaceDistance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `paceDistance=${currentSettings.paceDistance}`
+            }).catch(error => {
+                console.log('Pace distance update - server not available (standalone mode)');
             });
         }
 
@@ -678,6 +716,16 @@ void handleSetRestTime() {
   server.send(200, "text/plain", "Rest time updated");
 }
 
+void handleSetPaceDistance() {
+  if (server.hasArg("paceDistance")) {
+    int paceDistance = server.arg("paceDistance").toInt();
+    settings.paceDistanceYards = paceDistance;
+    saveSettings();
+    needsRecalculation = true;
+  }
+  server.send(200, "text/plain", "Pace distance updated");
+}
+
 void saveSettings() {
   preferences.putFloat("poolLengthM", settings.poolLengthMeters);
   preferences.putFloat("stripLengthM", settings.stripLengthMeters);
@@ -685,6 +733,7 @@ void saveSettings() {
   preferences.putFloat("pulseWidthFeet", settings.pulseWidthFeet);
   preferences.putFloat("speedFPS", settings.speedFeetPerSecond);
   preferences.putInt("restTimeSeconds", settings.restTimeSeconds);
+  preferences.putInt("paceDistanceYards", settings.paceDistanceYards);
   preferences.putUChar("colorRed", settings.colorRed);
   preferences.putUChar("colorGreen", settings.colorGreen);
   preferences.putUChar("colorBlue", settings.colorBlue);
@@ -701,6 +750,7 @@ void loadSettings() {
   settings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
   settings.speedFeetPerSecond = preferences.getFloat("speedFPS", 5.56);
   settings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
+  settings.paceDistanceYards = preferences.getInt("paceDistanceYards", 50);
   settings.colorRed = preferences.getUChar("colorRed", 0);
   settings.colorGreen = preferences.getUChar("colorGreen", 0);
   settings.colorBlue = preferences.getUChar("colorBlue", 255);
