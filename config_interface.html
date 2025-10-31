@@ -165,6 +165,24 @@
             </div>
 
             <div class="control">
+                <label>Swimmer Colors:</label>
+                <div style="margin-top: 10px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                        <input type="radio" id="individualColors" name="colorMode" value="individual" checked onchange="updateColorMode()" style="margin: 0;">
+                        <label for="individualColors" style="margin: 0; margin-left: 6px;">Individual colors</label>
+                    </div>
+                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                        <input type="radio" id="sameColor" name="colorMode" value="same" onchange="updateColorMode()" style="margin: 0;">
+                        <label for="sameColor" style="margin: 0; margin-left: 6px;">Same color</label>
+                    </div>
+                    <div id="colorPickerSection" style="display: none; margin-top: 10px; margin-left: 24px;">
+                        <label for="swimmerColorPicker">Choose color:</label>
+                        <input type="color" id="swimmerColorPicker" value="#0000ff" onchange="updateSwimmerColor()" style="margin-left: 8px;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="control">
                 <button onclick="applyPaceSettings()">Apply Settings</button>
             </div>
         </div>
@@ -218,6 +236,8 @@
             swimmerInterval: 4,
             numSwimmers: 3,
             numRounds: 10,
+            colorMode: 'individual',
+            swimmerColor: '#0000ff',
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
@@ -233,8 +253,22 @@
             'blue': '#0000ff',
             'yellow': '#ffff00',
             'purple': '#800080',
-            'cyan': '#00ffff'
+            'cyan': '#00ffff',
+            'custom': '#0000ff' // Default custom color
         };
+
+        // Convert hex color to color name for swimmer assignment
+        function hexToColorName(hexColor) {
+            // Check if it matches any existing colors
+            for (const [colorName, colorValue] of Object.entries(colorHex)) {
+                if (colorValue.toLowerCase() === hexColor.toLowerCase()) {
+                    return colorName;
+                }
+            }
+            // If no match found, update custom color and return 'custom'
+            colorHex.custom = hexColor;
+            return 'custom';
+        }
 
         // Page navigation
         function showPage(pageId) {
@@ -363,6 +397,27 @@
             updateSettings();
         }
 
+        function updateColorMode() {
+            const colorMode = document.querySelector('input[name="colorMode"]:checked').value;
+            currentSettings.colorMode = colorMode;
+            
+            // Show/hide color picker based on selection
+            const colorPickerSection = document.getElementById('colorPickerSection');
+            if (colorMode === 'same') {
+                colorPickerSection.style.display = 'block';
+            } else {
+                colorPickerSection.style.display = 'none';
+            }
+            
+            updateSettings();
+        }
+
+        function updateSwimmerColor() {
+            const swimmerColor = document.getElementById('swimmerColorPicker').value;
+            currentSettings.swimmerColor = swimmerColor;
+            updateSettings();
+        }
+
         function togglePacer() {
             currentSettings.isRunning = !currentSettings.isRunning;
 
@@ -394,9 +449,18 @@
             
             // Create swimmer configurations
             for (let i = 0; i < currentSettings.numSwimmers; i++) {
+                // Determine color based on color mode
+                let swimmerColor;
+                if (currentSettings.colorMode === 'same') {
+                    // Convert hex color to named color for consistency with existing system
+                    swimmerColor = hexToColorName(currentSettings.swimmerColor);
+                } else {
+                    swimmerColor = swimmerColors[i];
+                }
+                
                 swimmerSet.push({
                     id: i + 1,
-                    color: swimmerColors[i],
+                    color: swimmerColor,
                     pace: currentPace,
                     interval: i === 0 ? currentSettings.initialDelay : currentSettings.initialDelay + (i * currentSettings.swimmerInterval) // First swimmer uses initial delay, others add swimmer intervals
                 });
