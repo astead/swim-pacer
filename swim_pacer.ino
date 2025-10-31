@@ -49,6 +49,7 @@ struct Settings {
   float speedFeetPerSecond = 5.56;           // Speed in feet per second
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
   int paceDistanceYards = 50;                // Distance for pace calculation in yards
+  int initialDelaySeconds = 10;              // Initial delay before first swimmer starts
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
   int numSwimmers = 3;                       // Number of swimmers (light pulses)
   int numRounds = 10;                        // Number of rounds/sets to complete
@@ -192,6 +193,7 @@ void setupWebServer() {
   server.on("/setLedsPerMeter", HTTP_POST, handleSetLedsPerMeter);
   server.on("/setRestTime", HTTP_POST, handleSetRestTime);
   server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
+  server.on("/setInitialDelay", HTTP_POST, handleSetInitialDelay);
   server.on("/setSwimmerInterval", HTTP_POST, handleSetSwimmerInterval);
   server.on("/setNumSwimmers", HTTP_POST, handleSetNumSwimmers);
   server.on("/setNumRounds", HTTP_POST, handleSetNumRounds);
@@ -345,6 +347,11 @@ void handleRoot() {
         <div id="coach" class="page">
             <h3>Swim Settings</h3>
             <div class="control">
+                <label for="initialDelay">Initial delay (seconds):</label>
+                <input type="range" id="initialDelay" min="0" max="30" step="1" value="10" oninput="updateInitialDelay()">
+                <span id="initialDelayValue">10</span>
+            </div>
+            <div class="control">
                 <label for="swimmerInterval">Delay between swimmers (seconds):</label>
                 <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
                 <span id="swimmerIntervalValue">4</span>
@@ -413,6 +420,7 @@ void handleRoot() {
             pulseWidth: 1.0,
             restTime: 5,
             paceDistance: 50,
+            initialDelay: 10,
             swimmerInterval: 4,
             numSwimmers: 3,
             numRounds: 10,
@@ -534,6 +542,13 @@ void handleRoot() {
             updateSettings();
         }
 
+        function updateInitialDelay() {
+            const initialDelay = document.getElementById('initialDelay').value;
+            currentSettings.initialDelay = parseInt(initialDelay);
+            document.getElementById('initialDelayValue').textContent = initialDelay;
+            updateSettings();
+        }
+
         function updateSwimmerInterval() {
             const swimmerInterval = document.getElementById('swimmerInterval').value;
             currentSettings.swimmerInterval = parseInt(swimmerInterval);
@@ -589,7 +604,7 @@ void handleRoot() {
                     id: i + 1,
                     color: swimmerColors[i],
                     pace: currentPace,
-                    interval: i === 0 ? 0 : currentSettings.swimmerInterval // First swimmer has no delay, others delay from previous
+                    interval: i === 0 ? currentSettings.initialDelay : currentSettings.initialDelay + (i * currentSettings.swimmerInterval) // First swimmer uses initial delay, others add swimmer intervals
                 });
             }
             
@@ -617,11 +632,19 @@ void handleRoot() {
                 const row = document.createElement('div');
                 row.className = 'swimmer-row';
                 
+                // Calculate delay from previous swimmer
+                let delayFromPrevious;
+                if (index === 0) {
+                    delayFromPrevious = currentSettings.initialDelay; // First swimmer shows initial delay
+                } else {
+                    delayFromPrevious = currentSettings.swimmerInterval; // Others show interval between swimmers
+                }
+                
                 row.innerHTML = `
                     <div class="swimmer-color" style="background-color: ${colorHex[swimmer.color]}" 
                          onclick="cycleSwimmerColor(${index})" title="Click to change color"></div>
                     <div class="swimmer-info">Swimmer ${swimmer.id}</div>
-                    <div>Delay: ${swimmer.interval}s</div>
+                    <div>Delay: ${delayFromPrevious}s</div>
                     <div>Pace: <input type="number" class="swimmer-pace-input" value="${swimmer.pace}" 
                          min="20" max="300" step="0.5" onchange="updateSwimmerPace(${index}, this.value)"> sec</div>
                 `;
@@ -912,6 +935,15 @@ void handleSetPaceDistance() {
   server.send(200, "text/plain", "Pace distance updated");
 }
 
+void handleSetInitialDelay() {
+  if (server.hasArg("initialDelay")) {
+    int initialDelay = server.arg("initialDelay").toInt();
+    settings.initialDelaySeconds = initialDelay;
+    saveSettings();
+  }
+  server.send(200, "text/plain", "Initial delay updated");
+}
+
 void handleSetSwimmerInterval() {
   if (server.hasArg("swimmerInterval")) {
     int swimmerInterval = server.arg("swimmerInterval").toInt();
@@ -947,6 +979,7 @@ void saveSettings() {
   preferences.putFloat("speedFPS", settings.speedFeetPerSecond);
   preferences.putInt("restTimeSeconds", settings.restTimeSeconds);
   preferences.putInt("paceDistanceYards", settings.paceDistanceYards);
+  preferences.putInt("initialDelay", settings.initialDelaySeconds);
   preferences.putInt("swimmerInterval", settings.swimmerIntervalSeconds);
   preferences.putInt("numSwimmers", settings.numSwimmers);
   preferences.putInt("numRounds", settings.numRounds);
@@ -967,6 +1000,7 @@ void loadSettings() {
   settings.speedFeetPerSecond = preferences.getFloat("speedFPS", 5.56);
   settings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
   settings.paceDistanceYards = preferences.getInt("paceDistanceYards", 50);
+  settings.initialDelaySeconds = preferences.getInt("initialDelay", 10);
   settings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
   settings.numSwimmers = preferences.getInt("numSwimmers", 3);
   settings.numRounds = preferences.getInt("numRounds", 10);
@@ -1046,7 +1080,7 @@ void initializeSwimmers() {
   for (int i = 0; i < 6; i++) {
     swimmers[i].position = 0;
     swimmers[i].direction = 1;
-    swimmers[i].lastUpdate = millis() + (i * settings.swimmerIntervalSeconds * 1000); // Stagger start times
+    swimmers[i].lastUpdate = millis() + (settings.initialDelaySeconds * 1000) + (i * settings.swimmerIntervalSeconds * 1000); // Initial delay + staggered start times
     swimmers[i].color = swimmerColors[i];
   }
 }
