@@ -33,7 +33,7 @@ Both scripts:
 
 2. **Test your changes**: Open `config_interface.html` in browser
 
-3. **Run sync check**: 
+3. **Run sync check**:
    ```powershell
    powershell -ExecutionPolicy Bypass -File sync_check.ps1
    ```

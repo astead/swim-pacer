@@ -184,23 +184,23 @@ void handleRoot() {
         .running { background: #d4edda; color: #155724; }
         .stopped { background: #f8d7da; color: #721c24; }
         .color-preview { width: 50px; height: 30px; border: 1px solid #ccc; display: inline-block; margin-left: 10px; }
-        
+
         /* Navigation */
         .nav-tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #dee2e6; }
         .nav-tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; background: #f8f9fa; border: none; border-bottom: 3px solid transparent; }
         .nav-tab.active { background: white; border-bottom-color: #007bff; color: #007bff; font-weight: bold; }
         .nav-tab:hover { background: #e9ecef; }
-        
+
         /* Page content */
         .page { display: none; }
         .page.active { display: block; }
-        
+
         /* Main page specific */
         .big-button { font-size: 18px; padding: 15px; margin: 10px 0; }
         .color-wheel { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
         .color-option { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; }
         .color-option.selected { border-color: #333; }
-        
+
         .calculated-info {
             background: #e7f3ff;
             padding: 10px;
@@ -213,22 +213,27 @@ void handleRoot() {
 <body>
     <div class="container">
         <h1>Swim Pacer</h1>
-        
+
         <!-- Navigation -->
         <div class="nav-tabs">
             <button class="nav-tab active" onclick="showPage('main')">Main Pacer</button>
             <button class="nav-tab" onclick="showPage('coach')">Coach Config</button>
             <button class="nav-tab" onclick="showPage('advanced')">Advanced</button>
         </div>
-        
+
         <!-- Main Pacer Page -->
         <div id="main" class="page active">
             <div class="status stopped" id="status">Pacer Stopped</div>
-            
+
             <div class="control">
                 <button class="big-button" onclick="togglePacer()" id="toggleBtn">Start Pacer</button>
             </div>
-            
+
+            <div class="control">
+                <label for="pacePer50">Target Pace (seconds per 50 yards):</label>
+                <input type="number" id="pacePer50" value="30" min="20" max="60" step="0.5" oninput="updateFromPace()">
+            </div>
+
             <div class="control">
                 <label>LED Color:</label>
                 <div class="color-wheel">
@@ -241,42 +246,40 @@ void handleRoot() {
                     <div class="color-option" style="background: white; border: 1px solid #ccc;" onclick="selectColor('white')" data-color="white"></div>
                 </div>
             </div>
-            
+
             <div class="control">
                 <label for="brightness">Brightness:</label>
                 <input type="range" id="brightness" min="20" max="255" value="150" oninput="updateBrightness()">
                 <span id="brightnessValue">150</span>
             </div>
         </div>
-        
+
         <!-- Coach Config Page -->
         <div id="coach" class="page">
             <h2>Coach Configuration</h2>
-            <div class="control">
-                <label for="pacePer50">Target Pace (seconds per 50 yards):</label>
-                <input type="number" id="pacePer50" value="30" min="20" max="60" step="0.5" oninput="updateFromPace()">
-            </div>
-            
+            <p>View current pace settings and swimming calculations. Use the Main Pacer page to adjust pace.</p>
+
             <div class="calculated-info">
+                <div><strong>Current Pace:</strong> <span id="currentPaceCoach">30.0 sec/50yd</span></div>
                 <div><strong>Swimming Speed:</strong> <span id="swimmingSpeed">5.68 ft/s</span></div>
                 <div><strong>Pool Length:</strong> 50 yards (150 feet)</div>
                 <div><strong>Time per length:</strong> <span id="timePerLength">26.4 seconds</span></div>
             </div>
-            
+
             <div class="control">
                 <button onclick="applyPaceSettings()">Apply Settings</button>
             </div>
         </div>
-        
+
         <!-- Advanced Page -->
         <div id="advanced" class="page">
             <h2>Advanced Settings</h2>
-            
+
             <div class="control">
                 <label for="speed">Speed (feet per second):</label>
                 <input type="number" id="speed" value="5.0" min="1" max="20" step="0.1" oninput="updateFromSpeed()">
             </div>
-            
+
             <div class="control">
                 <label for="poolLength">Pool Length (feet):</label>
                 <select id="poolLength" onchange="updateCalculations()">
@@ -286,18 +289,18 @@ void handleRoot() {
                     <option value="164">50 meters (164 feet)</option>
                 </select>
             </div>
-            
+
             <div class="control">
                 <label for="numLeds">Number of LEDs:</label>
                 <input type="number" id="numLeds" value="150" min="10" max="300" onchange="updateSettings()">
             </div>
-            
+
             <div class="calculated-info">
                 <div><strong>Current Pace:</strong> <span id="currentPace">30.0 sec/50yd</span></div>
                 <div><strong>LEDs per foot:</strong> <span id="ledsPerFoot">1.0</span></div>
                 <div><strong>Time per LED:</strong> <span id="timePerLed">0.20 seconds</span></div>
             </div>
-            
+
             <div class="control">
                 <button onclick="saveSettings()">Save Settings</button>
             </div>
@@ -319,7 +322,7 @@ void handleRoot() {
             // Hide all pages
             document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
             document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
-            
+
             // Show selected page
             document.getElementById(pageId).classList.add('active');
             event.target.classList.add('active');
@@ -340,7 +343,7 @@ void handleRoot() {
             const pace = parseFloat(document.getElementById('pacePer50').value);
             const speed = paceToSpeed(pace);
             currentSettings.speed = speed;
-            
+
             document.getElementById('speed').value = speed.toFixed(1);
             updateCalculations();
         }
@@ -348,7 +351,7 @@ void handleRoot() {
         function updateFromSpeed() {
             const speed = parseFloat(document.getElementById('speed').value);
             currentSettings.speed = speed;
-            
+
             const pace = speedToPace(speed);
             document.getElementById('pacePer50').value = pace.toFixed(1);
             updateCalculations();
@@ -358,15 +361,21 @@ void handleRoot() {
             const speed = currentSettings.speed;
             const poolLength = parseInt(document.getElementById('poolLength').value);
             const numLeds = parseInt(document.getElementById('numLeds').value);
-            
+
             // Update swimming metrics
             document.getElementById('swimmingSpeed').textContent = speed.toFixed(2) + ' ft/s';
             document.getElementById('timePerLength').textContent = (poolLength / speed).toFixed(1) + ' seconds';
-            
+
             // Update pace display
             const paceSeconds = speedToPace(speed);
             document.getElementById('currentPace').textContent = paceSeconds.toFixed(1) + ' sec/50yd';
-            
+
+            // Also update coach page pace display
+            const coachPaceElement = document.getElementById('currentPaceCoach');
+            if (coachPaceElement) {
+                coachPaceElement.textContent = paceSeconds.toFixed(1) + ' sec/50yd';
+            }
+
             // Update LED metrics
             const ledsPerFoot = numLeds / poolLength;
             const timePerLed = 1 / (speed * ledsPerFoot);
@@ -390,7 +399,7 @@ void handleRoot() {
 
         function togglePacer() {
             currentSettings.isRunning = !currentSettings.isRunning;
-            
+
             fetch('/toggle', { method: 'POST' })
             .then(response => response.text())
             .then(result => {
@@ -418,19 +427,19 @@ void handleRoot() {
 
         function saveSettings() {
             updateSettings();
-            
+
             fetch('/setColor', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `color=${currentSettings.color}`
             });
-            
+
             fetch('/setBrightness', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `brightness=${currentSettings.brightness}`
             });
-            
+
             alert('Settings saved!');
         }
 
@@ -500,7 +509,7 @@ void handleControl() {
 void handleToggle() {
   settings.isRunning = !settings.isRunning;
   saveSettings();
-  
+
   String status = settings.isRunning ? "Pacer Started" : "Pacer Stopped";
   server.send(200, "text/plain", status);
 }

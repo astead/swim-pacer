@@ -20,7 +20,7 @@
 The `swim_pacer.ino` file needs to be updated to match the HTML interface:
 
 1. **Replace embedded HTML** with multi-page interface
-2. **Add pace conversion functions** to ESP32 code  
+2. **Add pace conversion functions** to ESP32 code
 3. **Update JavaScript** to work with ESP32 backend
 4. **Test all three pages** with real ESP32 hardware
 
@@ -50,7 +50,7 @@ The `swim_pacer.ino` file needs to be updated to match the HTML interface:
 - Brightness control (slider + number)
 - Save settings button
 
-### Advanced Config Page  
+### Advanced Config Page
 - Hardware settings (LED counts, density)
 - Real-time calculations display
 - Reset to defaults option
