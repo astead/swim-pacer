@@ -345,7 +345,7 @@ void handleRoot() {
         <div id="coach" class="page">
             <h3>Swim Settings</h3>
             <div class="control">
-                <label for="swimmerInterval">Swimmer Interval (seconds):</label>
+                <label for="swimmerInterval">Delay between swimmers (seconds):</label>
                 <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
                 <span id="swimmerIntervalValue">4</span>
             </div>
