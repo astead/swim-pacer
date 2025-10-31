@@ -32,7 +32,8 @@
         .page.active { display: block; }
 
         /* Main page specific */
-        .big-button { font-size: 18px; padding: 15px; margin: 10px 0; }
+        .big-button { font-size: 18px; padding: 15px; margin: 0; min-width: 140px; }
+        .button-group { display: flex; gap: 10px; margin: 10px 0; }
         .color-wheel { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
         .color-option { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; }
         .color-option.selected { border-color: #333; }
@@ -88,8 +89,10 @@
             <div class="status stopped" id="status">Pacer Stopped</div>
 
             <div class="control">
-                <button class="big-button" onclick="togglePacer()" id="toggleBtn">Start Pacer</button>
-                <button class="big-button" onclick="createSet()" id="createSetBtn" style="margin-left: 10px;">Create Set</button>
+                <div class="button-group">
+                    <button class="big-button" onclick="togglePacer()" id="toggleBtn">Start Pacer</button>
+                    <button class="big-button" onclick="createSet()" id="createSetBtn">Create Set</button>
+                </div>
             </div>
 
             <div class="control">
