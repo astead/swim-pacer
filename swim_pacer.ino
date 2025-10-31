@@ -155,6 +155,7 @@ void setupWebServer() {
   server.on("/setSpeed", HTTP_POST, handleSetSpeed);
   server.on("/setColor", HTTP_POST, handleSetColor);
   server.on("/setBrightness", HTTP_POST, handleSetBrightness);
+  server.on("/setPulseWidth", HTTP_POST, handleSetPulseWidth);
 
   server.begin();
   Serial.println("Web server started");
@@ -260,6 +261,12 @@ void handleRoot() {
             </div>
 
             <div class="control">
+                <label for="pulseWidth">Pulse Width (feet):</label>
+                <input type="range" id="pulseWidth" min="0.5" max="5" step="0.5" value="1.0" oninput="updatePulseWidth()">
+                <span id="pulseWidthValue">1.0</span>
+            </div>
+
+            <div class="control">
                 <button onclick="applyPaceSettings()">Apply Settings</button>
             </div>
         </div>
@@ -300,6 +307,7 @@ void handleRoot() {
             speed: 5.0,
             color: 'red',
             brightness: 150,
+            pulseWidth: 1.0,
             poolLength: 150,
             numLeds: 150,
             isRunning: false
@@ -365,6 +373,13 @@ void handleRoot() {
             updateSettings();
         }
 
+        function updatePulseWidth() {
+            const pulseWidth = document.getElementById('pulseWidth').value;
+            currentSettings.pulseWidth = parseFloat(pulseWidth);
+            document.getElementById('pulseWidthValue').textContent = pulseWidth;
+            updateSettings();
+        }
+
         function togglePacer() {
             currentSettings.isRunning = !currentSettings.isRunning;
             
@@ -402,6 +417,14 @@ void handleRoot() {
                 body: `speed=${currentSettings.speed}`
             }).catch(error => {
                 console.log('Speed update - server not available (standalone mode)');
+            });
+
+            fetch('/setPulseWidth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `pulseWidth=${currentSettings.pulseWidth}`
+            }).catch(error => {
+                console.log('Pulse width update - server not available (standalone mode)');
             });
         }
 
@@ -540,6 +563,16 @@ void handleSetBrightness() {
     saveSettings();
   }
   server.send(200, "text/plain", "Brightness updated");
+}
+
+void handleSetPulseWidth() {
+  if (server.hasArg("pulseWidth")) {
+    float pulseWidth = server.arg("pulseWidth").toFloat();
+    settings.pulseWidthFeet = pulseWidth;
+    saveSettings();
+    needsRecalculation = true;
+  }
+  server.send(200, "text/plain", "Pulse width updated");
 }
 
 void saveSettings() {
