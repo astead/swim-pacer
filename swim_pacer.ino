@@ -162,6 +162,9 @@ void setupWebServer() {
 
 void handleRoot() {
   String html = R"(
+<!-- ========== SYNC MARKER: START ESP32 HTML ========== -->
+<!-- This HTML content is synchronized with swim_pacer.ino handleRoot() function -->
+<!-- When editing, ensure both files stay identical between sync markers -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -436,6 +439,7 @@ void handleRoot() {
     </script>
 </body>
 </html>
+<!-- ========== SYNC MARKER: END ESP32 HTML ========== -->
 )";
 
   server.send(200, "text/html", html);

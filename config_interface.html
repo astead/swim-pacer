@@ -1,3 +1,6 @@
+<!-- ========== SYNC MARKER: START ESP32 HTML ========== -->
+<!-- This HTML content is synchronized with swim_pacer.ino handleRoot() function -->
+<!-- When editing, ensure both files stay identical between sync markers -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -17,34 +20,23 @@
         .running { background: #d4edda; color: #155724; }
         .stopped { background: #f8d7da; color: #721c24; }
         .color-preview { width: 50px; height: 30px; border: 1px solid #ccc; display: inline-block; margin-left: 10px; }
-
+        
         /* Navigation */
         .nav-tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #dee2e6; }
         .nav-tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; background: #f8f9fa; border: none; border-bottom: 3px solid transparent; }
         .nav-tab.active { background: white; border-bottom-color: #007bff; color: #007bff; font-weight: bold; }
         .nav-tab:hover { background: #e9ecef; }
-
+        
         /* Page content */
         .page { display: none; }
         .page.active { display: block; }
-
+        
         /* Main page specific */
         .big-button { font-size: 18px; padding: 15px; margin: 10px 0; }
-        .speed-controls { display: flex; gap: 10px; margin: 10px 0; }
-        .speed-btn { flex: 1; padding: 10px; font-size: 14px; }
         .color-wheel { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
         .color-option { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; }
         .color-option.selected { border-color: #333; }
-
-        /* Dev note */
-        .dev-note {
-            background: #fff3cd;
-            color: #856404;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            border: 1px solid #ffeaa7;
-        }
+        
         .calculated-info {
             background: #e7f3ff;
             padding: 10px;
@@ -56,309 +48,231 @@
 </head>
 <body>
     <div class="container">
-        <div class="dev-note">
-            <strong>Development Preview:</strong> Multi-page swim pacer interface with simplified coach controls.
-        </div>
-
-        <!-- Navigation Tabs -->
+        <h1>Swim Pacer</h1>
+        
+        <!-- Navigation -->
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showPage('main')">🏊‍♂️ Pacer</button>
-            <button class="nav-tab" onclick="showPage('config')">⚙️ Config</button>
-            <button class="nav-tab" onclick="showPage('advanced')">🔧 Advanced</button>
+            <button class="nav-tab active" onclick="showPage('main')">Main Pacer</button>
+            <button class="nav-tab" onclick="showPage('coach')">Coach Config</button>
+            <button class="nav-tab" onclick="showPage('advanced')">Advanced</button>
         </div>
-
+        
         <!-- Main Pacer Page -->
         <div id="main" class="page active">
-            <h1>Swim Pacer</h1>
-
-            <div class="status stopped" id="status">Status: STOPPED</div>
-
+            <div class="status stopped" id="status">Pacer Stopped</div>
+            
             <div class="control">
-                <button onclick="togglePacer()" id="toggleBtn" class="big-button">Start Pacer</button>
+                <button class="big-button" onclick="togglePacer()" id="toggleBtn">Start Pacer</button>
             </div>
-
+            
             <div class="control">
-                <label>Pace (seconds per 50 yards):</label>
-                <input type="number" id="paceSecondsPerFiftyYards" step="0.5" min="15" max="120" value="27">
-            </div>
-
-            <div class="control">
-                <label>Color:</label>
+                <label>LED Color:</label>
                 <div class="color-wheel">
-                    <div class="color-option selected" style="background: blue;" onclick="setColor(0,0,255)" data-color="blue"></div>
-                    <div class="color-option" style="background: red;" onclick="setColor(255,0,0)" data-color="red"></div>
-                    <div class="color-option" style="background: green;" onclick="setColor(0,255,0)" data-color="green"></div>
-                    <div class="color-option" style="background: purple;" onclick="setColor(128,0,128)" data-color="purple"></div>
-                    <div class="color-option" style="background: orange;" onclick="setColor(255,165,0)" data-color="orange"></div>
-                    <div class="color-option" style="background: cyan;" onclick="setColor(0,255,255)" data-color="cyan"></div>
-                    <div class="color-option" style="background: yellow;" onclick="setColor(255,255,0)" data-color="yellow"></div>
-                    <div class="color-option" style="background: white; border: 1px solid #ccc;" onclick="setColor(255,255,255)" data-color="white"></div>
+                    <div class="color-option selected" style="background: red;" onclick="selectColor('red')" data-color="red"></div>
+                    <div class="color-option" style="background: green;" onclick="selectColor('green')" data-color="green"></div>
+                    <div class="color-option" style="background: blue;" onclick="selectColor('blue')" data-color="blue"></div>
+                    <div class="color-option" style="background: yellow;" onclick="selectColor('yellow')" data-color="yellow"></div>
+                    <div class="color-option" style="background: purple;" onclick="selectColor('purple')" data-color="purple"></div>
+                    <div class="color-option" style="background: cyan;" onclick="selectColor('cyan')" data-color="cyan"></div>
+                    <div class="color-option" style="background: white; border: 1px solid #ccc;" onclick="selectColor('white')" data-color="white"></div>
                 </div>
             </div>
+            
+            <div class="control">
+                <label for="brightness">Brightness:</label>
+                <input type="range" id="brightness" min="20" max="255" value="150" oninput="updateBrightness()">
+                <span id="brightnessValue">150</span>
+            </div>
         </div>
-
+        
         <!-- Coach Config Page -->
-        <div id="config" class="page">
-            <h1>Coach Configuration</h1>
-
+        <div id="coach" class="page">
+            <h2>Coach Configuration</h2>
             <div class="control">
-                <label>Pulse Width (feet):</label>
-                <input type="number" id="pulseWidthFeet" step="0.1" min="0.1" max="10" value="1.0">
-                <small>Length of the light pulse along the pool</small>
+                <label for="pacePer50">Target Pace (seconds per 50 yards):</label>
+                <input type="number" id="pacePer50" value="30" min="20" max="60" step="0.5" oninput="updateFromPace()">
             </div>
-
+            
+            <div class="calculated-info">
+                <div><strong>Swimming Speed:</strong> <span id="swimmingSpeed">5.68 ft/s</span></div>
+                <div><strong>Pool Length:</strong> 50 yards (150 feet)</div>
+                <div><strong>Time per length:</strong> <span id="timePerLength">26.4 seconds</span></div>
+            </div>
+            
             <div class="control">
-                <label>Brightness (0-255):</label>
-                <input type="number" id="brightness" min="0" max="255" value="100">
-                <input type="range" id="brightnessSlider" min="0" max="255" value="100" oninput="syncBrightness(this.value)">
+                <button onclick="applyPaceSettings()">Apply Settings</button>
             </div>
-
-            <button onclick="saveCoachSettings()">Save Settings</button>
         </div>
-
-        <!-- Advanced Config Page -->
+        
+        <!-- Advanced Page -->
         <div id="advanced" class="page">
-            <h1>Advanced Configuration</h1>
-
+            <h2>Advanced Settings</h2>
+            
             <div class="control">
-                <label>Total LEDs:</label>
-                <input type="number" id="totalLEDs" min="1" max="1000" value="150">
-                <small>Total number of LEDs in your strip</small>
+                <label for="speed">Speed (feet per second):</label>
+                <input type="number" id="speed" value="5.0" min="1" max="20" step="0.1" oninput="updateFromSpeed()">
             </div>
-
+            
             <div class="control">
-                <label>LEDs per Meter:</label>
-                <input type="number" id="ledsPerMeter" min="1" max="200" value="30">
-                <small>Density of LEDs on your strip</small>
+                <label for="poolLength">Pool Length (feet):</label>
+                <select id="poolLength" onchange="updateCalculations()">
+                    <option value="150">50 yards (150 feet)</option>
+                    <option value="75">25 yards (75 feet)</option>
+                    <option value="82">25 meters (82 feet)</option>
+                    <option value="164">50 meters (164 feet)</option>
+                </select>
             </div>
-
-            <div class="calculated-info" id="calculatedInfo">
-                <strong>Calculated Values:</strong><br>
-                LED Spacing: <span id="ledSpacing">3.33 cm</span><br>
-                Pulse Width: <span id="pulseWidthLEDs">9 LEDs</span><br>
-                Update Delay: <span id="updateDelay">59 ms</span><br>
-                Full Traverse Time: <span id="traverseTime">14.8 seconds each direction</span>
+            
+            <div class="control">
+                <label for="numLeds">Number of LEDs:</label>
+                <input type="number" id="numLeds" value="150" min="10" max="300" onchange="updateSettings()">
             </div>
-
-            <button onclick="saveAdvancedSettings()">Save Hardware Settings</button>
-            <button onclick="resetToDefaults()" class="secondary">Reset to Defaults</button>
+            
+            <div class="calculated-info">
+                <div><strong>Current Pace:</strong> <span id="currentPace">30.0 sec/50yd</span></div>
+                <div><strong>LEDs per foot:</strong> <span id="ledsPerFoot">1.0</span></div>
+                <div><strong>Time per LED:</strong> <span id="timePerLed">0.20 seconds</span></div>
+            </div>
+            
+            <div class="control">
+                <button onclick="saveSettings()">Save Settings</button>
+            </div>
         </div>
     </div>
 
     <script>
-        // Mock data for development
-        let mockSettings = {
-            totalLEDs: 150,
-            ledsPerMeter: 30,
-            pulseWidthFeet: 1.0,
-            speedFeetPerSecond: 5.56,
-            colorRed: 0,
-            colorGreen: 0,
-            colorBlue: 255,
-            brightness: 100,
+        let currentSettings = {
+            speed: 5.0,
+            color: 'red',
+            brightness: 150,
+            poolLength: 150,
+            numLeds: 150,
             isRunning: false
         };
 
-        // Page Navigation
+        // Page navigation
         function showPage(pageId) {
             // Hide all pages
-            document.querySelectorAll('.page').forEach(page => {
-                page.classList.remove('active');
-            });
-
-            // Remove active from all tabs
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-
+            document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+            
             // Show selected page
             document.getElementById(pageId).classList.add('active');
-
-            // Activate corresponding tab
             event.target.classList.add('active');
         }
 
-        // Conversion functions between pace and speed
-        function paceToSpeed(secondsPerFiftyYards) {
-            // 50 yards = 150 feet
-            // Speed (ft/s) = Distance (ft) / Time (s)
-            return 150 / secondsPerFiftyYards;
+        // Conversion functions for swimming
+        function paceToSpeed(paceSeconds, poolYards = 50) {
+            const poolFeet = poolYards * 3; // Convert yards to feet
+            return poolFeet / paceSeconds;
         }
 
-        function speedToPace(feetPerSecond) {
-            // 50 yards = 150 feet
-            // Time (s) = Distance (ft) / Speed (ft/s)
-            return 150 / feetPerSecond;
+        function speedToPace(speedFps, poolYards = 50) {
+            const poolFeet = poolYards * 3; // Convert yards to feet
+            return poolFeet / speedFps;
         }
 
-        // Main Page Functions
+        function updateFromPace() {
+            const pace = parseFloat(document.getElementById('pacePer50').value);
+            const speed = paceToSpeed(pace);
+            currentSettings.speed = speed;
+            
+            document.getElementById('speed').value = speed.toFixed(1);
+            updateCalculations();
+        }
+
+        function updateFromSpeed() {
+            const speed = parseFloat(document.getElementById('speed').value);
+            currentSettings.speed = speed;
+            
+            const pace = speedToPace(speed);
+            document.getElementById('pacePer50').value = pace.toFixed(1);
+            updateCalculations();
+        }
+
+        function updateCalculations() {
+            const speed = currentSettings.speed;
+            const poolLength = parseInt(document.getElementById('poolLength').value);
+            const numLeds = parseInt(document.getElementById('numLeds').value);
+            
+            // Update swimming metrics
+            document.getElementById('swimmingSpeed').textContent = speed.toFixed(2) + ' ft/s';
+            document.getElementById('timePerLength').textContent = (poolLength / speed).toFixed(1) + ' seconds';
+            
+            // Update pace display
+            const paceSeconds = speedToPace(speed);
+            document.getElementById('currentPace').textContent = paceSeconds.toFixed(1) + ' sec/50yd';
+            
+            // Update LED metrics
+            const ledsPerFoot = numLeds / poolLength;
+            const timePerLed = 1 / (speed * ledsPerFoot);
+            document.getElementById('ledsPerFoot').textContent = ledsPerFoot.toFixed(1);
+            document.getElementById('timePerLed').textContent = (timePerLed * 1000).toFixed(0) + ' ms';
+        }
+
+        function selectColor(color) {
+            currentSettings.color = color;
+            document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('selected'));
+            document.querySelector(`[data-color="${color}"]`).classList.add('selected');
+            updateSettings();
+        }
+
+        function updateBrightness() {
+            const brightness = document.getElementById('brightness').value;
+            currentSettings.brightness = parseInt(brightness);
+            document.getElementById('brightnessValue').textContent = brightness;
+            updateSettings();
+        }
+
         function togglePacer() {
-            mockSettings.isRunning = !mockSettings.isRunning;
-            updateStatus(mockSettings.isRunning);
-            console.log('Pacer toggled:', mockSettings.isRunning ? 'RUNNING' : 'STOPPED');
-        }
-
-        function setPace(secondsPerFiftyYards) {
-            // Convert pace to speed for internal storage
-            mockSettings.speedFeetPerSecond = paceToSpeed(secondsPerFiftyYards);
-            document.getElementById('paceSecondsPerFiftyYards').value = secondsPerFiftyYards;
-            console.log('Pace set to:', secondsPerFiftyYards, 'seconds (', mockSettings.speedFeetPerSecond.toFixed(2), 'ft/s)');
-        }
-
-        function setSpeed(speed) {
-            mockSettings.speedFeetPerSecond = speed;
-            document.getElementById('paceSecondsPerFiftyYards').value = speedToPace(speed).toFixed(1);
-            console.log('Speed set to:', speed);
-        }
-
-        function setColor(r, g, b) {
-            mockSettings.colorRed = r;
-            mockSettings.colorGreen = g;
-            mockSettings.colorBlue = b;
-
-            // Update RGB inputs if on config page
-            document.getElementById('colorRed').value = r;
-            document.getElementById('colorGreen').value = g;
-            document.getElementById('colorBlue').value = b;
-
-            // Update color wheel selection
-            document.querySelectorAll('.color-option').forEach(option => {
-                option.classList.remove('selected');
+            currentSettings.isRunning = !currentSettings.isRunning;
+            
+            fetch('/toggle', { method: 'POST' })
+            .then(response => response.text())
+            .then(result => {
+                document.getElementById('status').textContent = result;
+                document.getElementById('status').className = 'status ' + (currentSettings.isRunning ? 'running' : 'stopped');
+                document.getElementById('toggleBtn').textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
             });
-            event.target.classList.add('selected');
-
-            updateColorPreview();
-            console.log('Color set to RGB:', r, g, b);
         }
 
-        // Config Page Functions
-        function saveCoachSettings() {
-            mockSettings.pulseWidthFeet = parseFloat(document.getElementById('pulseWidthFeet').value);
-            mockSettings.brightness = parseInt(document.getElementById('brightness').value);
-            mockSettings.colorRed = parseInt(document.getElementById('colorRed').value);
-            mockSettings.colorGreen = parseInt(document.getElementById('colorGreen').value);
-            mockSettings.colorBlue = parseInt(document.getElementById('colorBlue').value);
-
-            updateCalculatedValues();
-            alert('Coach settings saved!');
-            console.log('Coach settings updated:', mockSettings);
+        function applyPaceSettings() {
+            updateSettings();
+            showPage('main');
+            // Switch to main tab
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelector('.nav-tab').classList.add('active');
         }
 
-        function syncBrightness(value) {
-            document.getElementById('brightness').value = value;
-            document.getElementById('brightnessSlider').value = value;
+        function updateSettings() {
+            fetch('/setSpeed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `speed=${currentSettings.speed}`
+            });
         }
 
-        // Advanced Page Functions
-        function saveAdvancedSettings() {
-            mockSettings.totalLEDs = parseInt(document.getElementById('totalLEDs').value);
-            mockSettings.ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
-
-            updateCalculatedValues();
-            alert('Hardware settings saved!');
-            console.log('Advanced settings updated:', mockSettings);
+        function saveSettings() {
+            updateSettings();
+            
+            fetch('/setColor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `color=${currentSettings.color}`
+            });
+            
+            fetch('/setBrightness', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `brightness=${currentSettings.brightness}`
+            });
+            
+            alert('Settings saved!');
         }
 
-        function resetToDefaults() {
-            if (confirm('Reset all settings to defaults? This cannot be undone.')) {
-                mockSettings = {
-                    totalLEDs: 150,
-                    ledsPerMeter: 30,
-                    pulseWidthFeet: 1.0,
-                    speedFeetPerSecond: 5.56,
-                    colorRed: 0,
-                    colorGreen: 0,
-                    colorBlue: 255,
-                    brightness: 100,
-                    isRunning: false
-                };
-                loadSettings();
-                alert('Settings reset to defaults!');
-            }
-        }
-
-        // Utility Functions
-        function loadSettings() {
-            console.log('Loading mock settings...');
-
-            document.getElementById('totalLEDs').value = mockSettings.totalLEDs;
-            document.getElementById('ledsPerMeter').value = mockSettings.ledsPerMeter;
-            document.getElementById('pulseWidthFeet').value = mockSettings.pulseWidthFeet;
-            document.getElementById('paceSecondsPerFiftyYards').value = speedToPace(mockSettings.speedFeetPerSecond).toFixed(1);
-            document.getElementById('colorRed').value = mockSettings.colorRed;
-            document.getElementById('colorGreen').value = mockSettings.colorGreen;
-            document.getElementById('colorBlue').value = mockSettings.colorBlue;
-            document.getElementById('brightness').value = mockSettings.brightness;
-            document.getElementById('brightnessSlider').value = mockSettings.brightness;
-
-            updateStatus(mockSettings.isRunning);
-            updateColorPreview();
-            updateCalculatedValues();
-        }
-
-        function updateStatus(isRunning) {
-            const status = document.getElementById('status');
-            const toggleBtn = document.getElementById('toggleBtn');
-
-            if (isRunning) {
-                status.textContent = 'Status: RUNNING';
-                status.className = 'status running';
-                toggleBtn.textContent = 'Stop Pacer';
-            } else {
-                status.textContent = 'Status: STOPPED';
-                status.className = 'status stopped';
-                toggleBtn.textContent = 'Start Pacer';
-            }
-        }
-
-        function updateColorPreview() {
-            const r = document.getElementById('colorRed').value;
-            const g = document.getElementById('colorGreen').value;
-            const b = document.getElementById('colorBlue').value;
-
-            document.getElementById('colorPreview').style.backgroundColor =
-                `rgb(${r}, ${g}, ${b})`;
-        }
-
-        function updateCalculatedValues() {
-            const ledSpacingCM = 100.0 / mockSettings.ledsPerMeter;
-            const pulseWidthCM = mockSettings.pulseWidthFeet * 30.48;
-            const pulseWidthLEDs = Math.round(pulseWidthCM / ledSpacingCM);
-            const speedCMPerSecond = mockSettings.speedFeetPerSecond * 30.48;
-            const delayMS = Math.round(ledSpacingCM / speedCMPerSecond * 1000);
-            const traverseTimeSeconds = (mockSettings.totalLEDs * delayMS) / 1000;
-
-            document.getElementById('ledSpacing').textContent = ledSpacingCM.toFixed(2) + ' cm';
-            document.getElementById('pulseWidthLEDs').textContent = pulseWidthLEDs + ' LEDs';
-            document.getElementById('updateDelay').textContent = delayMS + ' ms';
-            document.getElementById('traverseTime').textContent = traverseTimeSeconds.toFixed(1) + ' seconds each direction';
-        }
-
-        // Event Listeners
-        document.getElementById('colorRed').addEventListener('input', updateColorPreview);
-        document.getElementById('colorGreen').addEventListener('input', updateColorPreview);
-        document.getElementById('colorBlue').addEventListener('input', updateColorPreview);
-        document.getElementById('brightness').addEventListener('input', function() {
-            syncBrightness(this.value);
-        });
-        document.getElementById('brightnessSlider').addEventListener('input', function() {
-            syncBrightness(this.value);
-        });
-
-        document.getElementById('totalLEDs').addEventListener('input', updateCalculatedValues);
-        document.getElementById('ledsPerMeter').addEventListener('input', updateCalculatedValues);
-        document.getElementById('pulseWidthFeet').addEventListener('input', updateCalculatedValues);
-        document.getElementById('paceSecondsPerFiftyYards').addEventListener('input', function() {
-            // Convert pace to speed when user changes pace input
-            const pace = parseFloat(this.value);
-            if (pace > 0) {
-                mockSettings.speedFeetPerSecond = paceToSpeed(pace);
-                updateCalculatedValues();
-            }
-        });
-
-        // Load initial settings on page load
-        loadSettings();
+        // Initialize
+        updateCalculations();
     </script>
 </body>
 </html>
+<!-- ========== SYNC MARKER: END ESP32 HTML ========== -->
