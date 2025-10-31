@@ -425,10 +425,6 @@ void handleRoot() {
                 <div><strong>Pool Length:</strong> <span id="poolLengthDisplay">25 yards (22.9m)</span></div>
                 <div><strong>Strip covers:</strong> <span id="stripCoverage">100.4% of pool</span></div>
             </div>
-
-            <div class="control">
-                <button onclick="saveSettings()">Save Settings</button>
-            </div>
         </div>
     </div>
 
@@ -567,6 +563,9 @@ void handleRoot() {
             currentSettings.poolLength = poolLength;
             currentSettings.stripLength = stripLength;
             currentSettings.ledsPerMeter = ledsPerMeter;
+            
+            // Apply changes immediately
+            updateSettings();
         }
 
         function updateBrightness() {
@@ -913,28 +912,6 @@ void handleRoot() {
             }).catch(error => {
                 console.log('Number of rounds update - server not available (standalone mode)');
             });
-        }
-
-        function saveSettings() {
-            updateSettings();
-
-            fetch('/setColor', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `color=${currentSettings.color}`
-            }).catch(error => {
-                console.log('Color update - server not available (standalone mode)');
-            });
-
-            fetch('/setBrightness', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `brightness=${currentSettings.brightness}`
-            }).catch(error => {
-                console.log('Brightness update - server not available (standalone mode)');
-            });
-
-            alert('Settings saved!');
         }
 
         // Initialize
