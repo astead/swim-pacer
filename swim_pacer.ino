@@ -999,8 +999,16 @@ void handleRoot() {
             document.getElementById('totalRounds').textContent = currentSettings.numRounds;
             document.getElementById('roundProgress').textContent = '0%';
             document.getElementById('activeSwimmers').textContent = '0';
-            document.getElementById('nextEvent').textContent = 'Starting...';
-            document.getElementById('currentPhase').textContent = 'Preparing to start';
+            
+            // Show initial delay countdown
+            if (currentSettings.initialDelay > 0) {
+                document.getElementById('nextEvent').textContent = `Starting in ${currentSettings.initialDelay}s`;
+                document.getElementById('currentPhase').textContent = 'Initial Delay';
+            } else {
+                document.getElementById('nextEvent').textContent = 'Starting now';
+                document.getElementById('currentPhase').textContent = 'Swimming';
+            }
+            
             document.getElementById('elapsedTime').textContent = '00:00';
         }
 
@@ -1024,12 +1032,27 @@ void handleRoot() {
             document.getElementById('elapsedTime').textContent = 
                 `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
-            // Calculate current phase and progress
+            // Account for initial delay
+            const initialDelaySeconds = currentSettings.initialDelay;
+            const timeAfterInitialDelay = elapsedSeconds - initialDelaySeconds;
+
+            // Check if we're still in the initial delay period
+            if (timeAfterInitialDelay < 0) {
+                // Still in initial delay phase
+                document.getElementById('currentPhase').textContent = 'Initial Delay';
+                document.getElementById('activeSwimmers').textContent = '0';
+                document.getElementById('nextEvent').textContent = `Starting in ${Math.ceil(-timeAfterInitialDelay)}s`;
+                document.getElementById('roundProgress').textContent = '0%';
+                document.getElementById('currentRound').textContent = '1';
+                return;
+            }
+
+            // Calculate current phase and progress (after initial delay)
             const paceSeconds = parseFloat(document.getElementById('pacePer50').value);
             const restSeconds = currentSettings.restTime;
             const totalRoundTime = paceSeconds + restSeconds;
             
-            const timeInCurrentRound = elapsedSeconds % totalRoundTime;
+            const timeInCurrentRound = timeAfterInitialDelay % totalRoundTime;
             const progressPercent = Math.floor((timeInCurrentRound / totalRoundTime) * 100);
             
             document.getElementById('roundProgress').textContent = `${progressPercent}%`;
@@ -1047,8 +1070,8 @@ void handleRoot() {
                 document.getElementById('nextEvent').textContent = `Next round in ${Math.ceil(remainingRestTime)}s`;
             }
             
-            // Update current round
-            const calculatedRound = Math.floor(elapsedSeconds / totalRoundTime) + 1;
+            // Update current round (after initial delay)
+            const calculatedRound = Math.floor(timeAfterInitialDelay / totalRoundTime) + 1;
             if (calculatedRound !== currentRound && calculatedRound <= currentSettings.numRounds) {
                 currentRound = calculatedRound;
                 document.getElementById('currentRound').textContent = currentRound;
