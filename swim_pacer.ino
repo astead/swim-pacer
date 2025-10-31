@@ -480,7 +480,7 @@ void handleRoot() {
 
             <div id="underwatersControls" class="underwater-controls" style="display: none;">
                 <div class="control">
-                    <label for="lightSize">Light size (feet):</label>
+                    <label for="lightSize">Light pulse size (feet):</label>
                     <input type="range" id="lightSize" min="0.5" max="5" step="0.5" value="1.0" oninput="updateLightSize()">
                     <span id="lightSizeValue">1.0</span>
                 </div>
@@ -532,7 +532,7 @@ void handleRoot() {
             </div>
 
             <div class="control">
-                <label for="pulseWidth">Pulse Width (feet):</label>
+                <label for="pulseWidth">Light pulse size (feet):</label>
                 <input type="range" id="pulseWidth" min="0.5" max="5" step="0.5" value="1.0" oninput="updatePulseWidth()">
                 <span id="pulseWidthValue">1.0</span>
             </div>
