@@ -433,32 +433,8 @@ void handleRoot() {
                 </div>
             </div>
 
-            <!-- Active Set Status (shown when running) -->
-            <div id="detailedStatus" style="display: none; background: #e7f3ff; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #2196F3;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h4 style="margin: 0; color: #1976D2;">Active Set <span id="setBasics" style="font-weight: normal; color: #666;">- Loading...</span></h4>
-                    <div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
-                    <div>
-                        <strong>Round:</strong> <span id="currentRound">1</span> of <span id="totalRounds">10</span>
-                    </div>
-                    <div>
-                        <strong>Round:</strong> <span id="roundTiming">0:00 / 0:00</span>
-                    </div>
-                    <div>
-                        <strong>Active Swimmers:</strong> <span id="activeSwimmers">0</span>
-                    </div>
-                    <div>
-                        <strong>Next Event:</strong> <span id="nextEvent">Starting...</span>
-                    </div>
-                </div>
-                <div style="margin-top: 10px;">
-                    <div style="background: #fff; border-radius: 4px; padding: 8px; font-size: 12px;">
-                        <strong>Current Phase:</strong> <span id="currentPhase">Preparing to start</span>
-                    </div>
-                </div>
-            </div>
+            <!-- Active Set Status - now integrated into queue display -->
+            <div id="detailedStatus" style="display: none;"></div>
 
             <div class="control">
                 <div class="button-group" id="pacerButtons" style="display: none;">
@@ -1007,14 +983,11 @@ void handleRoot() {
             updateQueueDisplay();
             updatePacerButtons();
 
-            // If the new lane is running, show detailed status and start updates
-            const detailedStatus = document.getElementById('detailedStatus');
+            // If the new lane is running, start status updates
             if (currentSettings.isRunning) {
-                detailedStatus.style.display = 'block';
                 initializePacerStatus();
                 startStatusUpdates();
             } else {
-                detailedStatus.style.display = 'none';
                 stopStatusUpdates();
             }
         }
@@ -1376,14 +1349,12 @@ void handleRoot() {
                     laneName: currentSettings.laneNames[currentLane]
                 };
 
-                detailedStatus.style.display = 'block';
                 initializePacerStatus();
                 startStatusUpdates();
             } else {
                 // Stopping pacer for current lane - clear running copies
                 runningSets[currentLane] = null;
                 runningSettings[currentLane] = null;
-                detailedStatus.style.display = 'none';
                 stopStatusUpdates();
             }
 
@@ -1677,16 +1648,30 @@ void handleRoot() {
                 const statusClass = isActive ? 'style="background: #e7f3ff; border: 1px solid #2196F3;"' : '';
                 
                 html += `
-                    <div ${statusClass} style="padding: 8px; margin: 5px 0; border-radius: 4px; border: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <div style="font-weight: bold; color: ${isActive ? '#1976D2' : '#333'};">
-                                ${isActive ? '🏊 ' : ''}${workSet.summary}
+                    <div ${statusClass} style="padding: 8px; margin: 5px 0; border-radius: 4px; border: 1px solid #ddd;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-weight: bold; color: ${isActive ? '#1976D2' : '#333'};">
+                                    ${isActive ? '🏊 ' : ''}${workSet.summary}
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 5px;">
+                                ${!isActive ? `<button onclick="editWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
+                                ${!isActive ? `<button onclick="deleteWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
+                                ${isActive ? `<div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>` : ''}
                             </div>
                         </div>
-                        <div style="display: flex; gap: 5px;">
-                            ${!isActive ? `<button onclick="editWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
-                            ${!isActive ? `<button onclick="deleteWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
-                        </div>
+                        ${isActive ? `
+                            <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; color: #555;">
+                                <div><strong>Round:</strong> <span id="currentRound">1</span> of <span id="totalRounds">10</span></div>
+                                <div><strong>Round:</strong> <span id="roundTiming">0:00 / 0:00</span></div>
+                                <div><strong>Active Swimmers:</strong> <span id="activeSwimmers">0</span></div>
+                                <div><strong>Next Event:</strong> <span id="nextEvent">Starting...</span></div>
+                            </div>
+                            <div style="margin-top: 6px; background: #fff; border-radius: 3px; padding: 6px; font-size: 11px;">
+                                <strong>Current Phase:</strong> <span id="currentPhase">Preparing to start</span>
+                            </div>
+                        ` : ''}
                     </div>
                 `;
             });
@@ -1808,9 +1793,6 @@ void handleRoot() {
             // Update displays
             updateQueueDisplay();
             updatePacerButtons();
-            
-            // Show detailed status
-            document.getElementById('detailedStatus').style.display = 'block';
         }
 
         function stopQueue() {
@@ -1825,9 +1807,6 @@ void handleRoot() {
             // Update displays
             updateQueueDisplay();
             updatePacerButtons();
-            
-            // Hide detailed status
-            document.getElementById('detailedStatus').style.display = 'none';
         }
 
         function loadWorkSetForExecution(workSet) {
@@ -2146,14 +2125,12 @@ void handleRoot() {
                         // User declined, update displays to show queue
                         updateQueueDisplay();
                         updatePacerButtons();
-                        document.getElementById('detailedStatus').style.display = 'none';
                     }
                 }, 1000);
             } else {
                 // No more sets in current lane, return to idle state
                 updateQueueDisplay();
                 updatePacerButtons();
-                document.getElementById('detailedStatus').style.display = 'none';
                 alert('All sets completed for Lane ' + (currentLane + 1) + '!');
             }
         }
