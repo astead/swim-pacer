@@ -552,9 +552,11 @@ void handleRoot() {
 
             <div id="underwatersControls" class="underwater-controls" style="display: none;">
                 <div class="control">
-                    <label for="lightSize">Light pulse size (feet):</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="lightSize">Light pulse size:</label>
+                        <span id="lightSizeValue">1.0 foot</span>
+                    </div>
                     <input type="range" id="lightSize" min="0.5" max="5" step="0.5" value="1.0" oninput="updateLightSize()">
-                    <span id="lightSizeValue">1.0</span>
                 </div>
 
                 <div class="control">
@@ -606,9 +608,11 @@ void handleRoot() {
             </div>
 
             <div class="control">
-                <label for="pulseWidth">Light pulse size (feet):</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <label for="pulseWidth">Light pulse size:</label>
+                    <span id="pulseWidthValue">1.0 foot</span>
+                </div>
                 <input type="range" id="pulseWidth" min="0.5" max="5" step="0.5" value="1.0" oninput="updatePulseWidth()">
-                <span id="pulseWidthValue">1.0</span>
             </div>
 
             <div class="control">
@@ -1024,7 +1028,8 @@ void handleRoot() {
         function updatePulseWidth() {
             const pulseWidth = document.getElementById('pulseWidth').value;
             currentSettings.pulseWidth = parseFloat(pulseWidth);
-            document.getElementById('pulseWidthValue').textContent = pulseWidth;
+            const unit = parseFloat(pulseWidth) === 1.0 ? ' foot' : ' feet';
+            document.getElementById('pulseWidthValue').textContent = pulseWidth + unit;
             updateSettings();
         }
 
@@ -1094,7 +1099,8 @@ void handleRoot() {
         function updateLightSize() {
             const lightSize = document.getElementById('lightSize').value;
             currentSettings.lightSize = parseFloat(lightSize);
-            document.getElementById('lightSizeValue').textContent = lightSize;
+            const unit = parseFloat(lightSize) === 1.0 ? ' foot' : ' feet';
+            document.getElementById('lightSizeValue').textContent = lightSize + unit;
             updateSettings();
         }
 
