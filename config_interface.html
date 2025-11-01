@@ -180,7 +180,7 @@
             <!-- Detailed Status (shown when running) -->
             <div id="detailedStatus" style="display: none; background: #e7f3ff; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #2196F3;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h4 style="margin: 0; color: #1976D2;">Current Status</h4>
+                    <h4 style="margin: 0; color: #1976D2;">Current Status <span id="setBasics" style="font-weight: normal; color: #666;">- Loading...</span></h4>
                     <div id="elapsedTime" style="font-weight: bold; color: #1976D2;">00:00</div>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
@@ -994,6 +994,11 @@
             document.getElementById('totalRounds').textContent = currentSettings.numRounds;
             document.getElementById('roundProgress').textContent = '0%';
             document.getElementById('activeSwimmers').textContent = '0';
+
+            // Update set basics display
+            const paceDistance = currentSettings.paceDistance;
+            const numRounds = currentSettings.numRounds;
+            document.getElementById('setBasics').textContent = `- ${numRounds} x ${paceDistance}'s`;
 
             // Show initial delay countdown
             if (currentSettings.initialDelay > 0) {
