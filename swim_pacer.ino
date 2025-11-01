@@ -1828,9 +1828,14 @@ void handleRoot() {
             // Start the pacer
             startPacerExecution();
             
-            // Update displays
+            // Update displays (this creates the DOM elements)
             updateQueueDisplay();
             updatePacerButtons();
+            
+            // Initialize pacer status display AFTER DOM elements are created
+            setTimeout(() => {
+                initializePacerStatus();
+            }, 10); // Small delay to ensure DOM is updated
         }
 
         function stopQueue() {
@@ -1882,9 +1887,6 @@ void handleRoot() {
             // Create immutable copies for running state
             runningSets[currentLane] = JSON.parse(JSON.stringify(currentSet));
             runningSettings[currentLane] = JSON.parse(JSON.stringify(currentSettings));
-
-            // Initialize pacer status display with work set data (after runningSettings is set)
-            initializePacerStatus();
 
             // Start the pacer for this lane
             laneRunning[currentLane] = true;
