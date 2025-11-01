@@ -511,9 +511,11 @@ void handleRoot() {
         <div id="coach" class="page">
             <h3>Swim Settings</h3>
             <div class="control">
-                <label for="initialDelay">Initial delay (seconds):</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <label for="initialDelay">Initial Delay:</label>
+                    <span id="initialDelayValue">10 seconds</span>
+                </div>
                 <input type="range" id="initialDelay" min="0" max="30" step="1" value="10" oninput="updateInitialDelay()">
-                <span id="initialDelayValue">10</span>
             </div>
             <div class="control">
                 <label for="swimmerInterval">Delay between swimmers (seconds):</label>
@@ -1032,7 +1034,7 @@ void handleRoot() {
         function updateInitialDelay() {
             const initialDelay = document.getElementById('initialDelay').value;
             currentSettings.initialDelay = parseInt(initialDelay);
-            document.getElementById('initialDelayValue').textContent = initialDelay;
+            document.getElementById('initialDelayValue').textContent = initialDelay + ' seconds';
             updateSettings();
         }
 
