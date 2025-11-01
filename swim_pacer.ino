@@ -461,6 +461,10 @@ void handleRoot() {
             </div>
 
             <div class="control">
+                <div class="button-group" id="pacerButtons" style="display: none;">
+                    <button class="big-button" onclick="startQueue()" id="startBtn">Start Queue</button>
+                    <button class="big-button" onclick="stopQueue()" id="stopBtn" style="display: none; background: #dc3545;">Stop</button>
+                </div>
                 <div class="button-group" id="configButtons">
                     <button class="big-button" onclick="createWorkSet()" id="createSetBtn">Create Set</button>
                 </div>
@@ -471,10 +475,6 @@ void handleRoot() {
                 <div class="button-group" id="editButtons" style="display: none;">
                     <button class="big-button" onclick="saveWorkSet()" id="saveBtn">Save Changes</button>
                     <button class="big-button" onclick="cancelEdit()" id="cancelEditBtn" style="background: #dc3545;">Cancel</button>
-                </div>
-                <div class="button-group" id="pacerButtons" style="display: none;">
-                    <button class="big-button" onclick="startQueue()" id="startBtn">Start Queue</button>
-                    <button class="big-button" onclick="stopQueue()" id="stopBtn" style="display: none; background: #dc3545;">Stop</button>
                 </div>
             </div>
 
