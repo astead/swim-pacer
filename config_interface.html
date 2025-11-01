@@ -938,9 +938,9 @@
             updateSettings();
         }
 
-        // Pacer status tracking variables
-        let pacerStartTime = 0;
-        let currentRound = 1;
+        // Pacer status tracking variables - now lane-specific
+        let pacerStartTimes = [0, 0, 0, 0]; // Start time for each lane
+        let currentRounds = [1, 1, 1, 1]; // Current round for each lane
         let statusUpdateInterval = null;
         let currentColorContext = null; // Track which color picker context we're in
 
@@ -963,14 +963,14 @@
             // Handle detailed status display
             const detailedStatus = document.getElementById('detailedStatus');
             if (currentSettings.isRunning) {
-                // Starting pacer
-                pacerStartTime = Date.now();
-                currentRound = 1;
+                // Starting pacer for current lane
+                pacerStartTimes[currentLane] = Date.now();
+                currentRounds[currentLane] = 1;
                 detailedStatus.style.display = 'block';
                 initializePacerStatus();
                 startStatusUpdates();
             } else {
-                // Stopping pacer
+                // Stopping pacer for current lane
                 detailedStatus.style.display = 'none';
                 stopStatusUpdates();
             }
@@ -989,7 +989,8 @@
         }
 
         function initializePacerStatus() {
-            document.getElementById('currentRound').textContent = currentRound;
+            const currentLane = currentSettings.currentLane;
+            document.getElementById('currentRound').textContent = currentRounds[currentLane];
             document.getElementById('totalRounds').textContent = currentSettings.numRounds;
             document.getElementById('roundProgress').textContent = '0%';
             document.getElementById('activeSwimmers').textContent = '0';
@@ -1020,7 +1021,8 @@
         function updatePacerStatus() {
             if (!currentSettings.isRunning) return;
 
-            const elapsedSeconds = Math.floor((Date.now() - pacerStartTime) / 1000);
+            const currentLane = currentSettings.currentLane;
+            const elapsedSeconds = Math.floor((Date.now() - pacerStartTimes[currentLane]) / 1000);
             const minutes = Math.floor(elapsedSeconds / 60);
             const seconds = elapsedSeconds % 60;
             document.getElementById('elapsedTime').textContent =
@@ -1066,9 +1068,9 @@
 
             // Update current round (after initial delay)
             const calculatedRound = Math.floor(timeAfterInitialDelay / totalRoundTime) + 1;
-            if (calculatedRound !== currentRound && calculatedRound <= currentSettings.numRounds) {
-                currentRound = calculatedRound;
-                document.getElementById('currentRound').textContent = currentRound;
+            if (calculatedRound !== currentRounds[currentLane] && calculatedRound <= currentSettings.numRounds) {
+                currentRounds[currentLane] = calculatedRound;
+                document.getElementById('currentRound').textContent = currentRounds[currentLane];
             }
 
             // Check if set is complete
