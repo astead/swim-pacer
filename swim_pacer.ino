@@ -1849,10 +1849,8 @@ void handleRoot() {
             laneRunning[currentLane] = true;
             currentSettings.isRunning = true;
 
-            // Initialize timing
-            if (!pacerStartTimes[currentLane]) {
-                pacerStartTimes[currentLane] = Date.now();
-            }
+            // Initialize timing - always reset for new queue start
+            pacerStartTimes[currentLane] = Date.now();
 
             // Send start command to ESP32
             sendStartCommand();
@@ -1877,6 +1875,9 @@ void handleRoot() {
             // Clear running state
             runningSets[currentLane] = null;
             runningSettings[currentLane] = null;
+
+            // Clear timing state to ensure fresh start next time
+            pacerStartTimes[currentLane] = 0;
 
             // Send stop command to ESP32
             sendStopCommand();
