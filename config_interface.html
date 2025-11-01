@@ -233,15 +233,17 @@
                 </div>
 
                 <div class="control">
-                    <label for="paceDistance">Distance:</label>
-                    <select id="paceDistance" onchange="updatePaceDistance()">
-                        <option value="25">25 yards</option>
-                        <option value="50" selected>50 yards</option>
-                        <option value="75">75 yards</option>
-                        <option value="100">100 yards</option>
-                        <option value="200">200 yards</option>
-                        <option value="500">500 yards</option>
-                    </select>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label for="paceDistance">Distance:</label>
+                        <select id="paceDistance" onchange="updatePaceDistance()" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="25">25 yards</option>
+                            <option value="50" selected>50 yards</option>
+                            <option value="75">75 yards</option>
+                            <option value="100">100 yards</option>
+                            <option value="200">200 yards</option>
+                            <option value="500">500 yards</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="control">
