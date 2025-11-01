@@ -799,14 +799,16 @@
         function updateInitialDelay() {
             const initialDelay = document.getElementById('initialDelay').value;
             currentSettings.initialDelay = parseInt(initialDelay);
-            document.getElementById('initialDelayValue').textContent = initialDelay + ' seconds';
+            const unit = parseInt(initialDelay) === 1 ? ' second' : ' seconds';
+            document.getElementById('initialDelayValue').textContent = initialDelay + unit;
             updateSettings();
         }
 
         function updateSwimmerInterval() {
             const swimmerInterval = document.getElementById('swimmerInterval').value;
             currentSettings.swimmerInterval = parseInt(swimmerInterval);
-            document.getElementById('swimmerIntervalValue').textContent = swimmerInterval + ' seconds';
+            const unit = parseInt(swimmerInterval) === 1 ? ' second' : ' seconds';
+            document.getElementById('swimmerIntervalValue').textContent = swimmerInterval + unit;
             updateSettings();
         }
 
