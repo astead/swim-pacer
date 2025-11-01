@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Queue System Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .pass { color: green; }
+        .fail { color: red; }
+        button { margin: 5px; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Swim Pacer Queue System Test</h1>
+    
+    <div class="test-section">
+        <h2>Test Results</h2>
+        <div id="test-results"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Manual Tests</h2>
+        <button onclick="testCreateWorkSet()">Test Create Work Set</button>
+        <button onclick="testQueueWorkSet()">Test Queue Work Set</button>
+        <button onclick="testStartQueue()">Test Start Queue</button>
+        <button onclick="testStopQueue()">Test Stop Queue</button>
+        <button onclick="testSetCompletion()">Test Set Completion</button>
+    </div>
+
+    <script>
+        // Load the main interface HTML content for testing
+        function loadMainInterface() {
+            fetch('config_interface.html')
+                .then(response => response.text())
+                .then(html => {
+                    // Extract just the script content for testing
+                    const scriptMatch = html.match(/<script>([\s\S]*)<\/script>/);
+                    if (scriptMatch) {
+                        eval(scriptMatch[1]);
+                        runAutomaticTests();
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to load main interface:', error);
+                    document.getElementById('test-results').innerHTML = '<div class="fail">Failed to load main interface</div>';
+                });
+        }
+
+        function runAutomaticTests() {
+            const results = [];
+            
+            // Test 1: Check if all required functions exist
+            const requiredFunctions = [
+                'createWorkSet', 'queueWorkSet', 'editWorkSet', 'deleteWorkSet',
+                'startQueue', 'stopQueue', 'handleSetCompletion',
+                'sendStartCommand', 'sendStopCommand'
+            ];
+            
+            requiredFunctions.forEach(funcName => {
+                if (typeof window[funcName] === 'function') {
+                    results.push(`<div class="pass">✓ Function ${funcName} exists</div>`);
+                } else {
+                    results.push(`<div class="fail">✗ Function ${funcName} missing</div>`);
+                }
+            });
+
+            // Test 2: Check if required variables exist
+            const requiredVars = ['workSetQueue', 'activeWorkSet', 'editingWorkSetIndex', 'createdWorkSet'];
+            
+            requiredVars.forEach(varName => {
+                if (typeof window[varName] !== 'undefined') {
+                    results.push(`<div class="pass">✓ Variable ${varName} exists</div>`);
+                } else {
+                    results.push(`<div class="fail">✗ Variable ${varName} missing</div>`);
+                }
+            });
+
+            document.getElementById('test-results').innerHTML = results.join('');
+        }
+
+        function testCreateWorkSet() {
+            console.log('Testing createWorkSet...');
+            if (typeof createWorkSet === 'function') {
+                try {
+                    createWorkSet();
+                    console.log('createWorkSet executed successfully');
+                } catch (error) {
+                    console.error('createWorkSet failed:', error);
+                }
+            }
+        }
+
+        function testQueueWorkSet() {
+            console.log('Testing queueWorkSet...');
+            if (typeof queueWorkSet === 'function') {
+                try {
+                    queueWorkSet();
+                    console.log('queueWorkSet executed successfully');
+                } catch (error) {
+                    console.error('queueWorkSet failed:', error);
+                }
+            }
+        }
+
+        function testStartQueue() {
+            console.log('Testing startQueue...');
+            if (typeof startQueue === 'function') {
+                try {
+                    startQueue();
+                    console.log('startQueue executed successfully');
+                } catch (error) {
+                    console.error('startQueue failed:', error);
+                }
+            }
+        }
+
+        function testStopQueue() {
+            console.log('Testing stopQueue...');
+            if (typeof stopQueue === 'function') {
+                try {
+                    stopQueue();
+                    console.log('stopQueue executed successfully');
+                } catch (error) {
+                    console.error('stopQueue failed:', error);
+                }
+            }
+        }
+
+        function testSetCompletion() {
+            console.log('Testing handleSetCompletion...');
+            if (typeof handleSetCompletion === 'function') {
+                try {
+                    handleSetCompletion();
+                    console.log('handleSetCompletion executed successfully');
+                } catch (error) {
+                    console.error('handleSetCompletion failed:', error);
+                }
+            }
+        }
+
+        // Load the main interface when page loads
+        window.onload = loadMainInterface;
+    </script>
+</body>
+</html>

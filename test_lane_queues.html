@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lane Queue Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-container { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        button { margin: 5px; padding: 10px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .queue-info { background: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Lane-Specific Queue Test</h1>
+    
+    <div class="test-container">
+        <h2>Simulate Lane Switching</h2>
+        <p>This test simulates the lane switching functionality to verify queue updates.</p>
+        
+        <div>
+            <label for="testLane">Current Lane:</label>
+            <select id="testLane" onchange="testLaneSwitch()">
+                <option value="0">Lane 1</option>
+                <option value="1">Lane 2</option>
+                <option value="2">Lane 3</option>
+                <option value="3">Lane 4</option>
+            </select>
+        </div>
+        
+        <div class="queue-info">
+            <strong>Current Lane Queue:</strong>
+            <div id="testQueueDisplay">No sets queued for Lane 1</div>
+        </div>
+        
+        <div>
+            <button onclick="addTestSet()">Add Test Set to Current Lane</button>
+            <button onclick="clearTestSets()">Clear All Test Sets</button>
+            <button onclick="showAllQueues()">Show All Lane Queues</button>
+        </div>
+        
+        <div id="allQueuesDisplay" style="margin-top: 15px;"></div>
+    </div>
+
+    <script>
+        // Simulate the lane-specific queue system
+        let testWorkSetQueues = [[], [], [], []];
+        let testCurrentLane = 0;
+        let testSetCounter = 1;
+
+        function testLaneSwitch() {
+            const newLane = parseInt(document.getElementById('testLane').value);
+            console.log('Switching from lane', testCurrentLane, 'to lane', newLane);
+            testCurrentLane = newLane;
+            updateTestQueueDisplay();
+        }
+
+        function updateTestQueueDisplay() {
+            const display = document.getElementById('testQueueDisplay');
+            const queue = testWorkSetQueues[testCurrentLane];
+            
+            if (queue.length === 0) {
+                display.innerHTML = `No sets queued for Lane ${testCurrentLane + 1}`;
+            } else {
+                let html = `<strong>Lane ${testCurrentLane + 1} Queue (${queue.length} sets):</strong><br>`;
+                queue.forEach((set, index) => {
+                    html += `${index + 1}. ${set}<br>`;
+                });
+                display.innerHTML = html;
+            }
+        }
+
+        function addTestSet() {
+            const setName = `Test Set ${testSetCounter++} (Lane ${testCurrentLane + 1})`;
+            testWorkSetQueues[testCurrentLane].push(setName);
+            console.log('Added set to lane', testCurrentLane, ':', setName);
+            console.log('Lane', testCurrentLane, 'now has', testWorkSetQueues[testCurrentLane].length, 'sets');
+            updateTestQueueDisplay();
+            showAllQueues();
+        }
+
+        function clearTestSets() {
+            testWorkSetQueues = [[], [], [], []];
+            testSetCounter = 1;
+            updateTestQueueDisplay();
+            showAllQueues();
+        }
+
+        function showAllQueues() {
+            const display = document.getElementById('allQueuesDisplay');
+            let html = '<strong>All Lane Queues:</strong><br>';
+            
+            testWorkSetQueues.forEach((queue, laneIndex) => {
+                html += `<div style="margin: 5px 0; padding: 5px; background: ${laneIndex === testCurrentLane ? '#e7f3ff' : '#f5f5f5'}; border-radius: 3px;">`;
+                html += `<strong>Lane ${laneIndex + 1}:</strong> `;
+                if (queue.length === 0) {
+                    html += 'Empty';
+                } else {
+                    html += `${queue.length} sets - ${queue.join(', ')}`;
+                }
+                html += '</div>';
+            });
+            
+            display.innerHTML = html;
+        }
+
+        // Initialize
+        updateTestQueueDisplay();
+        showAllQueues();
+    </script>
+</body>
+</html>

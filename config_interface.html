@@ -1086,9 +1086,18 @@
 
         function updateStatus() {
             const status = currentSettings.isRunning ? "Pacer Started" : "Pacer Stopped";
-            document.getElementById('status').textContent = status;
-            document.getElementById('status').className = 'status ' + (currentSettings.isRunning ? 'running' : 'stopped');
-            document.getElementById('toggleBtn').textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
+            const statusElement = document.getElementById('status');
+            const toggleBtnElement = document.getElementById('toggleBtn');
+            
+            if (statusElement) {
+                statusElement.textContent = status;
+                statusElement.className = 'status ' + (currentSettings.isRunning ? 'running' : 'stopped');
+            }
+            
+            // toggleBtn doesn't exist in queue-based interface, so check first
+            if (toggleBtnElement) {
+                toggleBtnElement.textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
+            }
         }
 
         function togglePacer() {
@@ -1405,6 +1414,11 @@
             const currentLane = currentSettings.currentLane;
             const queueList = document.getElementById('queueList');
             
+            if (!queueList) {
+                console.error('Queue list element not found');
+                return;
+            }
+            
             if (workSetQueues[currentLane].length === 0) {
                 queueList.innerHTML = '<div style="color: #666; font-style: italic;">No sets queued for Lane ' + (currentLane + 1) + '</div>';
                 return;
@@ -1438,6 +1452,11 @@
             const pacerButtons = document.getElementById('pacerButtons');
             const startBtn = document.getElementById('startBtn');
             const stopBtn = document.getElementById('stopBtn');
+            
+            if (!pacerButtons || !startBtn || !stopBtn) {
+                console.error('Pacer button elements not found');
+                return;
+            }
             
             if (workSetQueues[currentLane].length > 0) {
                 pacerButtons.style.display = 'block';
@@ -1843,8 +1862,14 @@
 
         // Initialize queue display on page load
         function initializeQueueSystem() {
-            updateQueueDisplay();
-            updatePacerButtons();
+            // Ensure queue display is updated on initialization
+            if (document.getElementById('queueList')) {
+                updateQueueDisplay();
+                updatePacerButtons();
+            } else {
+                // Retry after a short delay if elements aren't ready
+                setTimeout(initializeQueueSystem, 100);
+            }
         }
 
         function handleSetCompletion() {
@@ -1901,7 +1926,18 @@
         updateLaneSelector();
         updateLaneNamesSection();
         updateStatus();
-        initializeQueueSystem();
+        
+        // Initialize queue system after DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeQueueSystem();
+        });
+        
+        // Also initialize immediately in case DOM is already loaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeQueueSystem);
+        } else {
+            initializeQueueSystem();
+        }
     </script>
 </body>
 </html>
