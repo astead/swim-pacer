@@ -45,6 +45,7 @@ struct Settings {
   float poolLengthMeters = 22.86;            // Pool length in meters (25 yards)
   float stripLengthMeters = 23.0;            // LED strip length in meters
   int ledsPerMeter = 30;                     // LEDs per meter
+  int numLanes = 1;                          // Number of LED strips/lanes connected
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   float speedFeetPerSecond = 5.56;           // Speed in feet per second
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
@@ -192,6 +193,7 @@ void setupWebServer() {
   server.on("/setPulseWidth", HTTP_POST, handleSetPulseWidth);
   server.on("/setStripLength", HTTP_POST, handleSetStripLength);
   server.on("/setLedsPerMeter", HTTP_POST, handleSetLedsPerMeter);
+  server.on("/setNumLanes", HTTP_POST, handleSetNumLanes);
   server.on("/setRestTime", HTTP_POST, handleSetRestTime);
   server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
   server.on("/setInitialDelay", HTTP_POST, handleSetInitialDelay);
@@ -402,6 +404,17 @@ void handleRoot() {
                 </div>
             </div>
 
+            <!-- Lane Selector (shown when multiple lanes configured) -->
+            <div id="laneSelector" style="display: none; margin: 15px 0;">
+                <div class="control">
+                    <label for="currentLane">Working Lane:</label>
+                    <select id="currentLane" onchange="updateCurrentLane()" style="margin-right: 10px;">
+                        <!-- Options populated by JavaScript -->
+                    </select>
+                    <button onclick="editLaneName()" style="padding: 4px 8px; font-size: 12px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit Name</button>
+                </div>
+            </div>
+
             <div class="control">
                 <div class="button-group">
                     <button class="big-button" onclick="togglePacer()" id="toggleBtn">Start Pacer</button>
@@ -598,6 +611,11 @@ void handleRoot() {
                 <label for="ledsPerMeter">LEDs per Meter:</label>
                 <input type="number" id="ledsPerMeter" value="30" min="10" max="144" onchange="updateCalculations()">
             </div>
+
+            <div class="control">
+                <label for="numLanes">Number of lanes:</label>
+                <input type="number" id="numLanes" value="1" min="1" max="4" onchange="updateNumLanes()">
+            </div>
         </div>
     </div>
 
@@ -630,6 +648,9 @@ void handleRoot() {
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
+            numLanes: 1,
+            currentLane: 0,
+            laneNames: ['Lane 1', 'Lane 2', 'Lane 3', 'Lane 4'],
             isRunning: false,
             underwatersEnabled: false,
             lightSize: 1.0,
@@ -640,8 +661,8 @@ void handleRoot() {
             surfaceColor: '#00ff00'
         };
 
-        // Swimmer set configuration
-        let swimmerSet = [];
+        // Swimmer set configuration - now lane-specific
+        let swimmerSets = [[], [], [], []]; // Array of sets for each lane (up to 4 lanes)
         let currentSwimmerIndex = -1; // Track which swimmer is being edited
         const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan'];
         const colorHex = {
@@ -724,6 +745,66 @@ void handleRoot() {
 
             // Apply changes immediately
             updateSettings();
+        }
+
+        function updateNumLanes() {
+            const numLanes = parseInt(document.getElementById('numLanes').value);
+            currentSettings.numLanes = numLanes;
+            updateLaneSelector();
+            updateSettings();
+        }
+
+        function updateLaneSelector() {
+            const laneSelector = document.getElementById('laneSelector');
+            const currentLaneSelect = document.getElementById('currentLane');
+            
+            // Show/hide lane selector based on number of lanes
+            if (currentSettings.numLanes > 1) {
+                laneSelector.style.display = 'block';
+                
+                // Populate lane options
+                currentLaneSelect.innerHTML = '';
+                for (let i = 0; i < currentSettings.numLanes; i++) {
+                    const option = document.createElement('option');
+                    option.value = i;
+                    option.textContent = currentSettings.laneNames[i];
+                    currentLaneSelect.appendChild(option);
+                }
+                
+                // Set current lane
+                currentLaneSelect.value = currentSettings.currentLane;
+            } else {
+                laneSelector.style.display = 'none';
+                currentSettings.currentLane = 0; // Default to lane 0 for single lane
+            }
+        }
+
+        function updateCurrentLane() {
+            const newLane = parseInt(document.getElementById('currentLane').value);
+            currentSettings.currentLane = newLane;
+            
+            // Refresh the swimmer set display for the new lane
+            updateSwimmerSetDisplay();
+        }
+
+        function editLaneName() {
+            const currentLane = currentSettings.currentLane;
+            const currentName = currentSettings.laneNames[currentLane];
+            const newName = prompt(`Enter new name for lane ${currentLane + 1}:`, currentName);
+            
+            if (newName && newName.trim() !== '') {
+                currentSettings.laneNames[currentLane] = newName.trim();
+                updateLaneSelector(); // Refresh the dropdown with new name
+                updateSettings();
+            }
+        }
+
+        function getCurrentSwimmerSet() {
+            return swimmerSets[currentSettings.currentLane] || [];
+        }
+
+        function setCurrentSwimmerSet(newSet) {
+            swimmerSets[currentSettings.currentLane] = newSet;
         }
 
         function updateBrightness() {
@@ -966,11 +1047,12 @@ void handleRoot() {
         function selectColor(color) {
             if (currentSwimmerIndex >= 0) {
                 // Updating individual swimmer color
+                const currentSet = getCurrentSwimmerSet();
                 // Defensive programming: ensure we don't accidentally modify all swimmers
-                if (currentSwimmerIndex < swimmerSet.length) {
+                if (currentSwimmerIndex < currentSet.length) {
                     // Store the hex color directly to avoid shared reference issues
-                    swimmerSet[currentSwimmerIndex].color = color;
-                    console.log(`Updated swimmer ${currentSwimmerIndex} color to ${color}`);
+                    currentSet[currentSwimmerIndex].color = color;
+                    console.log(`Updated swimmer ${currentSwimmerIndex} in ${currentSettings.laneNames[currentSettings.currentLane]} color to ${color}`);
                     displaySwimmerSet();
                 }
                 currentSwimmerIndex = -1; // Reset
@@ -1154,13 +1236,14 @@ void handleRoot() {
             }
 
             // Create new set mode
-            // Clear existing set
-            swimmerSet = [];
+            // Clear existing set for current lane
+            setCurrentSwimmerSet([]);
 
             // Get current pace from the main settings
             const currentPace = parseFloat(document.getElementById('pacePer50').value);
 
-            // Create swimmer configurations
+            // Create swimmer configurations for current lane
+            const newSet = [];
             for (let i = 0; i < currentSettings.numSwimmers; i++) {
                 // Determine color based on color mode
                 let swimmerColor;
@@ -1177,12 +1260,16 @@ void handleRoot() {
                     id: i + 1,
                     color: swimmerColor, // Store hex color directly
                     pace: currentPace,
-                    interval: i === 0 ? currentSettings.initialDelay : currentSettings.initialDelay + (i * currentSettings.swimmerInterval) // First swimmer uses initial delay, others add swimmer intervals
+                    interval: i === 0 ? currentSettings.initialDelay : currentSettings.initialDelay + (i * currentSettings.swimmerInterval), // First swimmer uses initial delay, others add swimmer intervals
+                    lane: currentSettings.currentLane // Track which lane this swimmer belongs to
                 };
 
-                swimmerSet.push(newSwimmer);
-                console.log(`Created swimmer ${i + 1} with color: ${swimmerColor}`);
+                newSet.push(newSwimmer);
+                console.log(`Created swimmer ${i + 1} for ${currentSettings.laneNames[currentSettings.currentLane]} with color: ${swimmerColor}`);
             }
+
+            // Store the set for current lane
+            setCurrentSwimmerSet(newSet);
 
             // Display the set
             displaySwimmerSet();
@@ -1194,19 +1281,22 @@ void handleRoot() {
         }
 
         function displaySwimmerSet() {
+            const currentSet = getCurrentSwimmerSet();
+            
             // Update set details in swim practice nomenclature
             const setDetails = document.getElementById('setDetails');
             const paceDistance = currentSettings.paceDistance;
-            const avgPace = swimmerSet.length > 0 ? swimmerSet[0].pace : parseFloat(document.getElementById('pacePer50').value);
+            const avgPace = currentSet.length > 0 ? currentSet[0].pace : parseFloat(document.getElementById('pacePer50').value);
             const restTime = currentSettings.restTime;
             const numRounds = currentSettings.numRounds;
+            const laneName = currentSettings.laneNames[currentSettings.currentLane];
 
-            setDetails.innerHTML = `${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
+            setDetails.innerHTML = `${laneName}: ${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
 
             const swimmerList = document.getElementById('swimmerList');
             swimmerList.innerHTML = '';
 
-            swimmerSet.forEach((swimmer, index) => {
+            currentSet.forEach((swimmer, index) => {
                 const row = document.createElement('div');
                 row.className = 'swimmer-row';
 
@@ -1242,21 +1332,25 @@ void handleRoot() {
         }
 
         function cycleSwimmerColor(swimmerIndex) {
+            const currentSet = getCurrentSwimmerSet();
             // Defensive programming: validate swimmer index
-            if (swimmerIndex < 0 || swimmerIndex >= swimmerSet.length) {
+            if (swimmerIndex < 0 || swimmerIndex >= currentSet.length) {
                 console.error(`Invalid swimmer index: ${swimmerIndex}`);
                 return;
             }
 
             // Set the current swimmer being edited and open color picker
             currentSwimmerIndex = swimmerIndex;
-            console.log(`Opening color picker for swimmer ${swimmerIndex}`);
+            console.log(`Opening color picker for swimmer ${swimmerIndex} in ${currentSettings.laneNames[currentSettings.currentLane]}`);
             populateColorGrid();
             document.getElementById('customColorPicker').style.display = 'block';
         }
 
         function updateSwimmerPace(swimmerIndex, newPace) {
-            swimmerSet[swimmerIndex].pace = parseFloat(newPace);
+            const currentSet = getCurrentSwimmerSet();
+            if (currentSet[swimmerIndex]) {
+                currentSet[swimmerIndex].pace = parseFloat(newPace);
+            }
         }
 
         function updateSettings() {
@@ -1290,6 +1384,14 @@ void handleRoot() {
                 body: `ledsPerMeter=${currentSettings.ledsPerMeter}`
             }).catch(error => {
                 console.log('LEDs per meter update - server not available (standalone mode)');
+            });
+
+            fetch('/setNumLanes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `numLanes=${currentSettings.numLanes}`
+            }).catch(error => {
+                console.log('Number of lanes update - server not available (standalone mode)');
             });
 
             fetch('/setRestTime', {
@@ -1341,10 +1443,19 @@ void handleRoot() {
             });
         }
 
+        // Add function to refresh swimmer set display
+        function updateSwimmerSetDisplay() {
+            const swimmerSetDiv = document.getElementById('swimmerSet');
+            if (swimmerSetDiv && swimmerSetDiv.style.display === 'block') {
+                displaySwimmerSet();
+            }
+        }
+
         // Initialize
         updateCalculations();
         updateVisualSelection();
         initializeBrightnessDisplay();
+        updateLaneSelector();
     </script>
 </body>
 </html>
@@ -1488,6 +1599,15 @@ void handleSetLedsPerMeter() {
     setupLEDs();  // Reinitialize LED array with new density
   }
   server.send(200, "text/plain", "LEDs per meter updated");
+}
+
+void handleSetNumLanes() {
+  if (server.hasArg("numLanes")) {
+    int numLanes = server.arg("numLanes").toInt();
+    settings.numLanes = numLanes;
+    saveSettings();
+  }
+  server.send(200, "text/plain", "Number of lanes updated");
 }
 
 void handleSetRestTime() {
