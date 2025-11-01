@@ -1652,7 +1652,7 @@ void handleRoot() {
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <div>
                                 <div style="font-weight: bold; color: ${isActive ? '#1976D2' : '#333'};">
-                                    ${isActive ? '🏊 ' : ''}${workSet.summary}
+                                    ${workSet.summary}
                                 </div>
                             </div>
                             <div style="display: flex; gap: 5px;">
