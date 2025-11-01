@@ -485,11 +485,21 @@ void handleRoot() {
                 </div>
 
                 <div class="control">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
                         <label for="numSwimmers">Number of Swimmers:</label>
-                        <span id="numSwimmersValue">3</span>
+                        <select id="numSwimmers" onchange="updateNumSwimmers()" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px; width: 60px;">
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                            <option value="7">7</option>
+                            <option value="8">8</option>
+                            <option value="9">9</option>
+                            <option value="10">10</option>
+                        </select>
                     </div>
-                    <input type="range" id="numSwimmers" min="1" max="6" step="1" value="3" oninput="updateNumSwimmers()">
                 </div>
             </div>
 
@@ -1149,7 +1159,6 @@ void handleRoot() {
         function updateNumSwimmers() {
             const numSwimmers = document.getElementById('numSwimmers').value;
             currentSettings.numSwimmers = parseInt(numSwimmers);
-            document.getElementById('numSwimmersValue').textContent = numSwimmers;
             updateSettings();
         }
 
