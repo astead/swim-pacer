@@ -1040,7 +1040,8 @@ void handleRoot() {
         function updateRestTime() {
             const restTime = document.getElementById('restTime').value;
             currentSettings.restTime = parseInt(restTime);
-            document.getElementById('restTimeValue').textContent = restTime + ' seconds';
+            const unit = parseInt(restTime) === 1 ? ' second' : ' seconds';
+            document.getElementById('restTimeValue').textContent = restTime + unit;
             updateSettings();
         }
 
