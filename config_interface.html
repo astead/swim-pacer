@@ -460,6 +460,7 @@
 
         // Swimmer set configuration - now lane-specific
         let swimmerSets = [[], [], [], []]; // Array of sets for each lane (up to 4 lanes)
+        let laneRunning = [false, false, false, false]; // Running state for each lane
         let currentSwimmerIndex = -1; // Track which swimmer is being edited
         const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan'];
         const colorHex = {
@@ -593,6 +594,7 @@
                 input.onchange = function() {
                     currentSettings.laneNames[i] = this.value;
                     updateLaneSelector(); // Refresh the dropdown on main page
+                    updateSettings(); // Save the changes
                 };
                 
                 laneDiv.appendChild(input);
@@ -604,8 +606,48 @@
             const newLane = parseInt(document.getElementById('currentLane').value);
             currentSettings.currentLane = newLane;
             
-            // Refresh the swimmer set display for the new lane
-            updateSwimmerSetDisplay();
+            // Update isRunning to reflect the new lane's state
+            currentSettings.isRunning = laneRunning[newLane];
+            
+            // Get elements for swimmer set management
+            const swimmerSetDiv = document.getElementById('swimmerSet');
+            const configControls = document.getElementById('configControls');
+            const createSetBtn = document.getElementById('createSetBtn');
+            const currentSet = getCurrentSwimmerSet();
+            
+            // Update button text based on whether the new lane has a set
+            if (currentSet.length > 0) {
+                createSetBtn.textContent = 'Modify Set';
+            } else {
+                createSetBtn.textContent = 'Create Set';
+            }
+            
+            // If swimmer set is currently displayed, update it for the new lane
+            if (swimmerSetDiv && swimmerSetDiv.style.display === 'block') {
+                if (currentSet.length > 0) {
+                    // New lane has a set, display it
+                    displaySwimmerSet();
+                } else {
+                    // New lane has no set, hide set display and show config controls
+                    configControls.style.display = 'block';
+                    swimmerSetDiv.style.display = 'none';
+                    createSetBtn.textContent = 'Create Set';
+                }
+            }
+            
+            // Update the status display for the new lane
+            updateStatus();
+            
+            // If the new lane is running, show detailed status and start updates
+            const detailedStatus = document.getElementById('detailedStatus');
+            if (currentSettings.isRunning) {
+                detailedStatus.style.display = 'block';
+                initializePacerStatus();
+                startStatusUpdates();
+            } else {
+                detailedStatus.style.display = 'none';
+                stopStatusUpdates();
+            }
         }
 
         function getCurrentSwimmerSet() {
@@ -902,14 +944,21 @@
         let statusUpdateInterval = null;
         let currentColorContext = null; // Track which color picker context we're in
 
-        function togglePacer() {
-            currentSettings.isRunning = !currentSettings.isRunning;
-
-            // Update UI immediately for better responsiveness
+        function updateStatus() {
             const status = currentSettings.isRunning ? "Pacer Started" : "Pacer Stopped";
             document.getElementById('status').textContent = status;
             document.getElementById('status').className = 'status ' + (currentSettings.isRunning ? 'running' : 'stopped');
             document.getElementById('toggleBtn').textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
+        }
+
+        function togglePacer() {
+            // Toggle the running state for the current lane
+            const currentLane = currentSettings.currentLane;
+            laneRunning[currentLane] = !laneRunning[currentLane];
+            currentSettings.isRunning = laneRunning[currentLane];
+
+            // Update UI immediately for better responsiveness
+            updateStatus();
 
             // Handle detailed status display
             const detailedStatus = document.getElementById('detailedStatus');
@@ -1266,6 +1315,7 @@
         initializeBrightnessDisplay();
         updateLaneSelector();
         updateLaneNamesSection();
+        updateStatus();
     </script>
 </body>
 </html>
