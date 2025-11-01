@@ -491,9 +491,11 @@ void handleRoot() {
                 </div>
 
                 <div class="control">
-                    <label for="numSwimmers">Number of Swimmers:</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="numSwimmers">Number of Swimmers:</label>
+                        <span id="numSwimmersValue">3</span>
+                    </div>
                     <input type="range" id="numSwimmers" min="1" max="6" step="1" value="3" oninput="updateNumSwimmers()">
-                    <span id="numSwimmersValue">3</span>
                 </div>
             </div>
 
