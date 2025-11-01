@@ -496,8 +496,11 @@ void handleRoot() {
                 </div>
 
                 <div class="control">
-                    <label for="pacePer50">Pace (seconds per <span id="paceDistanceLabel">50 yards</span>):</label>
-                    <input type="number" id="pacePer50" value="30" min="20" max="300" step="0.5" oninput="updateFromPace()">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label for="pacePer50">Swim time:</label>
+                        <input type="text" id="pacePer50" value="30" oninput="updateFromPace()" style="width: 80px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;" placeholder="30 or 1:30">
+                        <span>min:sec</span>
+                    </div>
                 </div>
 
                 <div class="control">
@@ -798,8 +801,30 @@ void handleRoot() {
             return poolFeet / speedFps;
         }
 
+        // Helper function to parse time input (supports both "30" and "1:30" formats)
+        function parseTimeInput(timeStr) {
+            if (!timeStr || timeStr.trim() === '') return 30; // Default to 30 seconds
+            
+            timeStr = timeStr.trim();
+            
+            // Check if it contains a colon (minutes:seconds format)
+            if (timeStr.includes(':')) {
+                const parts = timeStr.split(':');
+                if (parts.length === 2) {
+                    const minutes = parseFloat(parts[0]) || 0;
+                    const seconds = parseFloat(parts[1]) || 0;
+                    return (minutes * 60) + seconds;
+                }
+            }
+            
+            // Otherwise, treat as seconds only
+            const seconds = parseFloat(timeStr);
+            return isNaN(seconds) ? 30 : seconds; // Default to 30 if invalid
+        }
+
         function updateFromPace() {
-            const pace = parseFloat(document.getElementById('pacePer50').value);
+            const paceInput = document.getElementById('pacePer50').value;
+            const pace = parseTimeInput(paceInput);
             const paceDistance = currentSettings.paceDistance;
             // Convert pace to speed (feet per second) based on selected distance
             const distanceFeet = paceDistance * 3; // yards to feet
@@ -1371,7 +1396,7 @@ void handleRoot() {
                 runningSets[currentLane] = JSON.parse(JSON.stringify(getCurrentSwimmerSet()));
                 runningSettings[currentLane] = {
                     paceDistance: currentSettings.paceDistance,
-                    pacePer50: parseFloat(document.getElementById('pacePer50').value),
+                    pacePer50: parseTimeInput(document.getElementById('pacePer50').value),
                     restTime: currentSettings.restTime,
                     numRounds: currentSettings.numRounds,
                     initialDelay: currentSettings.initialDelay,
@@ -1619,7 +1644,7 @@ void handleRoot() {
             setCurrentSwimmerSet([]);
 
             // Get current pace from the main settings
-            const currentPace = parseFloat(document.getElementById('pacePer50').value);
+            const currentPace = parseTimeInput(document.getElementById('pacePer50').value);
 
             // Create swimmer configurations for current lane
             const newSet = [];
@@ -2050,7 +2075,7 @@ void handleRoot() {
             // Update set details in swim practice nomenclature
             const setDetails = document.getElementById('setDetails');
             const paceDistance = currentSettings.paceDistance;
-            const avgPace = currentSet.length > 0 ? currentSet[0].pace : parseFloat(document.getElementById('pacePer50').value);
+            const avgPace = currentSet.length > 0 ? currentSet[0].pace : parseTimeInput(document.getElementById('pacePer50').value);
             const restTime = currentSettings.restTime;
             const numRounds = currentSettings.numRounds;
             const laneName = currentSettings.laneNames[currentSettings.currentLane];
