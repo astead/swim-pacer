@@ -29,9 +29,12 @@
 #include <Preferences.h>
 
 // ========== HARDWARE CONFIGURATION ==========
-#define LED_PIN         18          // Data pin connected to the strip (ESP32 pin)
 #define LED_TYPE        WS2812B     // LED strip type
 #define COLOR_ORDER     GRB         // Color order (may need adjustment)
+
+// GPIO pins for multiple LED strips (lanes)
+// Lane 1: GPIO 18, Lane 2: GPIO 19, Lane 3: GPIO 21, Lane 4: GPIO 22
+const int LED_PINS[4] = {18, 19, 21, 22}; // GPIO pins for lanes 1-4
 
 // ========== WIFI CONFIGURATION ==========
 const char* ssid = "SwimPacer_Config";        // WiFi network name
@@ -74,7 +77,8 @@ int delayMS;                      // Delay between LED updates
 float poolToStripRatio;           // Ratio of pool to strip length
 
 // ========== GLOBAL VARIABLES ==========
-CRGB* leds;
+CRGB* leds[4] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for up to 4 lanes
+int currentLane = 0;              // Currently selected lane for configuration
 int currentPosition = 0;
 int direction = 1;
 unsigned long lastUpdate = 0;
@@ -148,15 +152,46 @@ void setupLEDs() {
   // Calculate total LEDs first
   totalLEDs = (int)(settings.stripLengthMeters * settings.ledsPerMeter);
 
-  // Allocate LED array dynamically based on calculated total LEDs
-  if (leds != nullptr) {
-    delete[] leds;
-  }
-  leds = new CRGB[totalLEDs];
-
-  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, totalLEDs);
-  FastLED.setBrightness(settings.brightness);
+  // Clear any existing FastLED configurations
   FastLED.clear();
+
+  // Initialize LED arrays for each configured lane
+  for (int lane = 0; lane < settings.numLanes; lane++) {
+    // Allocate LED array dynamically for this lane
+    if (leds[lane] != nullptr) {
+      delete[] leds[lane];
+    }
+    leds[lane] = new CRGB[totalLEDs];
+    
+    // Add LED strip for this lane with appropriate GPIO pin
+    switch (lane) {
+      case 0:
+        FastLED.addLeds<LED_TYPE, 18, COLOR_ORDER>(leds[0], totalLEDs);
+        break;
+      case 1:
+        FastLED.addLeds<LED_TYPE, 19, COLOR_ORDER>(leds[1], totalLEDs);
+        break;
+      case 2:
+        FastLED.addLeds<LED_TYPE, 21, COLOR_ORDER>(leds[2], totalLEDs);
+        break;
+      case 3:
+        FastLED.addLeds<LED_TYPE, 22, COLOR_ORDER>(leds[3], totalLEDs);
+        break;
+    }
+    
+    // Clear this lane's LEDs
+    fill_solid(leds[lane], totalLEDs, CRGB::Black);
+  }
+  
+  // Initialize unused lanes to nullptr
+  for (int lane = settings.numLanes; lane < 4; lane++) {
+    if (leds[lane] != nullptr) {
+      delete[] leds[lane];
+      leds[lane] = nullptr;
+    }
+  }
+
+  FastLED.setBrightness(settings.brightness);
   FastLED.show();
 }
 
@@ -181,6 +216,7 @@ void setupWebServer() {
 
   // Handle getting current settings (for dynamic updates)
   server.on("/settings", HTTP_GET, handleGetSettings);
+  server.on("/currentLane", HTTP_GET, handleGetCurrentLane);
 
   // Handle start/stop commands
   server.on("/control", HTTP_POST, handleControl);
@@ -194,6 +230,7 @@ void setupWebServer() {
   server.on("/setStripLength", HTTP_POST, handleSetStripLength);
   server.on("/setLedsPerMeter", HTTP_POST, handleSetLedsPerMeter);
   server.on("/setNumLanes", HTTP_POST, handleSetNumLanes);
+  server.on("/setCurrentLane", HTTP_POST, handleSetCurrentLane);
   server.on("/setRestTime", HTTP_POST, handleSetRestTime);
   server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
   server.on("/setInitialDelay", HTTP_POST, handleSetInitialDelay);
@@ -1504,6 +1541,14 @@ void handleGetSettings() {
   server.send(200, "application/json", json);
 }
 
+void handleGetCurrentLane() {
+  String json = "{";
+  json += "\"currentLane\":" + String(currentLane);
+  json += "}";
+  
+  server.send(200, "application/json", json);
+}
+
 void handleControl() {
   if (server.hasArg("action")) {
     String action = server.arg("action");
@@ -1606,8 +1651,20 @@ void handleSetNumLanes() {
     int numLanes = server.arg("numLanes").toInt();
     settings.numLanes = numLanes;
     saveSettings();
+    // Reinitialize LEDs when number of lanes changes
+    setupLEDs();
   }
   server.send(200, "text/plain", "Number of lanes updated");
+}
+
+void handleSetCurrentLane() {
+  if (server.hasArg("currentLane")) {
+    int lane = server.arg("currentLane").toInt();
+    if (lane >= 0 && lane < settings.numLanes) {
+      currentLane = lane;
+    }
+  }
+  server.send(200, "text/plain", "Current lane updated");
 }
 
 void handleSetRestTime() {
@@ -1767,25 +1824,30 @@ void recalculateValues() {
 void updateLEDEffect() {
   unsigned long currentTime = millis();
 
-  // Clear all LEDs
-  FastLED.clear();
+  // Update LEDs for all active lanes
+  for (int lane = 0; lane < settings.numLanes; lane++) {
+    if (leds[lane] != nullptr) {
+      // Clear this lane's LEDs
+      fill_solid(leds[lane], totalLEDs, CRGB::Black);
+      
+      // Draw delay indicators if enabled for this lane
+      if (settings.delayIndicatorsEnabled) {
+        drawDelayIndicators(currentTime, lane);
+      }
 
-  // Draw delay indicators if enabled
-  if (settings.delayIndicatorsEnabled) {
-    drawDelayIndicators(currentTime);
-  }
-
-  // Update and draw each active swimmer
-  for (int i = 0; i < settings.numSwimmers; i++) {
-    updateSwimmer(i, currentTime);
-    drawSwimmerPulse(i);
+      // Update and draw each active swimmer for this lane
+      for (int i = 0; i < settings.numSwimmers; i++) {
+        updateSwimmer(i, currentTime);
+        drawSwimmerPulse(i, lane);
+      }
+    }
   }
 
   // Update FastLED
   FastLED.show();
 }
 
-void drawDelayIndicators(unsigned long currentTime) {
+void drawDelayIndicators(unsigned long currentTime, int laneIndex) {
   // Convert feet to meters for calculations
   const float feetToMeters = 0.3048;
   const float maxDelayDistanceFeet = 5.0;
@@ -1869,7 +1931,7 @@ void drawDelayIndicators(unsigned long currentTime) {
           // Create a dimmed version of the swimmer's color for the delay indicator
           CRGB delayColor = swimmerColor;
           delayColor.nscale8(128); // 50% brightness for delay indicator
-          leds[ledIndex] = delayColor;
+          leds[laneIndex][ledIndex] = delayColor;
         }
       }
       } // Close the "if (delayDistanceFeet > 0)" condition
@@ -1904,7 +1966,7 @@ void updateSwimmer(int swimmerIndex, unsigned long currentTime) {
   }
 }
 
-void drawSwimmerPulse(int swimmerIndex) {
+void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
   int centerPos = swimmers[swimmerIndex].position;
   int halfWidth = pulseWidthLEDs / 2;
   CRGB pulseColor = swimmers[swimmerIndex].color;
@@ -1921,19 +1983,19 @@ void drawSwimmerPulse(int swimmerIndex) {
       color.nscale8((uint8_t)(brightnessFactor * 255));
 
       // Add this swimmer's color to existing LED (allows overlapping)
-      leds[ledIndex] += color;
+      leds[laneIndex][ledIndex] += color;
     }
   }
 }
 
-void drawPulse(int centerPos) {
+void drawPulse(int centerPos, int laneIndex = 0) {
   int halfWidth = pulseWidthLEDs / 2;
   CRGB pulseColor = CRGB(settings.colorRed, settings.colorGreen, settings.colorBlue);
 
   for (int i = 0; i < pulseWidthLEDs; i++) {
     int ledIndex = centerPos - halfWidth + i;
 
-    if (ledIndex >= 0 && ledIndex < settings.totalLEDs) {
+    if (ledIndex >= 0 && ledIndex < totalLEDs) {
       int distanceFromCenter = abs(i - halfWidth);
       float brightnessFactor = 1.0 - (float)distanceFromCenter / (float)halfWidth;
       brightnessFactor = max(0.0f, brightnessFactor);
@@ -1941,7 +2003,7 @@ void drawPulse(int centerPos) {
       CRGB color = pulseColor;
       color.nscale8((uint8_t)(brightnessFactor * 255));
 
-      leds[ledIndex] = color;
+      leds[laneIndex][ledIndex] = color;
     }
   }
 }
