@@ -422,12 +422,10 @@ void handleRoot() {
                 </div>
             </div>
 
-            <div class="status stopped" id="status">Pacer Stopped</div>
-
             <!-- Detailed Status (shown when running) -->
             <!-- Swim Set Queue Display -->
-            <div id="queueDisplay" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #28a745;">
-                <h4 style="margin: 0 0 10px 0; color: #28a745;">Swim Set Queue</h4>
+            <div id="queueDisplay" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #dc3545;">
+                <h4 style="margin: 0 0 10px 0; color: #dc3545;">Swim Set Queue</h4>
                 <div id="queueList" style="font-size: 14px;">
                     <div style="color: #666; font-style: italic;">No sets queued</div>
                 </div>
@@ -1307,13 +1305,20 @@ void handleRoot() {
         let currentColorContext = null; // Track which color picker context we're in
 
         function updateStatus() {
-            const status = currentSettings.isRunning ? "Pacer Started" : "Pacer Stopped";
-            const statusElement = document.getElementById('status');
+            const queueDisplay = document.getElementById('queueDisplay');
+            const queueTitle = queueDisplay.querySelector('h4');
             const toggleBtnElement = document.getElementById('toggleBtn');
             
-            if (statusElement) {
-                statusElement.textContent = status;
-                statusElement.className = 'status ' + (currentSettings.isRunning ? 'running' : 'stopped');
+            if (queueDisplay && queueTitle) {
+                if (currentSettings.isRunning) {
+                    // Running: green border and title
+                    queueDisplay.style.borderLeft = '4px solid #28a745';
+                    queueTitle.style.color = '#28a745';
+                } else {
+                    // Stopped: red border and title
+                    queueDisplay.style.borderLeft = '4px solid #dc3545';
+                    queueTitle.style.color = '#dc3545';
+                }
             }
             
             // toggleBtn doesn't exist in queue-based interface, so check first
@@ -1363,8 +1368,8 @@ void handleRoot() {
             fetch('/toggle', { method: 'POST' })
             .then(response => response.text())
             .then(result => {
-                // Server responded, update status with server message
-                document.getElementById('status').textContent = result;
+                // Server responded - status is already updated via updateStatus()
+                console.log('Server response:', result);
             })
             .catch(error => {
                 // Server not available (standalone mode), keep local status
