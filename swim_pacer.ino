@@ -1612,9 +1612,8 @@ void handleRoot() {
             const avgPace = swimmers.length > 0 ? swimmers[0].pace : 30;
             const restTime = settings.restTime;
             const numRounds = settings.numRounds;
-            const laneName = settings.laneNames[settings.currentLane];
             
-            return `${laneName}: ${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
+            return `${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
         }
 
         function queueWorkSet() {
