@@ -474,8 +474,10 @@ void handleRoot() {
             <!-- Configuration Controls -->
             <div id="configControls">
                 <div class="control">
-                    <label for="numRounds">Number of Rounds:</label>
-                    <input type="number" id="numRounds" min="1" max="20" step="1" value="10" oninput="updateNumRounds()">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label for="numRounds">Rounds:</label>
+                        <input type="number" id="numRounds" min="1" max="20" step="1" value="10" oninput="updateNumRounds()" style="width: 60px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
                 </div>
 
                 <div class="control">
