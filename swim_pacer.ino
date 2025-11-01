@@ -483,9 +483,11 @@ void handleRoot() {
                 </div>
 
                 <div class="control">
-                    <label for="restTime">Rest Time (seconds):</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="restTime">Rest Time:</label>
+                        <span id="restTimeValue">5 seconds</span>
+                    </div>
                     <input type="range" id="restTime" min="0" max="30" step="1" value="5" oninput="updateRestTime()">
-                    <span id="restTimeValue">5</span>
                 </div>
 
                 <div class="control">
@@ -868,17 +870,17 @@ void handleRoot() {
 
         function toggleLaneIdentification() {
             const button = document.getElementById('identifyLanesBtn');
-            
+
             if (!laneIdentificationMode) {
                 // Start identification mode
                 laneIdentificationMode = true;
                 button.textContent = 'Stop';
                 button.style.backgroundColor = '#dc3545';
                 button.style.color = 'white';
-                
+
                 // Update the lane names section to show color indicators
                 updateLaneNamesSection();
-                
+
                 // Send command to ESP32 to light up lanes with identification colors
                 for (let i = 0; i < currentSettings.numLanes; i++) {
                     const color = laneIdentificationColors[i];
@@ -891,10 +893,10 @@ void handleRoot() {
                 button.style.backgroundColor = '#007bff';
                 button.style.color = 'white';
                 button.style.borderColor = '#007bff';
-                
+
                 // Update the lane names section to hide color indicators
                 updateLaneNamesSection();
-                
+
                 // Send command to ESP32 to stop identification and resume normal operation
                 stopLaneIdentification();
             }
@@ -905,7 +907,7 @@ void handleRoot() {
             const r = parseInt(colorHex.substr(1, 2), 16);
             const g = parseInt(colorHex.substr(3, 2), 16);
             const b = parseInt(colorHex.substr(5, 2), 16);
-            
+
             fetch('/identifyLane', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1021,7 +1023,7 @@ void handleRoot() {
         function updateRestTime() {
             const restTime = document.getElementById('restTime').value;
             currentSettings.restTime = parseInt(restTime);
-            document.getElementById('restTimeValue').textContent = restTime;
+            document.getElementById('restTimeValue').textContent = restTime + ' seconds';
             updateSettings();
         }
 
@@ -1298,7 +1300,7 @@ void handleRoot() {
                 // Starting pacer for current lane - create immutable copies
                 pacerStartTimes[currentLane] = Date.now();
                 currentRounds[currentLane] = 1;
-                
+
                 // Create immutable copies of current set and settings
                 runningSets[currentLane] = JSON.parse(JSON.stringify(getCurrentSwimmerSet()));
                 runningSettings[currentLane] = {
@@ -1310,7 +1312,7 @@ void handleRoot() {
                     numSwimmers: currentSettings.numSwimmers,
                     laneName: currentSettings.laneNames[currentLane]
                 };
-                
+
                 detailedStatus.style.display = 'block';
                 initializePacerStatus();
                 startStatusUpdates();
@@ -1338,10 +1340,10 @@ void handleRoot() {
         function initializePacerStatus() {
             const currentLane = currentSettings.currentLane;
             const runningData = getRunningSettings();
-            
+
             document.getElementById('currentRound').textContent = currentRounds[currentLane];
             document.getElementById('totalRounds').textContent = runningData.numRounds;
-            
+
             // Initialize round timing display using running settings
             const paceSeconds = runningData.pacePer50;
             const restSeconds = runningData.restTime;
@@ -1350,7 +1352,7 @@ void handleRoot() {
             const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
             const totalTimeStr = `${totalRoundMinutes}:${totalRoundSecondsOnly.toString().padStart(2, '0')}`;
             document.getElementById('roundTiming').textContent = `0:00 / ${totalTimeStr}`;
-            
+
             document.getElementById('activeSwimmers').textContent = '0';
 
             // Update set basics display using running settings
@@ -1402,7 +1404,7 @@ void handleRoot() {
                 document.getElementById('currentPhase').textContent = 'Initial Delay';
                 document.getElementById('activeSwimmers').textContent = '0';
                 document.getElementById('nextEvent').textContent = `Starting in ${Math.ceil(-timeAfterInitialDelay)}s`;
-                
+
                 // Show initial round timing during delay using running settings
                 const paceSeconds = runningData.pacePer50;
                 const restSeconds = runningData.restTime;
@@ -1411,7 +1413,7 @@ void handleRoot() {
                 const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
                 const totalTimeStr = `${totalRoundMinutes}:${totalRoundSecondsOnly.toString().padStart(2, '0')}`;
                 document.getElementById('roundTiming').textContent = `0:00 / ${totalTimeStr}`;
-                
+
                 document.getElementById('currentRound').textContent = '1';
                 return;
             }
@@ -1422,16 +1424,16 @@ void handleRoot() {
             const totalRoundTime = paceSeconds + restSeconds;
 
             const timeInCurrentRound = timeAfterInitialDelay % totalRoundTime;
-            
+
             // Format round timing display
             const currentRoundMinutes = Math.floor(timeInCurrentRound / 60);
             const currentRoundSeconds = Math.floor(timeInCurrentRound % 60);
             const totalRoundMinutes = Math.floor(totalRoundTime / 60);
             const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
-            
+
             const currentTimeStr = `${currentRoundMinutes}:${currentRoundSeconds.toString().padStart(2, '0')}`;
             const totalTimeStr = `${totalRoundMinutes}:${totalRoundSecondsOnly.toString().padStart(2, '0')}`;
-            
+
             document.getElementById('roundTiming').textContent = `${currentTimeStr} / ${totalTimeStr}`;
 
             // Determine current phase
