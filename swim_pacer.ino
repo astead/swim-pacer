@@ -1302,6 +1302,7 @@ void handleRoot() {
         // Pacer status tracking variables - now lane-specific
         let pacerStartTimes = [0, 0, 0, 0]; // Start time for each lane
         let currentRounds = [1, 1, 1, 1]; // Current round for each lane
+        let completionHandled = [false, false, false, false]; // Track if completion has been handled for each lane
         let statusUpdateInterval = null;
         let currentColorContext = null; // Track which color picker context we're in
 
@@ -1525,19 +1526,48 @@ void handleRoot() {
                 document.getElementById('currentRound').textContent = currentRounds[currentLane];
             }
 
-            // Check if set is complete using running settings
-            if (calculatedRound > runningData.numRounds) {
+            // Check if ALL swimmers have completed the set
+            // Calculate when the last swimmer finishes
+            const lastSwimmerStartDelay = runningData.initialDelay + ((runningData.numSwimmers - 1) * runningData.swimmerInterval);
+            const totalSetTimePerSwimmer = runningData.numRounds * totalRoundTime;
+            const lastSwimmerFinishTime = lastSwimmerStartDelay + totalSetTimePerSwimmer;
+            
+            // Check if the entire set is complete (all swimmers finished)
+            if (elapsedSeconds >= lastSwimmerFinishTime) {
                 document.getElementById('currentPhase').textContent = 'Set Complete!';
-                document.getElementById('nextEvent').textContent = 'Finished';
+                document.getElementById('nextEvent').textContent = 'All swimmers finished';
                 document.getElementById('activeSwimmers').textContent = '0';
                 
-                // Handle queue completion
-                if (activeWorkSet) {
+                // Handle queue completion (only once)
+                if (activeWorkSets[currentLane] && !completionHandled[currentLane]) {
+                    completionHandled[currentLane] = true;
                     // Set is complete, remove from queue and handle next set
                     setTimeout(() => {
                         handleSetCompletion();
                     }, 2000); // Give user 2 seconds to see completion message
                 }
+            } else if (calculatedRound > runningData.numRounds) {
+                // First swimmer(s) finished, but others still swimming
+                const remainingTime = Math.ceil(lastSwimmerFinishTime - elapsedSeconds);
+                const remainingMinutes = Math.floor(remainingTime / 60);
+                const remainingSeconds = remainingTime % 60;
+                const timeDisplay = remainingMinutes > 0 ? 
+                    `${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')}` : 
+                    `${remainingSeconds}s`;
+                
+                document.getElementById('currentPhase').textContent = 'Trailing swimmers finishing';
+                document.getElementById('nextEvent').textContent = `Complete in ${timeDisplay}`;
+                
+                // Calculate how many swimmers are still active
+                let activeSwimmers = 0;
+                for (let i = 0; i < runningData.numSwimmers; i++) {
+                    const swimmerStartTime = runningData.initialDelay + (i * runningData.swimmerInterval);
+                    const swimmerFinishTime = swimmerStartTime + totalSetTimePerSwimmer;
+                    if (elapsedSeconds < swimmerFinishTime) {
+                        activeSwimmers++;
+                    }
+                }
+                document.getElementById('activeSwimmers').textContent = activeSwimmers;
             }
         }
 
@@ -1675,44 +1705,71 @@ void handleRoot() {
                 return;
             }
             
-            if (workSetQueues[currentLane].length === 0) {
-                queueList.innerHTML = '<div style="color: #666; font-style: italic;">No sets queued for Lane ' + (currentLane + 1) + '</div>';
-                return;
-            }
-            
             let html = '';
-            workSetQueues[currentLane].forEach((workSet, index) => {
-                const isActive = activeWorkSets[currentLane] && activeWorkSets[currentLane].id === workSet.id;
-                const statusClass = isActive ? 'style="background: #e7f3ff; border: 1px solid #2196F3;"' : '';
-                
-                html += `
-                    <div ${statusClass} style="padding: 8px; margin: 5px 0; border-radius: 4px; border: 1px solid #ddd;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <div style="font-weight: bold; color: ${isActive ? '#1976D2' : '#333'};">
-                                    ${workSet.summary}
+            
+            // Show active queue
+            if (workSetQueues[currentLane].length === 0) {
+                html += '<div style="color: #666; font-style: italic;">No sets queued for Lane ' + (currentLane + 1) + '</div>';
+            } else {
+                workSetQueues[currentLane].forEach((workSet, index) => {
+                    const isActive = activeWorkSets[currentLane] && activeWorkSets[currentLane].id === workSet.id;
+                    const statusClass = isActive ? 'style="background: #e7f3ff; border: 1px solid #2196F3;"' : '';
+                    
+                    html += `
+                        <div ${statusClass} style="padding: 8px; margin: 5px 0; border-radius: 4px; border: 1px solid #ddd;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-weight: bold; color: ${isActive ? '#1976D2' : '#333'};">
+                                        ${workSet.summary}
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 5px;">
+                                    ${!isActive ? `<button onclick="editWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
+                                    ${!isActive ? `<button onclick="deleteWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
+                                    ${isActive ? `<div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>` : ''}
                                 </div>
                             </div>
-                            <div style="display: flex; gap: 5px;">
-                                ${!isActive ? `<button onclick="editWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
-                                ${!isActive ? `<button onclick="deleteWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
-                                ${isActive ? `<div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>` : ''}
+                            ${isActive ? `
+                                <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; color: #555;">
+                                    <div><strong>Round:</strong> <span id="currentRound">1</span> of <span id="totalRounds">10</span></div>
+                                    <div><strong>Round:</strong> <span id="roundTiming">0:00 / 0:00</span></div>
+                                    <div><strong>Active Swimmers:</strong> <span id="activeSwimmers">0</span></div>
+                                    <div><strong>Next Event:</strong> <span id="nextEvent">Starting...</span></div>
+                                </div>
+                                <div style="margin-top: 6px; background: #fff; border-radius: 3px; padding: 6px; font-size: 11px;">
+                                    <strong>Current Phase:</strong> <span id="currentPhase">Preparing to start</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+            }
+            
+            // Show completed sets if in MARK_COMPLETE mode and there are completed sets
+            if (COMPLETION_MODE === 'MARK_COMPLETE' && completedWorkSets[currentLane].length > 0) {
+                html += `
+                    <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #ddd;">
+                        <div style="font-weight: bold; color: #28a745; margin-bottom: 8px;">✓ Completed Sets</div>
+                `;
+                
+                completedWorkSets[currentLane].forEach((completedSet, index) => {
+                    const completedTime = new Date(completedSet.completedAt).toLocaleTimeString();
+                    html += `
+                        <div style="padding: 6px; margin: 3px 0; border-radius: 4px; background: #f8f9fa; border: 1px solid #28a745; opacity: 0.8;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="color: #555; font-size: 13px;">
+                                    ${completedSet.summary}
+                                </div>
+                                <div style="font-size: 11px; color: #28a745;">
+                                    Completed at ${completedTime}
+                                </div>
                             </div>
                         </div>
-                        ${isActive ? `
-                            <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; color: #555;">
-                                <div><strong>Round:</strong> <span id="currentRound">1</span> of <span id="totalRounds">10</span></div>
-                                <div><strong>Round:</strong> <span id="roundTiming">0:00 / 0:00</span></div>
-                                <div><strong>Active Swimmers:</strong> <span id="activeSwimmers">0</span></div>
-                                <div><strong>Next Event:</strong> <span id="nextEvent">Starting...</span></div>
-                            </div>
-                            <div style="margin-top: 6px; background: #fff; border-radius: 3px; padding: 6px; font-size: 11px;">
-                                <strong>Current Phase:</strong> <span id="currentPhase">Preparing to start</span>
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-            });
+                    `;
+                });
+                
+                html += '</div>';
+            }
             
             queueList.innerHTML = html;
         }
@@ -1891,6 +1948,9 @@ void handleRoot() {
             // Start the pacer for this lane
             laneRunning[currentLane] = true;
             currentSettings.isRunning = true;
+
+            // Reset completion tracking for this lane
+            completionHandled[currentLane] = false;
 
             // Initialize timing - always reset for new queue start
             pacerStartTimes[currentLane] = Date.now();
@@ -2161,19 +2221,40 @@ void handleRoot() {
             }
         }
 
+        // Completion handling options - change this to experiment with different behaviors
+        const COMPLETION_MODE = 'MARK_COMPLETE'; // Options: 'REMOVE_SET', 'MARK_COMPLETE'
+        
+        // Track completed sets for each lane
+        let completedWorkSets = [[], [], [], []];
+
         function handleSetCompletion() {
             const currentLane = currentSettings.currentLane;
             
             if (!activeWorkSets[currentLane]) return;
             
-            // Remove completed set from current lane's queue
-            const completedSetIndex = workSetQueues[currentLane].findIndex(set => set.id === activeWorkSets[currentLane].id);
-            if (completedSetIndex !== -1) {
-                workSetQueues[currentLane].splice(completedSetIndex, 1);
+            if (COMPLETION_MODE === 'REMOVE_SET') {
+                // Option 1: Remove completed set from current lane's queue
+                const completedSetIndex = workSetQueues[currentLane].findIndex(set => set.id === activeWorkSets[currentLane].id);
+                if (completedSetIndex !== -1) {
+                    workSetQueues[currentLane].splice(completedSetIndex, 1);
+                }
+            } else if (COMPLETION_MODE === 'MARK_COMPLETE') {
+                // Option 2: Mark set as complete and move to completed list
+                const completedSet = { ...activeWorkSets[currentLane], completedAt: new Date() };
+                completedWorkSets[currentLane].push(completedSet);
+                
+                // Remove from active queue
+                const completedSetIndex = workSetQueues[currentLane].findIndex(set => set.id === activeWorkSets[currentLane].id);
+                if (completedSetIndex !== -1) {
+                    workSetQueues[currentLane].splice(completedSetIndex, 1);
+                }
             }
             
             // Clear active set for current lane
             activeWorkSets[currentLane] = null;
+            
+            // Reset completion flag for this lane
+            completionHandled[currentLane] = false;
             
             // Stop current execution
             stopPacerExecution();
@@ -2182,19 +2263,12 @@ void handleRoot() {
             if (workSetQueues[currentLane].length > 0) {
                 // Auto-advance to next set after a brief pause
                 setTimeout(() => {
-                    if (confirm('Start next set in Lane ' + (currentLane + 1) + ' queue?')) {
-                        startQueue();
-                    } else {
-                        // User declined, update displays to show queue
-                        updateQueueDisplay();
-                        updatePacerButtons();
-                    }
-                }, 1000);
+                    startQueue(); // No more alert - just auto-start
+                }, 1500);
             } else {
-                // No more sets in current lane, return to idle state
+                // No more sets, update displays
                 updateQueueDisplay();
                 updatePacerButtons();
-                alert('All sets completed for Lane ' + (currentLane + 1) + '!');
             }
         }
 
