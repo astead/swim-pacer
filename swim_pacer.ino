@@ -422,6 +422,25 @@ void handleRoot() {
                 </div>
             </div>
 
+            <!-- Number of Swimmers (lane-specific configuration) -->
+            <div class="control" style="margin: 15px 0;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                    <label for="numSwimmers">Number of Swimmers:</label>
+                    <select id="numSwimmers" onchange="updateNumSwimmers()" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px; width: 60px;">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                        <option value="10">10</option>
+                    </select>
+                </div>
+            </div>
+
             <!-- Detailed Status (shown when running) -->
             <!-- Swim Set Queue Display -->
             <div id="queueDisplay" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #dc3545;">
@@ -482,24 +501,6 @@ void handleRoot() {
                         <span id="restTimeValue">5 seconds</span>
                     </div>
                     <input type="range" id="restTime" min="0" max="30" step="1" value="5" oninput="updateRestTime()">
-                </div>
-
-                <div class="control">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
-                        <label for="numSwimmers">Number of Swimmers:</label>
-                        <select id="numSwimmers" onchange="updateNumSwimmers()" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px; width: 60px;">
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3" selected>3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
-                            <option value="6">6</option>
-                            <option value="7">7</option>
-                            <option value="8">8</option>
-                            <option value="9">9</option>
-                            <option value="10">10</option>
-                        </select>
-                    </div>
                 </div>
             </div>
 
