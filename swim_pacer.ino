@@ -709,6 +709,8 @@ void handleRoot() {
         // Swimmer set configuration - now lane-specific
         let swimmerSets = [[], [], [], []]; // Array of sets for each lane (up to 4 lanes)
         let laneRunning = [false, false, false, false]; // Running state for each lane
+        let runningSets = [null, null, null, null]; // Immutable copies of sets when pacer starts
+        let runningSettings = [null, null, null, null]; // Settings snapshot when pacer starts
         let currentSwimmerIndex = -1; // Track which swimmer is being edited
         const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan'];
         const colorHex = {
@@ -904,6 +906,17 @@ void handleRoot() {
 
         function setCurrentSwimmerSet(newSet) {
             swimmerSets[currentSettings.currentLane] = newSet;
+        }
+
+        // Helper functions for running set data (immutable copies)
+        function getRunningSwimmerSet() {
+            const currentLane = currentSettings.currentLane;
+            return runningSets[currentLane] || getCurrentSwimmerSet();
+        }
+
+        function getRunningSettings() {
+            const currentLane = currentSettings.currentLane;
+            return runningSettings[currentLane] || currentSettings;
         }
 
         function updateBrightness() {
@@ -1211,14 +1224,29 @@ void handleRoot() {
             // Handle detailed status display
             const detailedStatus = document.getElementById('detailedStatus');
             if (currentSettings.isRunning) {
-                // Starting pacer for current lane
+                // Starting pacer for current lane - create immutable copies
                 pacerStartTimes[currentLane] = Date.now();
                 currentRounds[currentLane] = 1;
+                
+                // Create immutable copies of current set and settings
+                runningSets[currentLane] = JSON.parse(JSON.stringify(getCurrentSwimmerSet()));
+                runningSettings[currentLane] = {
+                    paceDistance: currentSettings.paceDistance,
+                    pacePer50: parseFloat(document.getElementById('pacePer50').value),
+                    restTime: currentSettings.restTime,
+                    numRounds: currentSettings.numRounds,
+                    initialDelay: currentSettings.initialDelay,
+                    numSwimmers: currentSettings.numSwimmers,
+                    laneName: currentSettings.laneNames[currentLane]
+                };
+                
                 detailedStatus.style.display = 'block';
                 initializePacerStatus();
                 startStatusUpdates();
             } else {
-                // Stopping pacer for current lane
+                // Stopping pacer for current lane - clear running copies
+                runningSets[currentLane] = null;
+                runningSettings[currentLane] = null;
                 detailedStatus.style.display = 'none';
                 stopStatusUpdates();
             }
@@ -1238,12 +1266,14 @@ void handleRoot() {
 
         function initializePacerStatus() {
             const currentLane = currentSettings.currentLane;
-            document.getElementById('currentRound').textContent = currentRounds[currentLane];
-            document.getElementById('totalRounds').textContent = currentSettings.numRounds;
+            const runningData = getRunningSettings();
             
-            // Initialize round timing display
-            const paceSeconds = parseFloat(document.getElementById('pacePer50').value);
-            const restSeconds = currentSettings.restTime;
+            document.getElementById('currentRound').textContent = currentRounds[currentLane];
+            document.getElementById('totalRounds').textContent = runningData.numRounds;
+            
+            // Initialize round timing display using running settings
+            const paceSeconds = runningData.pacePer50;
+            const restSeconds = runningData.restTime;
             const totalRoundTime = paceSeconds + restSeconds;
             const totalRoundMinutes = Math.floor(totalRoundTime / 60);
             const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
@@ -1252,14 +1282,14 @@ void handleRoot() {
             
             document.getElementById('activeSwimmers').textContent = '0';
 
-            // Update set basics display
-            const paceDistance = currentSettings.paceDistance;
-            const numRounds = currentSettings.numRounds;
+            // Update set basics display using running settings
+            const paceDistance = runningData.paceDistance;
+            const numRounds = runningData.numRounds;
             document.getElementById('setBasics').textContent = `- ${numRounds} x ${paceDistance}'s`;
 
-            // Show initial delay countdown
-            if (currentSettings.initialDelay > 0) {
-                document.getElementById('nextEvent').textContent = `Starting in ${currentSettings.initialDelay}s`;
+            // Show initial delay countdown using running settings
+            if (runningData.initialDelay > 0) {
+                document.getElementById('nextEvent').textContent = `Starting in ${runningData.initialDelay}s`;
                 document.getElementById('currentPhase').textContent = 'Initial Delay';
             } else {
                 document.getElementById('nextEvent').textContent = 'Starting now';
@@ -1284,14 +1314,15 @@ void handleRoot() {
             if (!currentSettings.isRunning) return;
 
             const currentLane = currentSettings.currentLane;
+            const runningData = getRunningSettings();
             const elapsedSeconds = Math.floor((Date.now() - pacerStartTimes[currentLane]) / 1000);
             const minutes = Math.floor(elapsedSeconds / 60);
             const seconds = elapsedSeconds % 60;
             document.getElementById('elapsedTime').textContent =
                 `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
-            // Account for initial delay
-            const initialDelaySeconds = currentSettings.initialDelay;
+            // Account for initial delay using running settings
+            const initialDelaySeconds = runningData.initialDelay;
             const timeAfterInitialDelay = elapsedSeconds - initialDelaySeconds;
 
             // Check if we're still in the initial delay period
@@ -1301,9 +1332,9 @@ void handleRoot() {
                 document.getElementById('activeSwimmers').textContent = '0';
                 document.getElementById('nextEvent').textContent = `Starting in ${Math.ceil(-timeAfterInitialDelay)}s`;
                 
-                // Show initial round timing during delay
-                const paceSeconds = parseFloat(document.getElementById('pacePer50').value);
-                const restSeconds = currentSettings.restTime;
+                // Show initial round timing during delay using running settings
+                const paceSeconds = runningData.pacePer50;
+                const restSeconds = runningData.restTime;
                 const totalRoundTime = paceSeconds + restSeconds;
                 const totalRoundMinutes = Math.floor(totalRoundTime / 60);
                 const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
@@ -1314,9 +1345,9 @@ void handleRoot() {
                 return;
             }
 
-            // Calculate current phase and progress (after initial delay)
-            const paceSeconds = parseFloat(document.getElementById('pacePer50').value);
-            const restSeconds = currentSettings.restTime;
+            // Calculate current phase and progress (after initial delay) using running settings
+            const paceSeconds = runningData.pacePer50;
+            const restSeconds = runningData.restTime;
             const totalRoundTime = paceSeconds + restSeconds;
 
             const timeInCurrentRound = timeAfterInitialDelay % totalRoundTime;
@@ -1335,7 +1366,7 @@ void handleRoot() {
             // Determine current phase
             if (timeInCurrentRound < paceSeconds) {
                 document.getElementById('currentPhase').textContent = 'Swimming';
-                document.getElementById('activeSwimmers').textContent = currentSettings.numSwimmers;
+                document.getElementById('activeSwimmers').textContent = runningData.numSwimmers;
                 const remainingSwimTime = paceSeconds - timeInCurrentRound;
                 document.getElementById('nextEvent').textContent = `Rest in ${Math.ceil(remainingSwimTime)}s`;
             } else {
@@ -1347,13 +1378,13 @@ void handleRoot() {
 
             // Update current round (after initial delay)
             const calculatedRound = Math.floor(timeAfterInitialDelay / totalRoundTime) + 1;
-            if (calculatedRound !== currentRounds[currentLane] && calculatedRound <= currentSettings.numRounds) {
+            if (calculatedRound !== currentRounds[currentLane] && calculatedRound <= runningData.numRounds) {
                 currentRounds[currentLane] = calculatedRound;
                 document.getElementById('currentRound').textContent = currentRounds[currentLane];
             }
 
-            // Check if set is complete
-            if (calculatedRound > currentSettings.numRounds) {
+            // Check if set is complete using running settings
+            if (calculatedRound > runningData.numRounds) {
                 document.getElementById('currentPhase').textContent = 'Set Complete!';
                 document.getElementById('nextEvent').textContent = 'Finished';
                 document.getElementById('activeSwimmers').textContent = '0';
