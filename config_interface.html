@@ -312,15 +312,19 @@
                 </div>
 
                 <div class="control">
-                    <label for="firstUnderwaterDistance">First underwater distance (feet):</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="firstUnderwaterDistance">First underwater distance:</label>
+                        <span id="firstUnderwaterDistanceValue">20 feet</span>
+                    </div>
                     <input type="range" id="firstUnderwaterDistance" min="1" max="50" step="1" value="20" oninput="updateFirstUnderwaterDistance()">
-                    <span id="firstUnderwaterDistanceValue">20</span>
                 </div>
 
                 <div class="control">
-                    <label for="underwaterDistance">Underwater distance (feet):</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="underwaterDistance">Underwater distance:</label>
+                        <span id="underwaterDistanceValue">20 feet</span>
+                    </div>
                     <input type="range" id="underwaterDistance" min="1" max="50" step="1" value="20" oninput="updateUnderwaterDistance()">
-                    <span id="underwaterDistanceValue">20</span>
                 </div>
 
                 <div class="control">
@@ -859,14 +863,16 @@
         function updateFirstUnderwaterDistance() {
             const distance = document.getElementById('firstUnderwaterDistance').value;
             currentSettings.firstUnderwaterDistance = parseInt(distance);
-            document.getElementById('firstUnderwaterDistanceValue').textContent = distance;
+            const unit = parseInt(distance) === 1 ? ' foot' : ' feet';
+            document.getElementById('firstUnderwaterDistanceValue').textContent = distance + unit;
             updateSettings();
         }
 
         function updateUnderwaterDistance() {
             const distance = document.getElementById('underwaterDistance').value;
             currentSettings.underwaterDistance = parseInt(distance);
-            document.getElementById('underwaterDistanceValue').textContent = distance;
+            const unit = parseInt(distance) === 1 ? ' foot' : ' feet';
+            document.getElementById('underwaterDistanceValue').textContent = distance + unit;
             updateSettings();
         }
 
