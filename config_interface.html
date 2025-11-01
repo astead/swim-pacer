@@ -261,16 +261,16 @@
             <div class="control">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                     <label for="initialDelay">Initial Delay:</label>
-                    <span id="initialDelayValue">10 seconds</span>
+                    <span id="initialDelayValue">2 seconds</span>
                 </div>
-                <input type="range" id="initialDelay" min="0" max="30" step="1" value="10" oninput="updateInitialDelay()">
+                <input type="range" id="initialDelay" min="0" max="30" step="1" value="2" oninput="updateInitialDelay()">
             </div>
             <div class="control">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                     <label for="swimmerInterval">Delay between swimmers:</label>
-                    <span id="swimmerIntervalValue">4 seconds</span>
+                    <span id="swimmerIntervalValue">1 second</span>
                 </div>
-                <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
+                <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="1" oninput="updateSwimmerInterval()">
             </div>
 
             <div class="toggle-container">
@@ -451,8 +451,8 @@
             pulseWidth: 1.0,
             restTime: 5,
             paceDistance: 50,
-            initialDelay: 10,
-            swimmerInterval: 4,
+            initialDelay: 2,
+            swimmerInterval: 1,
             delayIndicatorsEnabled: true,
             numSwimmers: 3,
             numRounds: 10,
