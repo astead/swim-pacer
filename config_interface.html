@@ -165,6 +165,17 @@
 
         <!-- Main Pacer Page -->
         <div id="main" class="page active">
+            <!-- Lane Selector (shown when multiple lanes configured) -->
+            <div id="laneSelector" style="display: none; margin: 15px 0;">
+                <div class="control">
+                    <label for="currentLane">Working Lane:</label>
+                    <select id="currentLane" onchange="updateCurrentLane()" style="margin-right: 10px;">
+                        <!-- Options populated by JavaScript -->
+                    </select>
+                    <button onclick="editLaneName()" style="padding: 4px 8px; font-size: 12px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit Name</button>
+                </div>
+            </div>
+
             <div class="status stopped" id="status">Pacer Stopped</div>
 
             <!-- Detailed Status (shown when running) -->
@@ -191,17 +202,6 @@
                     <div style="background: #fff; border-radius: 4px; padding: 8px; font-size: 12px;">
                         <strong>Current Phase:</strong> <span id="currentPhase">Preparing to start</span>
                     </div>
-                </div>
-            </div>
-
-            <!-- Lane Selector (shown when multiple lanes configured) -->
-            <div id="laneSelector" style="display: none; margin: 15px 0;">
-                <div class="control">
-                    <label for="currentLane">Working Lane:</label>
-                    <select id="currentLane" onchange="updateCurrentLane()" style="margin-right: 10px;">
-                        <!-- Options populated by JavaScript -->
-                    </select>
-                    <button onclick="editLaneName()" style="padding: 4px 8px; font-size: 12px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit Name</button>
                 </div>
             </div>
 

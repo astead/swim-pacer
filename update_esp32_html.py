@@ -6,20 +6,9 @@ Update ESP32 HTML content from standalone HTML file
 import re
 
 def extract_html_content(file_path):
-    """Extract content between sync markers"""
+    """Read the entire standalone HTML file"""
     with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    start_marker = "<!-- ========== SYNC MARKER: START ESP32 HTML ========== -->"
-    end_marker = "<!-- ========== SYNC MARKER: END ESP32 HTML ========== -->"
-
-    start_pos = content.find(start_marker)
-    end_pos = content.find(end_marker)
-
-    if start_pos == -1 or end_pos == -1:
-        raise ValueError(f"Sync markers not found in {file_path}")
-
-    return content[start_pos:end_pos + len(end_marker)]
+        return f.read().strip()
 
 def update_esp32_html(ino_file, html_content):
     """Update the ESP32 .ino file with new HTML content"""

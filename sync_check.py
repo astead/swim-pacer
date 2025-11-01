@@ -9,30 +9,14 @@ import sys
 from pathlib import Path
 
 def extract_html_from_standalone():
-    """Extract HTML content from standalone config_interface.html between sync markers"""
+    """Extract HTML content from standalone config_interface.html"""
     html_file = Path("config_interface.html")
     if not html_file.exists():
         print("❌ config_interface.html not found")
         return None
 
-    content = html_file.read_text(encoding='utf-8')
-
-    # Extract content between sync markers
-    start_marker = "<!-- ========== SYNC MARKER: START ESP32 HTML ========== -->"
-    end_marker = "<!-- ========== SYNC MARKER: END ESP32 HTML ========== -->"
-
-    start_idx = content.find(start_marker)
-    end_idx = content.find(end_marker)
-
-    if start_idx == -1 or end_idx == -1:
-        print("❌ Sync markers not found in config_interface.html")
-        return None
-
-    # Extract HTML content after start marker, before end marker
-    start_idx = content.find('\n', start_idx) + 1  # Start after marker line
-    html_content = content[start_idx:end_idx].strip()
-
-    return html_content
+    content = html_file.read_text(encoding='utf-8').strip()
+    return content
 
 def extract_html_from_ino():
     """Extract HTML content from swim_pacer.ino handleRoot() function"""
