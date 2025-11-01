@@ -1849,6 +1849,9 @@ void handleRoot() {
             // Send start command to ESP32
             sendStartCommand();
 
+            // Start status updates (timer display)
+            startStatusUpdates();
+
             // Update status display
             updateStatus();
         }
@@ -1859,6 +1862,9 @@ void handleRoot() {
             // Stop the pacer for this lane
             laneRunning[currentLane] = false;
             currentSettings.isRunning = false;
+
+            // Stop status updates (timer display)
+            stopStatusUpdates();
 
             // Clear running state
             runningSets[currentLane] = null;
