@@ -188,7 +188,7 @@
                         <strong>Round:</strong> <span id="currentRound">1</span> of <span id="totalRounds">10</span>
                     </div>
                     <div>
-                        <strong>Progress:</strong> <span id="roundProgress">0%</span>
+                        <strong>Round:</strong> <span id="roundTiming">0:00 / 0:00</span>
                     </div>
                     <div>
                         <strong>Active Swimmers:</strong> <span id="activeSwimmers">0</span>
@@ -992,7 +992,16 @@
             const currentLane = currentSettings.currentLane;
             document.getElementById('currentRound').textContent = currentRounds[currentLane];
             document.getElementById('totalRounds').textContent = currentSettings.numRounds;
-            document.getElementById('roundProgress').textContent = '0%';
+            
+            // Initialize round timing display
+            const paceSeconds = parseFloat(document.getElementById('pacePer50').value);
+            const restSeconds = currentSettings.restTime;
+            const totalRoundTime = paceSeconds + restSeconds;
+            const totalRoundMinutes = Math.floor(totalRoundTime / 60);
+            const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
+            const totalTimeStr = `${totalRoundMinutes}:${totalRoundSecondsOnly.toString().padStart(2, '0')}`;
+            document.getElementById('roundTiming').textContent = `0:00 / ${totalTimeStr}`;
+            
             document.getElementById('activeSwimmers').textContent = '0';
 
             // Update set basics display
@@ -1043,7 +1052,16 @@
                 document.getElementById('currentPhase').textContent = 'Initial Delay';
                 document.getElementById('activeSwimmers').textContent = '0';
                 document.getElementById('nextEvent').textContent = `Starting in ${Math.ceil(-timeAfterInitialDelay)}s`;
-                document.getElementById('roundProgress').textContent = '0%';
+                
+                // Show initial round timing during delay
+                const paceSeconds = parseFloat(document.getElementById('pacePer50').value);
+                const restSeconds = currentSettings.restTime;
+                const totalRoundTime = paceSeconds + restSeconds;
+                const totalRoundMinutes = Math.floor(totalRoundTime / 60);
+                const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
+                const totalTimeStr = `${totalRoundMinutes}:${totalRoundSecondsOnly.toString().padStart(2, '0')}`;
+                document.getElementById('roundTiming').textContent = `0:00 / ${totalTimeStr}`;
+                
                 document.getElementById('currentRound').textContent = '1';
                 return;
             }
@@ -1054,9 +1072,17 @@
             const totalRoundTime = paceSeconds + restSeconds;
 
             const timeInCurrentRound = timeAfterInitialDelay % totalRoundTime;
-            const progressPercent = Math.floor((timeInCurrentRound / totalRoundTime) * 100);
-
-            document.getElementById('roundProgress').textContent = `${progressPercent}%`;
+            
+            // Format round timing display
+            const currentRoundMinutes = Math.floor(timeInCurrentRound / 60);
+            const currentRoundSeconds = Math.floor(timeInCurrentRound % 60);
+            const totalRoundMinutes = Math.floor(totalRoundTime / 60);
+            const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
+            
+            const currentTimeStr = `${currentRoundMinutes}:${currentRoundSeconds.toString().padStart(2, '0')}`;
+            const totalTimeStr = `${totalRoundMinutes}:${totalRoundSecondsOnly.toString().padStart(2, '0')}`;
+            
+            document.getElementById('roundTiming').textContent = `${currentTimeStr} / ${totalTimeStr}`;
 
             // Determine current phase
             if (timeInCurrentRound < paceSeconds) {
