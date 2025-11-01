@@ -63,6 +63,7 @@ struct Settings {
   uint8_t colorBlue = 255;
   uint8_t brightness = 196;                  // Overall brightness (0-255)
   bool isRunning = false;                    // Whether the effect is active (default: stopped)
+  bool laneRunning[4] = {false, false, false, false}; // Per-lane running states
 };
 
 Settings settings;
@@ -92,7 +93,7 @@ struct Swimmer {
   CRGB color;
 };
 
-Swimmer swimmers[6]; // Support up to 6 swimmers
+Swimmer swimmers[4][6]; // Support up to 6 swimmers per lane, for up to 4 lanes
 CRGB swimmerColors[] = {
   CRGB::Red,
   CRGB::Green,
@@ -1535,7 +1536,8 @@ void handleGetSettings() {
   json += "\"colorGreen\":" + String(settings.colorGreen) + ",";
   json += "\"colorBlue\":" + String(settings.colorBlue) + ",";
   json += "\"brightness\":" + String(settings.brightness) + ",";
-  json += "\"isRunning\":" + String(settings.isRunning ? "true" : "false");
+  json += "\"isRunning\":" + String(settings.laneRunning[currentLane] ? "true" : "false") + ",";
+  json += "\"currentLane\":" + String(currentLane);
   json += "}";
 
   server.send(200, "application/json", json);
@@ -1563,10 +1565,21 @@ void handleControl() {
 
 // New simplified handlers for the updated interface
 void handleToggle() {
-  settings.isRunning = !settings.isRunning;
+  // Toggle the current lane's running state
+  settings.laneRunning[currentLane] = !settings.laneRunning[currentLane];
+  
+  // Update global running state (true if any lane is running)
+  settings.isRunning = false;
+  for (int i = 0; i < settings.numLanes; i++) {
+    if (settings.laneRunning[i]) {
+      settings.isRunning = true;
+      break;
+    }
+  }
+  
   saveSettings();
 
-  String status = settings.isRunning ? "Pacer Started" : "Pacer Stopped";
+  String status = settings.laneRunning[currentLane] ? "Lane Pacer Started" : "Lane Pacer Stopped";
   server.send(200, "text/plain", status);
 }
 
@@ -1662,6 +1675,10 @@ void handleSetCurrentLane() {
     int lane = server.arg("currentLane").toInt();
     if (lane >= 0 && lane < settings.numLanes) {
       currentLane = lane;
+      // Reinitialize swimmers for the new lane if it's running
+      if (settings.laneRunning[currentLane]) {
+        initializeSwimmers();
+      }
     }
   }
   server.send(200, "text/plain", "Current lane updated");
@@ -1830,15 +1847,18 @@ void updateLEDEffect() {
       // Clear this lane's LEDs
       fill_solid(leds[lane], totalLEDs, CRGB::Black);
       
-      // Draw delay indicators if enabled for this lane
-      if (settings.delayIndicatorsEnabled) {
-        drawDelayIndicators(currentTime, lane);
-      }
+      // Only animate if this lane is running
+      if (settings.laneRunning[lane]) {
+        // Draw delay indicators if enabled for this lane
+        if (settings.delayIndicatorsEnabled) {
+          drawDelayIndicators(currentTime, lane);
+        }
 
-      // Update and draw each active swimmer for this lane
-      for (int i = 0; i < settings.numSwimmers; i++) {
-        updateSwimmer(i, currentTime);
-        drawSwimmerPulse(i, lane);
+        // Update and draw each active swimmer for this lane
+        for (int i = 0; i < settings.numSwimmers; i++) {
+          updateSwimmer(i, currentTime, lane);
+          drawSwimmerPulse(i, lane);
+        }
       }
     }
   }
@@ -1858,7 +1878,7 @@ void drawDelayIndicators(unsigned long currentTime, int laneIndex) {
   
   // Check each swimmer (including swimmer 0 for initial delay)
   for (int i = 0; i < settings.numSwimmers; i++) {
-    unsigned long swimmerStartTime = swimmers[i].lastUpdate;
+    unsigned long swimmerStartTime = swimmers[laneIndex][i].lastUpdate;
     unsigned long delayStartTime;
     int delaySeconds;
     
@@ -1905,17 +1925,17 @@ void drawDelayIndicators(unsigned long currentTime, int laneIndex) {
       if (delayLEDs < 1 && delayDistanceFeet > 0) delayLEDs = 1; // Ensure at least 1 LED if there's time left
       
       // Check for conflicts with active swimmers and draw delay indicator
-      CRGB swimmerColor = swimmers[i].color;
+      CRGB swimmerColor = swimmers[laneIndex][i].color;
       for (int ledIndex = 0; ledIndex < delayLEDs && ledIndex < totalLEDs; ledIndex++) {
         // Check if this LED position conflicts with any active swimmer
         bool hasConflict = false;
         
         for (int j = 0; j < settings.numSwimmers; j++) {
           // Skip if this swimmer hasn't started yet
-          if (currentTime < swimmers[j].lastUpdate) continue;
+          if (currentTime < swimmers[laneIndex][j].lastUpdate) continue;
           
           // Check if this LED is within the swimmer's pulse range
-          int swimmerCenter = swimmers[j].position;
+          int swimmerCenter = swimmers[laneIndex][j].position;
           int halfWidth = pulseWidthLEDs / 2;
           int swimmerStart = swimmerCenter - halfWidth;
           int swimmerEnd = swimmerCenter + halfWidth;
@@ -1940,36 +1960,38 @@ void drawDelayIndicators(unsigned long currentTime, int laneIndex) {
 }
 
 void initializeSwimmers() {
-  for (int i = 0; i < 6; i++) {
-    swimmers[i].position = 0;
-    swimmers[i].direction = 1;
-    swimmers[i].lastUpdate = millis() + (settings.initialDelaySeconds * 1000) + (i * settings.swimmerIntervalSeconds * 1000); // Initial delay + staggered start times
-    swimmers[i].color = swimmerColors[i];
+  for (int lane = 0; lane < 4; lane++) {
+    for (int i = 0; i < 6; i++) {
+      swimmers[lane][i].position = 0;
+      swimmers[lane][i].direction = 1;
+      swimmers[lane][i].lastUpdate = millis() + (settings.initialDelaySeconds * 1000) + (i * settings.swimmerIntervalSeconds * 1000); // Initial delay + staggered start times
+      swimmers[lane][i].color = swimmerColors[i];
+    }
   }
 }
 
-void updateSwimmer(int swimmerIndex, unsigned long currentTime) {
-  if (currentTime - swimmers[swimmerIndex].lastUpdate >= delayMS) {
-    swimmers[swimmerIndex].lastUpdate = currentTime;
+void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
+  if (currentTime - swimmers[laneIndex][swimmerIndex].lastUpdate >= delayMS) {
+    swimmers[laneIndex][swimmerIndex].lastUpdate = currentTime;
 
     // Move to next position
-    swimmers[swimmerIndex].position += swimmers[swimmerIndex].direction;
+    swimmers[laneIndex][swimmerIndex].position += swimmers[laneIndex][swimmerIndex].direction;
 
     // Check for bouncing at ends
-    if (swimmers[swimmerIndex].position >= totalLEDs - 1) {
-      swimmers[swimmerIndex].direction = -1;
-      swimmers[swimmerIndex].position = totalLEDs - 1;
-    } else if (swimmers[swimmerIndex].position <= 0) {
-      swimmers[swimmerIndex].direction = 1;
-      swimmers[swimmerIndex].position = 0;
+    if (swimmers[laneIndex][swimmerIndex].position >= totalLEDs - 1) {
+      swimmers[laneIndex][swimmerIndex].direction = -1;
+      swimmers[laneIndex][swimmerIndex].position = totalLEDs - 1;
+    } else if (swimmers[laneIndex][swimmerIndex].position <= 0) {
+      swimmers[laneIndex][swimmerIndex].direction = 1;
+      swimmers[laneIndex][swimmerIndex].position = 0;
     }
   }
 }
 
 void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
-  int centerPos = swimmers[swimmerIndex].position;
+  int centerPos = swimmers[laneIndex][swimmerIndex].position;
   int halfWidth = pulseWidthLEDs / 2;
-  CRGB pulseColor = swimmers[swimmerIndex].color;
+  CRGB pulseColor = swimmers[laneIndex][swimmerIndex].color;
 
   for (int i = 0; i < pulseWidthLEDs; i++) {
     int ledIndex = centerPos - halfWidth + i;
