@@ -177,9 +177,9 @@
             <div class="status stopped" id="status">Pacer Stopped</div>
 
             <!-- Detailed Status (shown when running) -->
-            <!-- Work Set Queue Display -->
+            <!-- Swim Set Queue Display -->
             <div id="queueDisplay" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #28a745;">
-                <h4 style="margin: 0 0 10px 0; color: #28a745;">Work Set Queue</h4>
+                <h4 style="margin: 0 0 10px 0; color: #28a745;">Swim Set Queue</h4>
                 <div id="queueList" style="font-size: 14px;">
                     <div style="color: #666; font-style: italic;">No sets queued</div>
                 </div>
@@ -194,14 +194,14 @@
                     <button class="big-button" onclick="stopQueue()" id="stopBtn" style="display: none; background: #dc3545;">Stop</button>
                 </div>
                 <div class="button-group" id="configButtons">
-                    <button class="big-button" onclick="createWorkSet()" id="createSetBtn">Create Set</button>
+                    <button class="big-button" onclick="createSwimSet()" id="createSetBtn">Create Set</button>
                 </div>
                 <div class="button-group" id="queueButtons" style="display: none;">
-                    <button class="big-button" onclick="queueWorkSet()" id="queueBtn">Queue Set</button>
-                    <button class="big-button" onclick="cancelWorkSet()" id="cancelBtn" style="background: #dc3545;">Cancel</button>
+                    <button class="big-button" onclick="queueSwimSet()" id="queueBtn">Queue Set</button>
+                    <button class="big-button" onclick="cancelSwimSet()" id="cancelBtn" style="background: #dc3545;">Cancel</button>
                 </div>
                 <div class="button-group" id="editButtons" style="display: none;">
-                    <button class="big-button" onclick="saveWorkSet()" id="saveBtn">Save Changes</button>
+                    <button class="big-button" onclick="saveSwimSet()" id="saveBtn">Save Changes</button>
                     <button class="big-button" onclick="cancelEdit()" id="cancelEditBtn" style="background: #dc3545;">Cancel</button>
                 </div>
             </div>
@@ -481,11 +481,11 @@
         let runningSettings = [null, null, null, null]; // Settings snapshot when pacer starts
         let currentSwimmerIndex = -1; // Track which swimmer is being edited
 
-        // Work Set Queue Management - now lane-specific
-        let workSetQueues = [[], [], [], []]; // Array of queued work sets for each lane
-        let activeWorkSets = [null, null, null, null]; // Currently running work set for each lane
-        let editingWorkSetIndexes = [-1, -1, -1, -1]; // Index of work set being edited for each lane (-1 if creating new)
-        let createdWorkSets = [null, null, null, null]; // Temporarily holds created set before queuing for each lane
+        // Swim Set Queue Management - now lane-specific
+        let swimSetQueues = [[], [], [], []]; // Array of queued swim sets for each lane
+        let activeSwimSets = [null, null, null, null]; // Currently running swim set for each lane
+        let editingSwimSetIndexes = [-1, -1, -1, -1]; // Index of swim set being edited for each lane (-1 if creating new)
+        let createdSwimSets = [null, null, null, null]; // Temporarily holds created set before queuing for each lane
         const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan'];
         const colorHex = {
             'red': '#ff0000',
@@ -1291,7 +1291,7 @@
                 document.getElementById('activeSwimmers').textContent = '0';
                 
                 // Handle queue completion (only once)
-                if (activeWorkSets[currentLane] && !completionHandled[currentLane]) {
+                if (activeSwimSets[currentLane] && !completionHandled[currentLane]) {
                     completionHandled[currentLane] = true;
                     // Set is complete, remove from queue and handle next set
                     setTimeout(() => {
@@ -1323,7 +1323,7 @@
             }
         }
 
-        function createWorkSet() {
+        function createSwimSet() {
             // Validate configuration first
             if (currentSettings.numSwimmers < 1) {
                 alert('Please set at least 1 swimmer');
@@ -1373,8 +1373,8 @@
             // Store the set for current lane
             setCurrentSwimmerSet(newSet);
 
-            // Create work set object with metadata
-            createdWorkSets[currentSettings.currentLane] = {
+            // Create swim set object with metadata
+            createdSwimSets[currentSettings.currentLane] = {
                 id: Date.now(), // Simple unique ID
                 lane: currentSettings.currentLane,
                 laneName: currentSettings.laneNames[currentSettings.currentLane],
@@ -1407,19 +1407,19 @@
             return `${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
         }
 
-        function queueWorkSet() {
+        function queueSwimSet() {
             const currentLane = currentSettings.currentLane;
             
-            if (!createdWorkSets[currentLane]) {
+            if (!createdSwimSets[currentLane]) {
                 alert('No set to queue');
                 return;
             }
 
             // Add to current lane's queue
-            workSetQueues[currentLane].push(createdWorkSets[currentLane]);
+            swimSetQueues[currentLane].push(createdSwimSets[currentLane]);
             
             // Clear created set for current lane
-            createdWorkSets[currentLane] = null;
+            createdSwimSets[currentLane] = null;
             
             // Return to configuration mode
             returnToConfigMode();
@@ -1431,9 +1431,9 @@
             updatePacerButtons();
         }
 
-        function cancelWorkSet() {
+        function cancelSwimSet() {
             const currentLane = currentSettings.currentLane;
-            createdWorkSets[currentLane] = null;
+            createdSwimSets[currentLane] = null;
             returnToConfigMode();
         }
 
@@ -1460,12 +1460,12 @@
             let html = '';
             
             // Show all sets in the queue (completed and pending)
-            if (workSetQueues[currentLane].length === 0) {
+            if (swimSetQueues[currentLane].length === 0) {
                 html += '<div style="color: #666; font-style: italic;">No sets queued for Lane ' + (currentLane + 1) + '</div>';
             } else {
-                workSetQueues[currentLane].forEach((workSet, index) => {
-                    const isActive = activeWorkSets[currentLane] && activeWorkSets[currentLane].id === workSet.id;
-                    const isCompleted = workSet.completed;
+                swimSetQueues[currentLane].forEach((swimSet, index) => {
+                    const isActive = activeSwimSets[currentLane] && activeSwimSets[currentLane].id === swimSet.id;
+                    const isCompleted = swimSet.completed;
                     
                     let statusClass = '';
                     let borderColor = '#ddd';
@@ -1485,11 +1485,11 @@
                         <div ${statusClass}>
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
-                                    ${isCompleted ? '✓ ' : ''}${workSet.summary}
+                                    ${isCompleted ? '✓ ' : ''}${swimSet.summary}
                                 </div>
                                 <div style="display: flex; gap: 5px;">
-                                    ${!isActive && !isCompleted ? `<button onclick="editWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
-                                    ${!isActive && !isCompleted ? `<button onclick="deleteWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
+                                    ${!isActive && !isCompleted ? `<button onclick="editSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
+                                    ${!isActive && !isCompleted ? `<button onclick="deleteSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
                                     ${isActive ? `<div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>` : ''}
                                     ${isCompleted ? `<div style="font-size: 12px; color: #28a745; font-weight: bold;">Completed</div>` : ''}
                                 </div>
@@ -1524,9 +1524,9 @@
                 return;
             }
             
-            if (workSetQueues[currentLane].length > 0) {
+            if (swimSetQueues[currentLane].length > 0) {
                 pacerButtons.style.display = 'block';
-                if (activeWorkSets[currentLane]) {
+                if (activeSwimSets[currentLane]) {
                     startBtn.style.display = 'none';
                     stopBtn.style.display = 'block';
                 } else {
@@ -1538,16 +1538,16 @@
             }
         }
 
-        function editWorkSet(index) {
+        function editSwimSet(index) {
             const currentLane = currentSettings.currentLane;
             
-            if (index < 0 || index >= workSetQueues[currentLane].length) return;
+            if (index < 0 || index >= swimSetQueues[currentLane].length) return;
             
-            const workSet = workSetQueues[currentLane][index];
-            editingWorkSetIndexes[currentLane] = index;
+            const swimSet = swimSetQueues[currentLane][index];
+            editingSwimSetIndexes[currentLane] = index;
             
-            // Load work set data into configuration
-            loadWorkSetIntoConfig(workSet);
+            // Load swim set data into configuration
+            loadSwimSetIntoConfig(swimSet);
             
             // Show swimmer set for editing
             displaySwimmerSet();
@@ -1559,52 +1559,52 @@
             document.getElementById('editButtons').style.display = 'block';
         }
 
-        function loadWorkSetIntoConfig(workSet) {
+        function loadSwimSetIntoConfig(swimSet) {
             // Restore settings
-            Object.assign(currentSettings, workSet.settings);
+            Object.assign(currentSettings, swimSet.settings);
             
             // Set current lane
-            currentSettings.currentLane = workSet.lane;
+            currentSettings.currentLane = swimSet.lane;
             
             // Restore swimmer set
-            setCurrentSwimmerSet(workSet.swimmers);
+            setCurrentSwimmerSet(swimSet.swimmers);
             
             // Update all UI elements to reflect loaded settings
             updateAllUIFromSettings();
         }
 
-        function saveWorkSet() {
+        function saveSwimSet() {
             const currentLane = currentSettings.currentLane;
             
-            if (editingWorkSetIndexes[currentLane] === -1) return;
+            if (editingSwimSetIndexes[currentLane] === -1) return;
             
-            // Update the work set in the current lane's queue
+            // Update the swim set in the current lane's queue
             const currentSet = getCurrentSwimmerSet();
-            workSetQueues[currentLane][editingWorkSetIndexes[currentLane]] = {
-                ...workSetQueues[currentLane][editingWorkSetIndexes[currentLane]],
+            swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = {
+                ...swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]],
                 swimmers: currentSet,
                 settings: { ...currentSettings },
                 summary: generateSetSummary(currentSet, currentSettings)
             };
             
-            editingWorkSetIndexes[currentLane] = -1;
+            editingSwimSetIndexes[currentLane] = -1;
             returnToConfigMode();
             updateQueueDisplay();
         }
 
         function cancelEdit() {
             const currentLane = currentSettings.currentLane;
-            editingWorkSetIndexes[currentLane] = -1;
+            editingSwimSetIndexes[currentLane] = -1;
             returnToConfigMode();
         }
 
-        function deleteWorkSet(index) {
+        function deleteSwimSet(index) {
             const currentLane = currentSettings.currentLane;
             
-            if (index < 0 || index >= workSetQueues[currentLane].length) return;
+            if (index < 0 || index >= swimSetQueues[currentLane].length) return;
             
-            if (confirm('Delete this work set from Lane ' + (currentLane + 1) + '?')) {
-                workSetQueues[currentLane].splice(index, 1);
+            if (confirm('Delete this swim set from Lane ' + (currentLane + 1) + '?')) {
+                swimSetQueues[currentLane].splice(index, 1);
                 updateQueueDisplay();
                 updatePacerButtons();
             }
@@ -1613,17 +1613,17 @@
         function startQueue() {
             const currentLane = currentSettings.currentLane;
             
-            if (workSetQueues[currentLane].length === 0) return;
+            if (swimSetQueues[currentLane].length === 0) return;
             
-            // Find the first non-completed work set in current lane's queue
-            const nextWorkSet = workSetQueues[currentLane].find(set => !set.completed);
-            if (!nextWorkSet) return; // No pending sets to start
+            // Find the first non-completed swim set in current lane's queue
+            const nextSwimSet = swimSetQueues[currentLane].find(set => !set.completed);
+            if (!nextSwimSet) return; // No pending sets to start
             
-            // Start the next non-completed work set
-            activeWorkSets[currentLane] = nextWorkSet;
+            // Start the next non-completed swim set
+            activeSwimSets[currentLane] = nextSwimSet;
             
             // Load the active set into the pacer system
-            loadWorkSetForExecution(activeWorkSets[currentLane]);
+            loadSwimSetForExecution(activeSwimSets[currentLane]);
             
             // Start the pacer
             startPacerExecution();
@@ -1645,30 +1645,30 @@
             stopPacerExecution();
             
             // Clear active set for current lane
-            activeWorkSets[currentLane] = null;
+            activeSwimSets[currentLane] = null;
             
             // Update displays
             updateQueueDisplay();
             updatePacerButtons();
         }
 
-        function loadWorkSetForExecution(workSet) {
+        function loadSwimSetForExecution(swimSet) {
             // Set the current lane
-            currentSettings.currentLane = workSet.lane;
+            currentSettings.currentLane = swimSet.lane;
             
             // Load settings
-            Object.assign(currentSettings, workSet.settings);
+            Object.assign(currentSettings, swimSet.settings);
             
-            // Update the DOM input fields with the work set's settings
-            if (workSet.settings.pacePer50) {
-                document.getElementById('pacePer50').value = workSet.settings.pacePer50;
+            // Update the DOM input fields with the swim set's settings
+            if (swimSet.settings.pacePer50) {
+                document.getElementById('pacePer50').value = swimSet.settings.pacePer50;
             }
-            if (workSet.settings.numRounds) {
-                document.getElementById('numRounds').value = workSet.settings.numRounds;
+            if (swimSet.settings.numRounds) {
+                document.getElementById('numRounds').value = swimSet.settings.numRounds;
             }
             
             // Load swimmer set
-            setCurrentSwimmerSet(workSet.swimmers);
+            setCurrentSwimmerSet(swimSet.swimmers);
             
             // Update lane selector to reflect current lane
             updateLaneSelector();
@@ -1970,26 +1970,26 @@
         function handleSetCompletion() {
             const currentLane = currentSettings.currentLane;
             
-            if (!activeWorkSets[currentLane]) return;
+            if (!activeSwimSets[currentLane]) return;
             
             if (COMPLETION_MODE === 'REMOVE_SET') {
                 // Option 1: Remove completed set from current lane's queue
-                const completedSetIndex = workSetQueues[currentLane].findIndex(set => set.id === activeWorkSets[currentLane].id);
+                const completedSetIndex = swimSetQueues[currentLane].findIndex(set => set.id === activeSwimSets[currentLane].id);
                 if (completedSetIndex !== -1) {
-                    workSetQueues[currentLane].splice(completedSetIndex, 1);
+                    swimSetQueues[currentLane].splice(completedSetIndex, 1);
                 }
             } else if (COMPLETION_MODE === 'MARK_COMPLETE') {
                 // Option 2: Mark set as complete in place within the queue
-                const completedSetIndex = workSetQueues[currentLane].findIndex(set => set.id === activeWorkSets[currentLane].id);
+                const completedSetIndex = swimSetQueues[currentLane].findIndex(set => set.id === activeSwimSets[currentLane].id);
                 if (completedSetIndex !== -1) {
                     // Mark the set as completed in place
-                    workSetQueues[currentLane][completedSetIndex].completed = true;
-                    workSetQueues[currentLane][completedSetIndex].completedAt = new Date();
+                    swimSetQueues[currentLane][completedSetIndex].completed = true;
+                    swimSetQueues[currentLane][completedSetIndex].completedAt = new Date();
                 }
             }
             
             // Clear active set for current lane
-            activeWorkSets[currentLane] = null;
+            activeSwimSets[currentLane] = null;
             
             // Reset completion flag for this lane
             completionHandled[currentLane] = false;
@@ -1998,7 +1998,7 @@
             stopPacerExecution();
             
             // Check if there are more sets in current lane's queue (only count non-completed sets)
-            const remainingSets = workSetQueues[currentLane].filter(set => !set.completed);
+            const remainingSets = swimSetQueues[currentLane].filter(set => !set.completed);
             if (remainingSets.length > 0) {
                 // Auto-advance to next non-completed set after a brief pause
                 setTimeout(() => {
