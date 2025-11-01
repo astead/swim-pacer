@@ -518,9 +518,11 @@ void handleRoot() {
                 <input type="range" id="initialDelay" min="0" max="30" step="1" value="10" oninput="updateInitialDelay()">
             </div>
             <div class="control">
-                <label for="swimmerInterval">Delay between swimmers (seconds):</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <label for="swimmerInterval">Delay between swimmers:</label>
+                    <span id="swimmerIntervalValue">4 seconds</span>
+                </div>
                 <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
-                <span id="swimmerIntervalValue">4</span>
             </div>
 
             <div class="toggle-container">
@@ -1041,7 +1043,7 @@ void handleRoot() {
         function updateSwimmerInterval() {
             const swimmerInterval = document.getElementById('swimmerInterval').value;
             currentSettings.swimmerInterval = parseInt(swimmerInterval);
-            document.getElementById('swimmerIntervalValue').textContent = swimmerInterval;
+            document.getElementById('swimmerIntervalValue').textContent = swimmerInterval + ' seconds';
             updateSettings();
         }
 
