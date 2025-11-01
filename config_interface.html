@@ -1459,25 +1459,42 @@
             
             let html = '';
             
-            // Show active queue
+            // Show all sets in the queue (completed and pending)
             if (workSetQueues[currentLane].length === 0) {
                 html += '<div style="color: #666; font-style: italic;">No sets queued for Lane ' + (currentLane + 1) + '</div>';
             } else {
                 workSetQueues[currentLane].forEach((workSet, index) => {
                     const isActive = activeWorkSets[currentLane] && activeWorkSets[currentLane].id === workSet.id;
-                    const statusClass = isActive ? 'style="background: #e7f3ff; border: 1px solid #2196F3;"' : '';
+                    const isCompleted = workSet.completed;
+                    
+                    let statusClass = '';
+                    let borderColor = '#ddd';
+                    let backgroundColor = '#fff';
+                    
+                    if (isActive) {
+                        backgroundColor = '#e7f3ff';
+                        borderColor = '#2196F3';
+                    } else if (isCompleted) {
+                        backgroundColor = '#f8f9fa';
+                        borderColor = '#28a745';
+                    }
+                    
+                    statusClass = `style="background: ${backgroundColor}; border: 1px solid ${borderColor};"`;
                     
                     html += `
-                        <div ${statusClass} style="padding: 8px; margin: 5px 0; border-radius: 4px; border: 1px solid #ddd;">
+                        <div ${statusClass} style="padding: 8px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <div>
-                                    <div style="font-weight: bold; color: ${isActive ? '#1976D2' : '#333'};">
-                                        ${workSet.summary}
+                                    <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
+                                        ${isCompleted ? '✓ ' : ''}${workSet.summary}
                                     </div>
+                                    ${isCompleted ? `<div style="font-size: 11px; color: #28a745; margin-top: 2px;">
+                                        Completed at ${new Date(workSet.completedAt).toLocaleTimeString()}
+                                    </div>` : ''}
                                 </div>
                                 <div style="display: flex; gap: 5px;">
-                                    ${!isActive ? `<button onclick="editWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
-                                    ${!isActive ? `<button onclick="deleteWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
+                                    ${!isActive && !isCompleted ? `<button onclick="editWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
+                                    ${!isActive && !isCompleted ? `<button onclick="deleteWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
                                     ${isActive ? `<div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>` : ''}
                                 </div>
                             </div>
@@ -1495,32 +1512,6 @@
                         </div>
                     `;
                 });
-            }
-            
-            // Show completed sets if in MARK_COMPLETE mode and there are completed sets
-            if (COMPLETION_MODE === 'MARK_COMPLETE' && completedWorkSets[currentLane].length > 0) {
-                html += `
-                    <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #ddd;">
-                        <div style="font-weight: bold; color: #28a745; margin-bottom: 8px;">✓ Completed Sets</div>
-                `;
-                
-                completedWorkSets[currentLane].forEach((completedSet, index) => {
-                    const completedTime = new Date(completedSet.completedAt).toLocaleTimeString();
-                    html += `
-                        <div style="padding: 6px; margin: 3px 0; border-radius: 4px; background: #f8f9fa; border: 1px solid #28a745; opacity: 0.8;">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div style="color: #555; font-size: 13px;">
-                                    ${completedSet.summary}
-                                </div>
-                                <div style="font-size: 11px; color: #28a745;">
-                                    Completed at ${completedTime}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                });
-                
-                html += '</div>';
             }
             
             queueList.innerHTML = html;
@@ -1628,8 +1619,12 @@
             
             if (workSetQueues[currentLane].length === 0) return;
             
-            // Start the first work set in current lane's queue
-            activeWorkSets[currentLane] = workSetQueues[currentLane][0];
+            // Find the first non-completed work set in current lane's queue
+            const nextWorkSet = workSetQueues[currentLane].find(set => !set.completed);
+            if (!nextWorkSet) return; // No pending sets to start
+            
+            // Start the next non-completed work set
+            activeWorkSets[currentLane] = nextWorkSet;
             
             // Load the active set into the pacer system
             loadWorkSetForExecution(activeWorkSets[currentLane]);
@@ -1975,9 +1970,6 @@
 
         // Completion handling options - change this to experiment with different behaviors
         const COMPLETION_MODE = 'MARK_COMPLETE'; // Options: 'REMOVE_SET', 'MARK_COMPLETE'
-        
-        // Track completed sets for each lane
-        let completedWorkSets = [[], [], [], []];
 
         function handleSetCompletion() {
             const currentLane = currentSettings.currentLane;
@@ -1991,14 +1983,12 @@
                     workSetQueues[currentLane].splice(completedSetIndex, 1);
                 }
             } else if (COMPLETION_MODE === 'MARK_COMPLETE') {
-                // Option 2: Mark set as complete and move to completed list
-                const completedSet = { ...activeWorkSets[currentLane], completedAt: new Date() };
-                completedWorkSets[currentLane].push(completedSet);
-                
-                // Remove from active queue
+                // Option 2: Mark set as complete in place within the queue
                 const completedSetIndex = workSetQueues[currentLane].findIndex(set => set.id === activeWorkSets[currentLane].id);
                 if (completedSetIndex !== -1) {
-                    workSetQueues[currentLane].splice(completedSetIndex, 1);
+                    // Mark the set as completed in place
+                    workSetQueues[currentLane][completedSetIndex].completed = true;
+                    workSetQueues[currentLane][completedSetIndex].completedAt = new Date();
                 }
             }
             
@@ -2011,9 +2001,10 @@
             // Stop current execution
             stopPacerExecution();
             
-            // Check if there are more sets in current lane's queue
-            if (workSetQueues[currentLane].length > 0) {
-                // Auto-advance to next set after a brief pause
+            // Check if there are more sets in current lane's queue (only count non-completed sets)
+            const remainingSets = workSetQueues[currentLane].filter(set => !set.completed);
+            if (remainingSets.length > 0) {
+                // Auto-advance to next non-completed set after a brief pause
                 setTimeout(() => {
                     startQueue(); // No more alert - just auto-start
                 }, 1500);
