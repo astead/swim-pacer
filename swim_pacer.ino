@@ -163,7 +163,7 @@ void setupLEDs() {
       delete[] leds[lane];
     }
     leds[lane] = new CRGB[totalLEDs];
-    
+
     // Add LED strip for this lane with appropriate GPIO pin
     switch (lane) {
       case 0:
@@ -179,11 +179,11 @@ void setupLEDs() {
         FastLED.addLeds<LED_TYPE, 22, COLOR_ORDER>(leds[3], totalLEDs);
         break;
     }
-    
+
     // Clear this lane's LEDs
     fill_solid(leds[lane], totalLEDs, CRGB::Black);
   }
-  
+
   // Initialize unused lanes to nullptr
   for (int lane = settings.numLanes; lane < 4; lane++) {
     if (leds[lane] != nullptr) {
@@ -429,7 +429,7 @@ void handleRoot() {
             <div id="detailedStatus" style="display: none; background: #e7f3ff; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #2196F3;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <h4 style="margin: 0; color: #1976D2;">Current Status <span id="setBasics" style="font-weight: normal; color: #666;">- Loading...</span></h4>
-                    <div id="elapsedTime" style="font-weight: bold; color: #1976D2;">00:00</div>
+                    <div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
                     <div>
@@ -804,11 +804,11 @@ void handleRoot() {
         function updateLaneSelector() {
             const laneSelector = document.getElementById('laneSelector');
             const currentLaneSelect = document.getElementById('currentLane');
-            
+
             // Show/hide lane selector based on number of lanes
             if (currentSettings.numLanes > 1) {
                 laneSelector.style.display = 'block';
-                
+
                 // Populate lane options
                 currentLaneSelect.innerHTML = '';
                 for (let i = 0; i < currentSettings.numLanes; i++) {
@@ -817,7 +817,7 @@ void handleRoot() {
                     option.textContent = currentSettings.laneNames[i];
                     currentLaneSelect.appendChild(option);
                 }
-                
+
                 // Set current lane
                 currentLaneSelect.value = currentSettings.currentLane;
             } else {
@@ -829,11 +829,11 @@ void handleRoot() {
         function updateLaneNamesSection() {
             const laneNamesList = document.getElementById('laneNamesList');
             laneNamesList.innerHTML = '';
-            
+
             for (let i = 0; i < currentSettings.numLanes; i++) {
                 const laneDiv = document.createElement('div');
                 laneDiv.style.cssText = 'margin: 8px 0;';
-                
+
                 const input = document.createElement('input');
                 input.type = 'text';
                 input.value = currentSettings.laneNames[i];
@@ -844,7 +844,7 @@ void handleRoot() {
                     updateLaneSelector(); // Refresh the dropdown on main page
                     updateSettings(); // Save the changes
                 };
-                
+
                 laneDiv.appendChild(input);
                 laneNamesList.appendChild(laneDiv);
             }
@@ -853,23 +853,23 @@ void handleRoot() {
         function updateCurrentLane() {
             const newLane = parseInt(document.getElementById('currentLane').value);
             currentSettings.currentLane = newLane;
-            
+
             // Update isRunning to reflect the new lane's state
             currentSettings.isRunning = laneRunning[newLane];
-            
+
             // Get elements for swimmer set management
             const swimmerSetDiv = document.getElementById('swimmerSet');
             const configControls = document.getElementById('configControls');
             const createSetBtn = document.getElementById('createSetBtn');
             const currentSet = getCurrentSwimmerSet();
-            
+
             // Update button text based on whether the new lane has a set
             if (currentSet.length > 0) {
                 createSetBtn.textContent = 'Modify Set';
             } else {
                 createSetBtn.textContent = 'Create Set';
             }
-            
+
             // If swimmer set is currently displayed, update it for the new lane
             if (swimmerSetDiv && swimmerSetDiv.style.display === 'block') {
                 if (currentSet.length > 0) {
@@ -882,10 +882,10 @@ void handleRoot() {
                     createSetBtn.textContent = 'Create Set';
                 }
             }
-            
+
             // Update the status display for the new lane
             updateStatus();
-            
+
             // If the new lane is running, show detailed status and start updates
             const detailedStatus = document.getElementById('detailedStatus');
             if (currentSettings.isRunning) {
@@ -962,7 +962,7 @@ void handleRoot() {
             // Update toggle labels
             const toggleOff = document.getElementById('delayIndicatorOff');
             const toggleOn = document.getElementById('delayIndicatorOn');
-            
+
             if (enabled) {
                 toggleOff.classList.remove('active');
                 toggleOn.classList.add('active');
@@ -1395,7 +1395,7 @@ void handleRoot() {
 
         function displaySwimmerSet() {
             const currentSet = getCurrentSwimmerSet();
-            
+
             // Update set details in swim practice nomenclature
             const setDetails = document.getElementById('setDetails');
             const paceDistance = currentSettings.paceDistance;
@@ -1624,7 +1624,7 @@ void handleGetCurrentLane() {
   String json = "{";
   json += "\"currentLane\":" + String(currentLane);
   json += "}";
-  
+
   server.send(200, "application/json", json);
 }
 
@@ -1644,7 +1644,7 @@ void handleControl() {
 void handleToggle() {
   // Toggle the current lane's running state
   settings.laneRunning[currentLane] = !settings.laneRunning[currentLane];
-  
+
   // Update global running state (true if any lane is running)
   settings.isRunning = false;
   for (int i = 0; i < settings.numLanes; i++) {
@@ -1653,7 +1653,7 @@ void handleToggle() {
       break;
     }
   }
-  
+
   saveSettings();
 
   String status = settings.laneRunning[currentLane] ? "Lane Pacer Started" : "Lane Pacer Stopped";
@@ -1923,7 +1923,7 @@ void updateLEDEffect() {
     if (leds[lane] != nullptr) {
       // Clear this lane's LEDs
       fill_solid(leds[lane], totalLEDs, CRGB::Black);
-      
+
       // Only animate if this lane is running
       if (settings.laneRunning[lane]) {
         // Draw delay indicators if enabled for this lane
@@ -1949,16 +1949,16 @@ void drawDelayIndicators(unsigned long currentTime, int laneIndex) {
   const float feetToMeters = 0.3048;
   const float maxDelayDistanceFeet = 5.0;
   const float maxDelayDistanceMeters = maxDelayDistanceFeet * feetToMeters;
-  
+
   // Calculate LEDs for maximum delay distance (5 feet)
   int maxDelayLEDs = (int)(maxDelayDistanceMeters * settings.ledsPerMeter);
-  
+
   // Check each swimmer (including swimmer 0 for initial delay)
   for (int i = 0; i < settings.numSwimmers; i++) {
     unsigned long swimmerStartTime = swimmers[laneIndex][i].lastUpdate;
     unsigned long delayStartTime;
     int delaySeconds;
-    
+
     if (i == 0) {
       // First swimmer uses initial delay
       delaySeconds = settings.initialDelaySeconds;
@@ -1968,15 +1968,15 @@ void drawDelayIndicators(unsigned long currentTime, int laneIndex) {
       delaySeconds = settings.swimmerIntervalSeconds;
       delayStartTime = swimmerStartTime - (settings.swimmerIntervalSeconds * 1000);
     }
-    
+
     // Check if we're in the delay period for this swimmer
     if (currentTime >= delayStartTime && currentTime < swimmerStartTime) {
       // Calculate remaining delay time in seconds
       float remainingDelaySeconds = (float)(swimmerStartTime - currentTime) / 1000.0;
-      
+
       // Determine the delay distance based on remaining time
       float delayDistanceFeet = 0;
-      
+
       if (delaySeconds <= 5) {
         // For delays 5 seconds or less, show full countdown at 1 foot per second
         delayDistanceFeet = remainingDelaySeconds;
@@ -1987,42 +1987,42 @@ void drawDelayIndicators(unsigned long currentTime, int laneIndex) {
         }
         // If more than 5 seconds remain, delayDistanceFeet stays 0 (no indicator)
       }
-      
+
       // Only proceed if we should show an indicator
       if (delayDistanceFeet > 0) {
         // Ensure minimum of 0 feet
         if (delayDistanceFeet < 0) delayDistanceFeet = 0;
-      
+
       // Convert to LEDs
       float delayDistanceMeters = delayDistanceFeet * feetToMeters;
       int delayLEDs = (int)(delayDistanceMeters * settings.ledsPerMeter);
-      
+
       // Limit to available space and ensure minimum visibility
       if (delayLEDs > maxDelayLEDs) delayLEDs = maxDelayLEDs;
       if (delayLEDs < 1 && delayDistanceFeet > 0) delayLEDs = 1; // Ensure at least 1 LED if there's time left
-      
+
       // Check for conflicts with active swimmers and draw delay indicator
       CRGB swimmerColor = swimmers[laneIndex][i].color;
       for (int ledIndex = 0; ledIndex < delayLEDs && ledIndex < totalLEDs; ledIndex++) {
         // Check if this LED position conflicts with any active swimmer
         bool hasConflict = false;
-        
+
         for (int j = 0; j < settings.numSwimmers; j++) {
           // Skip if this swimmer hasn't started yet
           if (currentTime < swimmers[laneIndex][j].lastUpdate) continue;
-          
+
           // Check if this LED is within the swimmer's pulse range
           int swimmerCenter = swimmers[laneIndex][j].position;
           int halfWidth = pulseWidthLEDs / 2;
           int swimmerStart = swimmerCenter - halfWidth;
           int swimmerEnd = swimmerCenter + halfWidth;
-          
+
           if (ledIndex >= swimmerStart && ledIndex <= swimmerEnd) {
             hasConflict = true;
             break;
           }
         }
-        
+
         // Only draw delay indicator if there's no conflict with active swimmers
         if (!hasConflict) {
           // Create a dimmed version of the swimmer's color for the delay indicator

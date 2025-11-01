@@ -181,7 +181,7 @@
             <div id="detailedStatus" style="display: none; background: #e7f3ff; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #2196F3;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <h4 style="margin: 0; color: #1976D2;">Current Status <span id="setBasics" style="font-weight: normal; color: #666;">- Loading...</span></h4>
-                    <div id="elapsedTime" style="font-weight: bold; color: #1976D2;">00:00</div>
+                    <div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
                     <div>
@@ -556,11 +556,11 @@
         function updateLaneSelector() {
             const laneSelector = document.getElementById('laneSelector');
             const currentLaneSelect = document.getElementById('currentLane');
-            
+
             // Show/hide lane selector based on number of lanes
             if (currentSettings.numLanes > 1) {
                 laneSelector.style.display = 'block';
-                
+
                 // Populate lane options
                 currentLaneSelect.innerHTML = '';
                 for (let i = 0; i < currentSettings.numLanes; i++) {
@@ -569,7 +569,7 @@
                     option.textContent = currentSettings.laneNames[i];
                     currentLaneSelect.appendChild(option);
                 }
-                
+
                 // Set current lane
                 currentLaneSelect.value = currentSettings.currentLane;
             } else {
@@ -581,11 +581,11 @@
         function updateLaneNamesSection() {
             const laneNamesList = document.getElementById('laneNamesList');
             laneNamesList.innerHTML = '';
-            
+
             for (let i = 0; i < currentSettings.numLanes; i++) {
                 const laneDiv = document.createElement('div');
                 laneDiv.style.cssText = 'margin: 8px 0;';
-                
+
                 const input = document.createElement('input');
                 input.type = 'text';
                 input.value = currentSettings.laneNames[i];
@@ -596,7 +596,7 @@
                     updateLaneSelector(); // Refresh the dropdown on main page
                     updateSettings(); // Save the changes
                 };
-                
+
                 laneDiv.appendChild(input);
                 laneNamesList.appendChild(laneDiv);
             }
@@ -605,23 +605,23 @@
         function updateCurrentLane() {
             const newLane = parseInt(document.getElementById('currentLane').value);
             currentSettings.currentLane = newLane;
-            
+
             // Update isRunning to reflect the new lane's state
             currentSettings.isRunning = laneRunning[newLane];
-            
+
             // Get elements for swimmer set management
             const swimmerSetDiv = document.getElementById('swimmerSet');
             const configControls = document.getElementById('configControls');
             const createSetBtn = document.getElementById('createSetBtn');
             const currentSet = getCurrentSwimmerSet();
-            
+
             // Update button text based on whether the new lane has a set
             if (currentSet.length > 0) {
                 createSetBtn.textContent = 'Modify Set';
             } else {
                 createSetBtn.textContent = 'Create Set';
             }
-            
+
             // If swimmer set is currently displayed, update it for the new lane
             if (swimmerSetDiv && swimmerSetDiv.style.display === 'block') {
                 if (currentSet.length > 0) {
@@ -634,10 +634,10 @@
                     createSetBtn.textContent = 'Create Set';
                 }
             }
-            
+
             // Update the status display for the new lane
             updateStatus();
-            
+
             // If the new lane is running, show detailed status and start updates
             const detailedStatus = document.getElementById('detailedStatus');
             if (currentSettings.isRunning) {
@@ -714,7 +714,7 @@
             // Update toggle labels
             const toggleOff = document.getElementById('delayIndicatorOff');
             const toggleOn = document.getElementById('delayIndicatorOn');
-            
+
             if (enabled) {
                 toggleOff.classList.remove('active');
                 toggleOn.classList.add('active');
@@ -1147,7 +1147,7 @@
 
         function displaySwimmerSet() {
             const currentSet = getCurrentSwimmerSet();
-            
+
             // Update set details in swim practice nomenclature
             const setDetails = document.getElementById('setDetails');
             const paceDistance = currentSettings.paceDistance;
