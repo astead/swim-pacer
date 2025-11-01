@@ -1978,6 +1978,9 @@ void handleRoot() {
             // Clear timing state to ensure fresh start next time
             pacerStartTimes[currentLane] = 0;
 
+            // Update visual status indicators (border color)
+            updateStatus();
+
             // Send stop command to ESP32
             sendStopCommand();
         }
