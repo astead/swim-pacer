@@ -1562,7 +1562,10 @@ void handleRoot() {
                 lane: currentSettings.currentLane,
                 laneName: currentSettings.laneNames[currentSettings.currentLane],
                 swimmers: newSet,
-                settings: { ...currentSettings }, // Deep copy of current settings
+                settings: { 
+                    ...currentSettings,
+                    pacePer50: currentPace // Explicitly include the pace value
+                }, // Deep copy of current settings with pace
                 summary: generateSetSummary(newSet, currentSettings)
             };
 
@@ -1815,6 +1818,11 @@ void handleRoot() {
             
             // Load settings
             Object.assign(currentSettings, workSet.settings);
+            
+            // Update the DOM input field with the work set's pace
+            if (workSet.settings.pacePer50) {
+                document.getElementById('pacePer50').value = workSet.settings.pacePer50;
+            }
             
             // Load swimmer set
             setCurrentSwimmerSet(workSet.swimmers);
