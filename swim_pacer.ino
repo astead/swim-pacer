@@ -417,10 +417,9 @@ void handleRoot() {
             <div id="laneSelector" style="display: none; margin: 15px 0;">
                 <div class="control">
                     <label for="currentLane">Working Lane:</label>
-                    <select id="currentLane" onchange="updateCurrentLane()" style="margin-right: 10px;">
+                    <select id="currentLane" onchange="updateCurrentLane()">
                         <!-- Options populated by JavaScript -->
                     </select>
-                    <button onclick="editLaneName()" style="padding: 4px 8px; font-size: 12px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit Name</button>
                 </div>
             </div>
 
@@ -429,7 +428,7 @@ void handleRoot() {
             <!-- Detailed Status (shown when running) -->
             <div id="detailedStatus" style="display: none; background: #e7f3ff; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #2196F3;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h4 style="margin: 0; color: #1976D2;">Current Status</h4>
+                    <h4 style="margin: 0; color: #1976D2;">Current Status <span id="setBasics" style="font-weight: normal; color: #666;">- Loading...</span></h4>
                     <div id="elapsedTime" style="font-weight: bold; color: #1976D2;">00:00</div>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
@@ -654,6 +653,14 @@ void handleRoot() {
                 <label for="numLanes">Number of lanes:</label>
                 <input type="number" id="numLanes" value="2" min="1" max="4" onchange="updateNumLanes()">
             </div>
+
+            <!-- Lane Names Management -->
+            <div id="laneNamesSection" style="margin-top: 20px;">
+                <h4 style="margin: 10px 0; color: #333;">Lane Names:</h4>
+                <div id="laneNamesList">
+                    <!-- Lane name inputs populated by JavaScript -->
+                </div>
+            </div>
         </div>
     </div>
 
@@ -701,6 +708,7 @@ void handleRoot() {
 
         // Swimmer set configuration - now lane-specific
         let swimmerSets = [[], [], [], []]; // Array of sets for each lane (up to 4 lanes)
+        let laneRunning = [false, false, false, false]; // Running state for each lane
         let currentSwimmerIndex = -1; // Track which swimmer is being edited
         const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan'];
         const colorHex = {
@@ -789,6 +797,7 @@ void handleRoot() {
             const numLanes = parseInt(document.getElementById('numLanes').value);
             currentSettings.numLanes = numLanes;
             updateLaneSelector();
+            updateLaneNamesSection();
             updateSettings();
         }
 
@@ -817,23 +826,75 @@ void handleRoot() {
             }
         }
 
+        function updateLaneNamesSection() {
+            const laneNamesList = document.getElementById('laneNamesList');
+            laneNamesList.innerHTML = '';
+            
+            for (let i = 0; i < currentSettings.numLanes; i++) {
+                const laneDiv = document.createElement('div');
+                laneDiv.style.cssText = 'margin: 8px 0;';
+                
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = currentSettings.laneNames[i];
+                input.placeholder = `Lane ${i + 1}`;
+                input.style.cssText = 'width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;';
+                input.onchange = function() {
+                    currentSettings.laneNames[i] = this.value;
+                    updateLaneSelector(); // Refresh the dropdown on main page
+                    updateSettings(); // Save the changes
+                };
+                
+                laneDiv.appendChild(input);
+                laneNamesList.appendChild(laneDiv);
+            }
+        }
+
         function updateCurrentLane() {
             const newLane = parseInt(document.getElementById('currentLane').value);
             currentSettings.currentLane = newLane;
             
-            // Refresh the swimmer set display for the new lane
-            updateSwimmerSetDisplay();
-        }
-
-        function editLaneName() {
-            const currentLane = currentSettings.currentLane;
-            const currentName = currentSettings.laneNames[currentLane];
-            const newName = prompt(`Enter new name for lane ${currentLane + 1}:`, currentName);
+            // Update isRunning to reflect the new lane's state
+            currentSettings.isRunning = laneRunning[newLane];
             
-            if (newName && newName.trim() !== '') {
-                currentSettings.laneNames[currentLane] = newName.trim();
-                updateLaneSelector(); // Refresh the dropdown with new name
-                updateSettings();
+            // Get elements for swimmer set management
+            const swimmerSetDiv = document.getElementById('swimmerSet');
+            const configControls = document.getElementById('configControls');
+            const createSetBtn = document.getElementById('createSetBtn');
+            const currentSet = getCurrentSwimmerSet();
+            
+            // Update button text based on whether the new lane has a set
+            if (currentSet.length > 0) {
+                createSetBtn.textContent = 'Modify Set';
+            } else {
+                createSetBtn.textContent = 'Create Set';
+            }
+            
+            // If swimmer set is currently displayed, update it for the new lane
+            if (swimmerSetDiv && swimmerSetDiv.style.display === 'block') {
+                if (currentSet.length > 0) {
+                    // New lane has a set, display it
+                    displaySwimmerSet();
+                } else {
+                    // New lane has no set, hide set display and show config controls
+                    configControls.style.display = 'block';
+                    swimmerSetDiv.style.display = 'none';
+                    createSetBtn.textContent = 'Create Set';
+                }
+            }
+            
+            // Update the status display for the new lane
+            updateStatus();
+            
+            // If the new lane is running, show detailed status and start updates
+            const detailedStatus = document.getElementById('detailedStatus');
+            if (currentSettings.isRunning) {
+                detailedStatus.style.display = 'block';
+                initializePacerStatus();
+                startStatusUpdates();
+            } else {
+                detailedStatus.style.display = 'none';
+                stopStatusUpdates();
             }
         }
 
@@ -1125,32 +1186,39 @@ void handleRoot() {
             updateSettings();
         }
 
-        // Pacer status tracking variables
-        let pacerStartTime = 0;
-        let currentRound = 1;
+        // Pacer status tracking variables - now lane-specific
+        let pacerStartTimes = [0, 0, 0, 0]; // Start time for each lane
+        let currentRounds = [1, 1, 1, 1]; // Current round for each lane
         let statusUpdateInterval = null;
         let currentColorContext = null; // Track which color picker context we're in
 
-        function togglePacer() {
-            currentSettings.isRunning = !currentSettings.isRunning;
-
-            // Update UI immediately for better responsiveness
+        function updateStatus() {
             const status = currentSettings.isRunning ? "Pacer Started" : "Pacer Stopped";
             document.getElementById('status').textContent = status;
             document.getElementById('status').className = 'status ' + (currentSettings.isRunning ? 'running' : 'stopped');
             document.getElementById('toggleBtn').textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
+        }
+
+        function togglePacer() {
+            // Toggle the running state for the current lane
+            const currentLane = currentSettings.currentLane;
+            laneRunning[currentLane] = !laneRunning[currentLane];
+            currentSettings.isRunning = laneRunning[currentLane];
+
+            // Update UI immediately for better responsiveness
+            updateStatus();
 
             // Handle detailed status display
             const detailedStatus = document.getElementById('detailedStatus');
             if (currentSettings.isRunning) {
-                // Starting pacer
-                pacerStartTime = Date.now();
-                currentRound = 1;
+                // Starting pacer for current lane
+                pacerStartTimes[currentLane] = Date.now();
+                currentRounds[currentLane] = 1;
                 detailedStatus.style.display = 'block';
                 initializePacerStatus();
                 startStatusUpdates();
             } else {
-                // Stopping pacer
+                // Stopping pacer for current lane
                 detailedStatus.style.display = 'none';
                 stopStatusUpdates();
             }
@@ -1169,10 +1237,16 @@ void handleRoot() {
         }
 
         function initializePacerStatus() {
-            document.getElementById('currentRound').textContent = currentRound;
+            const currentLane = currentSettings.currentLane;
+            document.getElementById('currentRound').textContent = currentRounds[currentLane];
             document.getElementById('totalRounds').textContent = currentSettings.numRounds;
             document.getElementById('roundProgress').textContent = '0%';
             document.getElementById('activeSwimmers').textContent = '0';
+
+            // Update set basics display
+            const paceDistance = currentSettings.paceDistance;
+            const numRounds = currentSettings.numRounds;
+            document.getElementById('setBasics').textContent = `- ${numRounds} x ${paceDistance}'s`;
 
             // Show initial delay countdown
             if (currentSettings.initialDelay > 0) {
@@ -1200,7 +1274,8 @@ void handleRoot() {
         function updatePacerStatus() {
             if (!currentSettings.isRunning) return;
 
-            const elapsedSeconds = Math.floor((Date.now() - pacerStartTime) / 1000);
+            const currentLane = currentSettings.currentLane;
+            const elapsedSeconds = Math.floor((Date.now() - pacerStartTimes[currentLane]) / 1000);
             const minutes = Math.floor(elapsedSeconds / 60);
             const seconds = elapsedSeconds % 60;
             document.getElementById('elapsedTime').textContent =
@@ -1246,9 +1321,9 @@ void handleRoot() {
 
             // Update current round (after initial delay)
             const calculatedRound = Math.floor(timeAfterInitialDelay / totalRoundTime) + 1;
-            if (calculatedRound !== currentRound && calculatedRound <= currentSettings.numRounds) {
-                currentRound = calculatedRound;
-                document.getElementById('currentRound').textContent = currentRound;
+            if (calculatedRound !== currentRounds[currentLane] && calculatedRound <= currentSettings.numRounds) {
+                currentRounds[currentLane] = calculatedRound;
+                document.getElementById('currentRound').textContent = currentRounds[currentLane];
             }
 
             // Check if set is complete
@@ -1494,6 +1569,8 @@ void handleRoot() {
         updateVisualSelection();
         initializeBrightnessDisplay();
         updateLaneSelector();
+        updateLaneNamesSection();
+        updateStatus();
     </script>
 </body>
 </html>
