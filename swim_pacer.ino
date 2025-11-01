@@ -1870,14 +1870,20 @@ void handleRoot() {
 
         // Functions to communicate with ESP32
         function sendStartCommand() {
-            fetch('/toggle', { method: 'POST' })
-            .then(response => response.text())
-            .then(result => {
-                console.log('Start command sent:', result);
-            })
-            .catch(error => {
-                console.log('Running in standalone mode - start command not sent');
-            });
+            // First update ESP32 with current work set settings
+            updateSettings();
+            
+            // Small delay to ensure settings are applied before starting
+            setTimeout(() => {
+                fetch('/toggle', { method: 'POST' })
+                .then(response => response.text())
+                .then(result => {
+                    console.log('Start command sent:', result);
+                })
+                .catch(error => {
+                    console.log('Running in standalone mode - start command not sent');
+                });
+            }, 100); // 100ms delay
         }
 
         function sendStopCommand() {
@@ -2057,6 +2063,14 @@ void handleRoot() {
                 body: `numRounds=${currentSettings.numRounds}`
             }).catch(error => {
                 console.log('Number of rounds update - server not available (standalone mode)');
+            });
+
+            fetch('/setCurrentLane', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `currentLane=${currentSettings.currentLane}`
+            }).catch(error => {
+                console.log('Current lane update - server not available (standalone mode)');
             });
         }
 
