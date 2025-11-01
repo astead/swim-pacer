@@ -1732,18 +1732,14 @@ void handleRoot() {
                     html += `
                         <div ${statusClass} style="padding: 8px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
-                                        ${isCompleted ? '✓ ' : ''}${workSet.summary}
-                                    </div>
-                                    ${isCompleted ? `<div style="font-size: 11px; color: #28a745; margin-top: 2px;">
-                                        Completed at ${new Date(workSet.completedAt).toLocaleTimeString()}
-                                    </div>` : ''}
+                                <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
+                                    ${isCompleted ? '✓ ' : ''}${workSet.summary}
                                 </div>
                                 <div style="display: flex; gap: 5px;">
                                     ${!isActive && !isCompleted ? `<button onclick="editWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
                                     ${!isActive && !isCompleted ? `<button onclick="deleteWorkSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
                                     ${isActive ? `<div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>` : ''}
+                                    ${isCompleted ? `<div style="font-size: 12px; color: #28a745; font-weight: bold;">Completed</div>` : ''}
                                 </div>
                             </div>
                             ${isActive ? `
