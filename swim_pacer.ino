@@ -1375,8 +1375,16 @@ void handleRoot() {
             const currentLane = currentSettings.currentLane;
             const runningData = getRunningSettings();
 
-            document.getElementById('currentRound').textContent = currentRounds[currentLane];
-            document.getElementById('totalRounds').textContent = runningData.numRounds;
+            // Safely update elements (check if they exist first)
+            const currentRoundEl = document.getElementById('currentRound');
+            if (currentRoundEl) {
+                currentRoundEl.textContent = currentRounds[currentLane];
+            }
+            
+            const totalRoundsEl = document.getElementById('totalRounds');
+            if (totalRoundsEl) {
+                totalRoundsEl.textContent = runningData.numRounds;
+            }
 
             // Initialize round timing display using running settings
             const paceSeconds = runningData.pacePer50;
@@ -1385,25 +1393,52 @@ void handleRoot() {
             const totalRoundMinutes = Math.floor(totalRoundTime / 60);
             const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
             const totalTimeStr = `${totalRoundMinutes}:${totalRoundSecondsOnly.toString().padStart(2, '0')}`;
-            document.getElementById('roundTiming').textContent = `0:00 / ${totalTimeStr}`;
+            
+            const roundTimingEl = document.getElementById('roundTiming');
+            if (roundTimingEl) {
+                roundTimingEl.textContent = `0:00 / ${totalTimeStr}`;
+            }
 
-            document.getElementById('activeSwimmers').textContent = '0';
+            const activeSwimmersEl = document.getElementById('activeSwimmers');
+            if (activeSwimmersEl) {
+                activeSwimmersEl.textContent = '0';
+            }
 
             // Update set basics display using running settings
             const paceDistance = runningData.paceDistance;
             const numRounds = runningData.numRounds;
-            document.getElementById('setBasics').textContent = `- ${numRounds} x ${paceDistance}'s`;
+            const setBasicsEl = document.getElementById('setBasics');
+            if (setBasicsEl) {
+                setBasicsEl.textContent = `- ${numRounds} x ${paceDistance}'s`;
+            }
 
             // Show initial delay countdown using running settings
             if (runningData.initialDelay > 0) {
-                document.getElementById('nextEvent').textContent = `Starting in ${runningData.initialDelay}s`;
-                document.getElementById('currentPhase').textContent = 'Initial Delay';
+                const nextEventEl = document.getElementById('nextEvent');
+                if (nextEventEl) {
+                    nextEventEl.textContent = `Starting in ${runningData.initialDelay}s`;
+                }
+                
+                const currentPhaseEl = document.getElementById('currentPhase');
+                if (currentPhaseEl) {
+                    currentPhaseEl.textContent = 'Initial Delay';
+                }
             } else {
-                document.getElementById('nextEvent').textContent = 'Starting now';
-                document.getElementById('currentPhase').textContent = 'Swimming';
+                const nextEventEl = document.getElementById('nextEvent');
+                if (nextEventEl) {
+                    nextEventEl.textContent = 'Starting now';
+                }
+                
+                const currentPhaseEl = document.getElementById('currentPhase');
+                if (currentPhaseEl) {
+                    currentPhaseEl.textContent = 'Swimming';
+                }
             }
 
-            document.getElementById('elapsedTime').textContent = '00:00';
+            const elapsedTimeEl = document.getElementById('elapsedTime');
+            if (elapsedTimeEl) {
+                elapsedTimeEl.textContent = '00:00';
+            }
         }
 
         function startStatusUpdates() {
@@ -1819,9 +1854,12 @@ void handleRoot() {
             // Load settings
             Object.assign(currentSettings, workSet.settings);
             
-            // Update the DOM input field with the work set's pace
+            // Update the DOM input fields with the work set's settings
             if (workSet.settings.pacePer50) {
                 document.getElementById('pacePer50').value = workSet.settings.pacePer50;
+            }
+            if (workSet.settings.numRounds) {
+                document.getElementById('numRounds').value = workSet.settings.numRounds;
             }
             
             // Load swimmer set
@@ -1844,6 +1882,9 @@ void handleRoot() {
             // Create immutable copies for running state
             runningSets[currentLane] = JSON.parse(JSON.stringify(currentSet));
             runningSettings[currentLane] = JSON.parse(JSON.stringify(currentSettings));
+
+            // Initialize pacer status display with work set data (after runningSettings is set)
+            initializePacerStatus();
 
             // Start the pacer for this lane
             laneRunning[currentLane] = true;
