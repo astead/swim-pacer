@@ -416,7 +416,6 @@ void handleRoot() {
             <!-- Lane Selector (shown when multiple lanes configured) -->
             <div id="laneSelector" style="display: none; margin: 15px 0;">
                 <div class="control">
-                    <label for="currentLane">Working Lane:</label>
                     <select id="currentLane" onchange="updateCurrentLane()">
                         <!-- Options populated by JavaScript -->
                     </select>
