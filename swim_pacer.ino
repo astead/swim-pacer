@@ -598,9 +598,11 @@ void handleRoot() {
 
             <h3>Light Settings</h3>
             <div class="control">
-                <label for="brightness">Brightness:</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <label for="brightness">Brightness:</label>
+                    <span id="brightnessValue">75%</span>
+                </div>
                 <input type="range" id="brightness" min="0" max="100" value="75" oninput="updateBrightness()">
-                <span id="brightnessValue">75%</span>
             </div>
 
             <div class="control">
