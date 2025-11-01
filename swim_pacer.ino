@@ -1979,14 +1979,6 @@ void handleRoot() {
                 const row = document.createElement('div');
                 row.className = 'swimmer-row';
 
-                // Calculate delay from previous swimmer
-                let delayFromPrevious;
-                if (index === 0) {
-                    delayFromPrevious = currentSettings.initialDelay; // First swimmer shows initial delay
-                } else {
-                    delayFromPrevious = currentSettings.swimmerInterval; // Others show interval between swimmers
-                }
-
                 // Determine the actual color value for display
                 let displayColor;
                 if (swimmer.color.startsWith('#')) {
@@ -2001,7 +1993,6 @@ void handleRoot() {
                     <div class="swimmer-color" style="background-color: ${displayColor}"
                          onclick="cycleSwimmerColor(${index})" title="Click to change color"></div>
                     <div class="swimmer-info">Swimmer ${swimmer.id}</div>
-                    <div>Delay: ${delayFromPrevious}s</div>
                     <div>Pace: <input type="number" class="swimmer-pace-input" value="${swimmer.pace}"
                          min="20" max="300" step="0.5" onchange="updateSwimmerPace(${index}, this.value)"> sec</div>
                 `;
