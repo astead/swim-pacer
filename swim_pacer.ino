@@ -709,6 +709,9 @@ void handleRoot() {
     </div>
 
     <script>
+        // Detect if running in standalone mode (file:// protocol)
+        const isStandaloneMode = window.location.protocol === 'file:';
+        
         let currentSettings = {
             speed: 5.0,
             color: 'red',
@@ -804,9 +807,9 @@ void handleRoot() {
         // Helper function to parse time input (supports both "30" and "1:30" formats)
         function parseTimeInput(timeStr) {
             if (!timeStr || timeStr.trim() === '') return 30; // Default to 30 seconds
-            
+
             timeStr = timeStr.trim();
-            
+
             // Check if it contains a colon (minutes:seconds format)
             if (timeStr.includes(':')) {
                 const parts = timeStr.split(':');
@@ -816,7 +819,7 @@ void handleRoot() {
                     return (minutes * 60) + seconds;
                 }
             }
-            
+
             // Otherwise, treat as seconds only
             const seconds = parseFloat(timeStr);
             return isNaN(seconds) ? 30 : seconds; // Default to 30 if invalid
@@ -830,8 +833,6 @@ void handleRoot() {
             const distanceFeet = paceDistance * 3; // yards to feet
             const speed = distanceFeet / pace;
             currentSettings.speed = speed;
-
-            updateCalculations();
         }
 
         function updatePaceDistance() {
@@ -840,12 +841,12 @@ void handleRoot() {
 
             // Determine units based on pool length setting
             const units = currentSettings.poolLength.includes('m') ? 'meters' : 'yards';
-            
-            // Update the distance units label
-            document.getElementById('distanceUnits').textContent = units;
 
-            // Update the pace label
-            document.getElementById('paceDistanceLabel').textContent = paceDistance + ' ' + units;
+            // Update the distance units label
+            const distanceUnitsElement = document.getElementById('distanceUnits');
+            if (distanceUnitsElement) {
+                distanceUnitsElement.textContent = units;
+            }
 
             // Recalculate speed based on current pace input and new distance
             updateFromPace();
@@ -1357,7 +1358,7 @@ void handleRoot() {
             const queueDisplay = document.getElementById('queueDisplay');
             const queueTitle = queueDisplay.querySelector('h4');
             const toggleBtnElement = document.getElementById('toggleBtn');
-            
+
             if (queueDisplay && queueTitle) {
                 if (currentSettings.isRunning) {
                     // Running: green border and title
@@ -1369,7 +1370,7 @@ void handleRoot() {
                     queueTitle.style.color = '#dc3545';
                 }
             }
-            
+
             // toggleBtn doesn't exist in queue-based interface, so check first
             if (toggleBtnElement) {
                 toggleBtnElement.textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
@@ -1435,7 +1436,7 @@ void handleRoot() {
             if (currentRoundEl) {
                 currentRoundEl.textContent = currentRounds[currentLane];
             }
-            
+
             const totalRoundsEl = document.getElementById('totalRounds');
             if (totalRoundsEl) {
                 totalRoundsEl.textContent = runningData.numRounds;
@@ -1448,7 +1449,7 @@ void handleRoot() {
             const totalRoundMinutes = Math.floor(totalRoundTime / 60);
             const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
             const totalTimeStr = `${totalRoundMinutes}:${totalRoundSecondsOnly.toString().padStart(2, '0')}`;
-            
+
             const roundTimingEl = document.getElementById('roundTiming');
             if (roundTimingEl) {
                 roundTimingEl.textContent = `0:00 / ${totalTimeStr}`;
@@ -1473,7 +1474,7 @@ void handleRoot() {
                 if (nextEventEl) {
                     nextEventEl.textContent = `Starting in ${runningData.initialDelay}s`;
                 }
-                
+
                 const currentPhaseEl = document.getElementById('currentPhase');
                 if (currentPhaseEl) {
                     currentPhaseEl.textContent = 'Initial Delay';
@@ -1483,7 +1484,7 @@ void handleRoot() {
                 if (nextEventEl) {
                     nextEventEl.textContent = 'Starting now';
                 }
-                
+
                 const currentPhaseEl = document.getElementById('currentPhase');
                 if (currentPhaseEl) {
                     currentPhaseEl.textContent = 'Swimming';
@@ -1585,13 +1586,13 @@ void handleRoot() {
             const lastSwimmerStartDelay = runningData.initialDelay + ((runningData.numSwimmers - 1) * runningData.swimmerInterval);
             const totalSetTimePerSwimmer = runningData.numRounds * totalRoundTime;
             const lastSwimmerFinishTime = lastSwimmerStartDelay + totalSetTimePerSwimmer;
-            
+
             // Check if the entire set is complete (all swimmers finished)
             if (elapsedSeconds >= lastSwimmerFinishTime) {
                 document.getElementById('currentPhase').textContent = 'Set Complete!';
                 document.getElementById('nextEvent').textContent = 'All swimmers finished';
                 document.getElementById('activeSwimmers').textContent = '0';
-                
+
                 // Handle queue completion (only once)
                 if (activeSwimSets[currentLane] && !completionHandled[currentLane]) {
                     completionHandled[currentLane] = true;
@@ -1605,13 +1606,13 @@ void handleRoot() {
                 const remainingTime = Math.ceil(lastSwimmerFinishTime - elapsedSeconds);
                 const remainingMinutes = Math.floor(remainingTime / 60);
                 const remainingSeconds = remainingTime % 60;
-                const timeDisplay = remainingMinutes > 0 ? 
-                    `${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')}` : 
+                const timeDisplay = remainingMinutes > 0 ?
+                    `${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')}` :
                     `${remainingSeconds}s`;
-                
+
                 document.getElementById('currentPhase').textContent = 'Trailing swimmers finishing';
                 document.getElementById('nextEvent').textContent = `Complete in ${timeDisplay}`;
-                
+
                 // Calculate how many swimmers are still active
                 let activeSwimmers = 0;
                 for (let i = 0; i < runningData.numSwimmers; i++) {
@@ -1631,7 +1632,7 @@ void handleRoot() {
                 alert('Please set at least 1 swimmer');
                 return;
             }
-            
+
             if (currentSettings.numRounds < 1) {
                 alert('Please set at least 1 round');
                 return;
@@ -1681,7 +1682,7 @@ void handleRoot() {
                 lane: currentSettings.currentLane,
                 laneName: currentSettings.laneNames[currentSettings.currentLane],
                 swimmers: newSet,
-                settings: { 
+                settings: {
                     ...currentSettings,
                     pacePer50: currentPace // Explicitly include the pace value
                 }, // Deep copy of current settings with pace
@@ -1694,7 +1695,7 @@ void handleRoot() {
             // Hide config controls and show swimmer set
             configControls.style.display = 'none';
             swimmerSetDiv.style.display = 'block';
-            
+
             // Switch to queue buttons
             document.getElementById('configButtons').style.display = 'none';
             document.getElementById('queueButtons').style.display = 'block';
@@ -1705,13 +1706,13 @@ void handleRoot() {
             const avgPace = swimmers.length > 0 ? swimmers[0].pace : 30;
             const restTime = settings.restTime;
             const numRounds = settings.numRounds;
-            
+
             return `${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
         }
 
         function queueSwimSet() {
             const currentLane = currentSettings.currentLane;
-            
+
             if (!createdSwimSets[currentLane]) {
                 alert('No set to queue');
                 return;
@@ -1719,16 +1720,16 @@ void handleRoot() {
 
             // Add to current lane's queue
             swimSetQueues[currentLane].push(createdSwimSets[currentLane]);
-            
+
             // Clear created set for current lane
             createdSwimSets[currentLane] = null;
-            
+
             // Return to configuration mode
             returnToConfigMode();
-            
+
             // Update queue display
             updateQueueDisplay();
-            
+
             // Show start button if this is the first set
             updatePacerButtons();
         }
@@ -1743,7 +1744,7 @@ void handleRoot() {
             // Show config controls and hide swimmer set
             document.getElementById('configControls').style.display = 'block';
             document.getElementById('swimmerSet').style.display = 'none';
-            
+
             // Switch back to config buttons
             document.getElementById('configButtons').style.display = 'block';
             document.getElementById('queueButtons').style.display = 'none';
@@ -1753,14 +1754,14 @@ void handleRoot() {
         function updateQueueDisplay() {
             const currentLane = currentSettings.currentLane;
             const queueList = document.getElementById('queueList');
-            
+
             if (!queueList) {
                 console.error('Queue list element not found');
                 return;
             }
-            
+
             let html = '';
-            
+
             // Show all sets in the queue (completed and pending)
             if (swimSetQueues[currentLane].length === 0) {
                 html += '<div style="color: #666; font-style: italic;">No sets queued for Lane ' + (currentLane + 1) + '</div>';
@@ -1768,11 +1769,11 @@ void handleRoot() {
                 swimSetQueues[currentLane].forEach((swimSet, index) => {
                     const isActive = activeSwimSets[currentLane] && activeSwimSets[currentLane].id === swimSet.id;
                     const isCompleted = swimSet.completed;
-                    
+
                     let statusClass = '';
                     let borderColor = '#ddd';
                     let backgroundColor = '#fff';
-                    
+
                     if (isActive) {
                         backgroundColor = '#e7f3ff';
                         borderColor = '#2196F3';
@@ -1780,9 +1781,9 @@ void handleRoot() {
                         backgroundColor = '#f8f9fa';
                         borderColor = '#28a745';
                     }
-                    
+
                     statusClass = `style="background: ${backgroundColor}; border: 1px solid ${borderColor}; padding: 8px 10px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}"`;
-                    
+
                     html += `
                         <div ${statusClass}>
                             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1811,7 +1812,7 @@ void handleRoot() {
                     `;
                 });
             }
-            
+
             queueList.innerHTML = html;
         }
 
@@ -1820,12 +1821,12 @@ void handleRoot() {
             const pacerButtons = document.getElementById('pacerButtons');
             const startBtn = document.getElementById('startBtn');
             const stopBtn = document.getElementById('stopBtn');
-            
+
             if (!pacerButtons || !startBtn || !stopBtn) {
                 console.error('Pacer button elements not found');
                 return;
             }
-            
+
             if (swimSetQueues[currentLane].length > 0) {
                 pacerButtons.style.display = 'block';
                 if (activeSwimSets[currentLane]) {
@@ -1842,20 +1843,20 @@ void handleRoot() {
 
         function editSwimSet(index) {
             const currentLane = currentSettings.currentLane;
-            
+
             if (index < 0 || index >= swimSetQueues[currentLane].length) return;
-            
+
             const swimSet = swimSetQueues[currentLane][index];
             editingSwimSetIndexes[currentLane] = index;
-            
+
             // Load swim set data into configuration
             loadSwimSetIntoConfig(swimSet);
-            
+
             // Show swimmer set for editing
             displaySwimmerSet();
             document.getElementById('configControls').style.display = 'none';
             document.getElementById('swimmerSet').style.display = 'block';
-            
+
             // Switch to edit buttons
             document.getElementById('configButtons').style.display = 'none';
             document.getElementById('editButtons').style.display = 'block';
@@ -1864,22 +1865,25 @@ void handleRoot() {
         function loadSwimSetIntoConfig(swimSet) {
             // Restore settings
             Object.assign(currentSettings, swimSet.settings);
-            
+
             // Set current lane
             currentSettings.currentLane = swimSet.lane;
-            
+
             // Restore swimmer set
             setCurrentSwimmerSet(swimSet.swimmers);
-            
+
             // Update all UI elements to reflect loaded settings
             updateAllUIFromSettings();
+
+            // Update visual selection after UI updates
+            updateVisualSelection();
         }
 
         function saveSwimSet() {
             const currentLane = currentSettings.currentLane;
-            
+
             if (editingSwimSetIndexes[currentLane] === -1) return;
-            
+
             // Update the swim set in the current lane's queue
             const currentSet = getCurrentSwimmerSet();
             swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = {
@@ -1888,7 +1892,7 @@ void handleRoot() {
                 settings: { ...currentSettings },
                 summary: generateSetSummary(currentSet, currentSettings)
             };
-            
+
             editingSwimSetIndexes[currentLane] = -1;
             returnToConfigMode();
             updateQueueDisplay();
@@ -1902,9 +1906,9 @@ void handleRoot() {
 
         function deleteSwimSet(index) {
             const currentLane = currentSettings.currentLane;
-            
+
             if (index < 0 || index >= swimSetQueues[currentLane].length) return;
-            
+
             if (confirm('Delete this swim set from Lane ' + (currentLane + 1) + '?')) {
                 swimSetQueues[currentLane].splice(index, 1);
                 updateQueueDisplay();
@@ -1914,26 +1918,26 @@ void handleRoot() {
 
         function startQueue() {
             const currentLane = currentSettings.currentLane;
-            
+
             if (swimSetQueues[currentLane].length === 0) return;
-            
+
             // Find the first non-completed swim set in current lane's queue
             const nextSwimSet = swimSetQueues[currentLane].find(set => !set.completed);
             if (!nextSwimSet) return; // No pending sets to start
-            
+
             // Start the next non-completed swim set
             activeSwimSets[currentLane] = nextSwimSet;
-            
+
             // Load the active set into the pacer system
             loadSwimSetForExecution(activeSwimSets[currentLane]);
-            
+
             // Start the pacer
             startPacerExecution();
-            
+
             // Update displays (this creates the DOM elements)
             updateQueueDisplay();
             updatePacerButtons();
-            
+
             // Initialize pacer status display AFTER DOM elements are created
             setTimeout(() => {
                 initializePacerStatus();
@@ -1942,13 +1946,13 @@ void handleRoot() {
 
         function stopQueue() {
             const currentLane = currentSettings.currentLane;
-            
+
             // Stop current execution
             stopPacerExecution();
-            
+
             // Clear active set for current lane
             activeSwimSets[currentLane] = null;
-            
+
             // Update displays
             updateQueueDisplay();
             updatePacerButtons();
@@ -1957,10 +1961,10 @@ void handleRoot() {
         function loadSwimSetForExecution(swimSet) {
             // Set the current lane
             currentSettings.currentLane = swimSet.lane;
-            
+
             // Load settings
             Object.assign(currentSettings, swimSet.settings);
-            
+
             // Update the DOM input fields with the swim set's settings
             if (swimSet.settings.pacePer50) {
                 document.getElementById('pacePer50').value = swimSet.settings.pacePer50;
@@ -1968,10 +1972,10 @@ void handleRoot() {
             if (swimSet.settings.numRounds) {
                 document.getElementById('numRounds').value = swimSet.settings.numRounds;
             }
-            
+
             // Load swimmer set
             setCurrentSwimmerSet(swimSet.swimmers);
-            
+
             // Update lane selector to reflect current lane
             updateLaneSelector();
         }
@@ -1980,7 +1984,7 @@ void handleRoot() {
             // Use existing pacer start logic
             const currentLane = currentSettings.currentLane;
             const currentSet = getCurrentSwimmerSet();
-            
+
             if (currentSet.length === 0) {
                 alert('No swimmers configured for this lane');
                 return;
@@ -2012,7 +2016,7 @@ void handleRoot() {
 
         function stopPacerExecution() {
             const currentLane = currentSettings.currentLane;
-            
+
             // Stop the pacer for this lane
             laneRunning[currentLane] = false;
             currentSettings.isRunning = false;
@@ -2038,7 +2042,7 @@ void handleRoot() {
         function sendStartCommand() {
             // First update ESP32 with current work set settings
             updateSettings();
-            
+
             // Small delay to ensure settings are applied before starting
             setTimeout(() => {
                 fetch('/toggle', { method: 'POST' })
@@ -2134,12 +2138,17 @@ void handleRoot() {
         }
 
         function updateSettings() {
+            // Skip server communication in standalone mode
+            if (isStandaloneMode) {
+                return;
+            }
+            
             fetch('/setSpeed', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `speed=${currentSettings.speed}`
             }).catch(error => {
-                console.log('Speed update - server not available (standalone mode)');
+                console.log('Speed update - server not available');
             });
 
             fetch('/setPulseWidth', {
@@ -2147,7 +2156,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `pulseWidth=${currentSettings.pulseWidth}`
             }).catch(error => {
-                console.log('Pulse width update - server not available (standalone mode)');
+                console.log('Pulse width update - server not available');
             });
 
             fetch('/setStripLength', {
@@ -2155,7 +2164,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `stripLength=${currentSettings.stripLength}`
             }).catch(error => {
-                console.log('Strip length update - server not available (standalone mode)');
+                console.log('Strip length update - server not available');
             });
 
             fetch('/setLedsPerMeter', {
@@ -2163,7 +2172,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `ledsPerMeter=${currentSettings.ledsPerMeter}`
             }).catch(error => {
-                console.log('LEDs per meter update - server not available (standalone mode)');
+                console.log('LEDs per meter update - server not available');
             });
 
             fetch('/setNumLanes', {
@@ -2171,7 +2180,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `numLanes=${currentSettings.numLanes}`
             }).catch(error => {
-                console.log('Number of lanes update - server not available (standalone mode)');
+                console.log('Number of lanes update - server not available');
             });
 
             fetch('/setRestTime', {
@@ -2179,7 +2188,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `restTime=${currentSettings.restTime}`
             }).catch(error => {
-                console.log('Rest time update - server not available (standalone mode)');
+                console.log('Rest time update - server not available');
             });
 
             fetch('/setPaceDistance', {
@@ -2187,7 +2196,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `paceDistance=${currentSettings.paceDistance}`
             }).catch(error => {
-                console.log('Pace distance update - server not available (standalone mode)');
+                console.log('Pace distance update - server not available');
             });
 
             fetch('/setSwimmerInterval', {
@@ -2195,7 +2204,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `swimmerInterval=${currentSettings.swimmerInterval}`
             }).catch(error => {
-                console.log('Swimmer interval update - server not available (standalone mode)');
+                console.log('Swimmer interval update - server not available');
             });
 
             fetch('/setDelayIndicators', {
@@ -2203,7 +2212,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `enabled=${currentSettings.delayIndicatorsEnabled}`
             }).catch(error => {
-                console.log('Delay indicators update - server not available (standalone mode)');
+                console.log('Delay indicators update - server not available');
             });
 
             fetch('/setNumSwimmers', {
@@ -2211,7 +2220,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `numSwimmers=${currentSettings.numSwimmers}`
             }).catch(error => {
-                console.log('Number of swimmers update - server not available (standalone mode)');
+                console.log('Number of swimmers update - server not available');
             });
 
             fetch('/setNumRounds', {
@@ -2219,7 +2228,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `numRounds=${currentSettings.numRounds}`
             }).catch(error => {
-                console.log('Number of rounds update - server not available (standalone mode)');
+                console.log('Number of rounds update - server not available');
             });
 
             fetch('/setCurrentLane', {
@@ -2227,7 +2236,7 @@ void handleRoot() {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `currentLane=${currentSettings.currentLane}`
             }).catch(error => {
-                console.log('Current lane update - server not available (standalone mode)');
+                console.log('Current lane update - server not available');
             });
         }
 
@@ -2242,7 +2251,14 @@ void handleRoot() {
             document.getElementById('pacePer50').value = currentSettings.speed;
             document.getElementById('paceDistance').value = currentSettings.paceDistance;
             document.getElementById('brightness').value = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
-            
+
+            // Update radio button states
+            if (currentSettings.colorMode === 'individual') {
+                document.getElementById('individualColors').checked = true;
+            } else {
+                document.getElementById('sameColor').checked = true;
+            }
+
             // Update display values
             updateNumRounds();
             updateRestTime();
@@ -2252,12 +2268,13 @@ void handleRoot() {
             updateSpeed();
             updatePaceDistance();
             updateBrightness();
-            
+
+            // Update visual selections
+            updateVisualSelection();
+
             // Update lane selector
             updateLaneSelector();
-        }
-
-        // Initialize queue display on page load
+        }// Initialize queue display on page load
         function initializeQueueSystem() {
             // Ensure queue display is updated on initialization
             if (document.getElementById('queueList')) {
@@ -2274,9 +2291,9 @@ void handleRoot() {
 
         function handleSetCompletion() {
             const currentLane = currentSettings.currentLane;
-            
+
             if (!activeSwimSets[currentLane]) return;
-            
+
             if (COMPLETION_MODE === 'REMOVE_SET') {
                 // Option 1: Remove completed set from current lane's queue
                 const completedSetIndex = swimSetQueues[currentLane].findIndex(set => set.id === activeSwimSets[currentLane].id);
@@ -2292,16 +2309,16 @@ void handleRoot() {
                     swimSetQueues[currentLane][completedSetIndex].completedAt = new Date();
                 }
             }
-            
+
             // Clear active set for current lane
             activeSwimSets[currentLane] = null;
-            
+
             // Reset completion flag for this lane
             completionHandled[currentLane] = false;
-            
+
             // Stop current execution
             stopPacerExecution();
-            
+
             // Check if there are more sets in current lane's queue (only count non-completed sets)
             const remainingSets = swimSetQueues[currentLane].filter(set => !set.completed);
             if (remainingSets.length > 0) {
@@ -2324,25 +2341,19 @@ void handleRoot() {
             }
         }
 
-        // Initialize
-        updateCalculations();
-        updateVisualSelection();
-        initializeBrightnessDisplay();
-        updateLaneSelector();
-        updateLaneNamesSection();
-        updateStatus();
-        
         // Initialize queue system after DOM is ready
         document.addEventListener('DOMContentLoaded', function() {
+            // Initialize all DOM-dependent functions
+            updateCalculations();
+            initializeBrightnessDisplay();
+            updateLaneSelector();
+            updateLaneNamesSection();
+            updateStatus();
+
+            // Ensure visual selection is applied after DOM is ready
+            updateVisualSelection();
             initializeQueueSystem();
         });
-        
-        // Also initialize immediately in case DOM is already loaded
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initializeQueueSystem);
-        } else {
-            initializeQueueSystem();
-        }
     </script>
 </body>
 </html>
