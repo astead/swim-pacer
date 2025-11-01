@@ -576,9 +576,11 @@ void handleRoot() {
                 </div>
 
                 <div class="control">
-                    <label for="hideAfter">Hide after (seconds):</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="hideAfter">Hide after:</label>
+                        <span id="hideAfterValue">3 seconds</span>
+                    </div>
                     <input type="range" id="hideAfter" min="1" max="10" step="1" value="3" oninput="updateHideAfter()">
-                    <span id="hideAfterValue">3</span>
                 </div>
 
                 <div class="control">
@@ -1127,7 +1129,8 @@ void handleRoot() {
         function updateHideAfter() {
             const hideAfter = document.getElementById('hideAfter').value;
             currentSettings.hideAfter = parseInt(hideAfter);
-            document.getElementById('hideAfterValue').textContent = hideAfter;
+            const unit = parseInt(hideAfter) === 1 ? ' second' : ' seconds';
+            document.getElementById('hideAfterValue').textContent = hideAfter + unit;
             updateSettings();
         }
 
