@@ -407,7 +407,10 @@
 
             <!-- Lane Names Management -->
             <div id="laneNamesSection" style="margin-top: 20px;">
-                <h4 style="margin: 10px 0; color: #333;">Lane Names:</h4>
+                <div style="margin: 10px 0;">
+                    <h4 style="margin: 0; color: #333; display: inline-block;">Lane Names:</h4>
+                    <span id="identifyLanesBtn" onclick="toggleLaneIdentification()" style="display: inline-block; margin-left: 10px; padding: 2px 6px; font-size: 12px; border: 1px solid #007bff; border-radius: 3px; background: #007bff; color: white; cursor: pointer; font-weight: 500; white-space: nowrap; user-select: none;">Identify Lanes</span>
+                </div>
                 <div id="laneNamesList">
                     <!-- Lane name inputs populated by JavaScript -->
                 </div>
@@ -473,6 +476,10 @@
             'cyan': '#00ffff',
             'custom': '#0000ff' // Default custom color
         };
+
+        // Lane identification system
+        let laneIdentificationMode = false;
+        const laneIdentificationColors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00']; // Red, Green, Blue, Yellow
 
         // Convert hex color to color name for swimmer assignment
         function hexToColorName(hexColor) {
@@ -585,22 +592,87 @@
 
             for (let i = 0; i < currentSettings.numLanes; i++) {
                 const laneDiv = document.createElement('div');
-                laneDiv.style.cssText = 'margin: 8px 0;';
+                laneDiv.style.cssText = 'margin: 8px 0; display: flex; align-items: center; gap: 10px;';
+
+                // Color indicator (shown only in identification mode)
+                const colorIndicator = document.createElement('div');
+                colorIndicator.style.cssText = `width: 20px; height: 20px; border-radius: 50%; border: 2px solid #ddd; display: ${laneIdentificationMode ? 'block' : 'none'};`;
+                if (laneIdentificationMode) {
+                    colorIndicator.style.backgroundColor = laneIdentificationColors[i];
+                }
 
                 const input = document.createElement('input');
                 input.type = 'text';
                 input.value = currentSettings.laneNames[i];
                 input.placeholder = `Lane ${i + 1}`;
-                input.style.cssText = 'width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;';
+                input.style.cssText = 'flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;';
                 input.onchange = function() {
                     currentSettings.laneNames[i] = this.value;
                     updateLaneSelector(); // Refresh the dropdown on main page
                     updateSettings(); // Save the changes
                 };
 
+                laneDiv.appendChild(colorIndicator);
                 laneDiv.appendChild(input);
                 laneNamesList.appendChild(laneDiv);
             }
+        }
+
+        function toggleLaneIdentification() {
+            const button = document.getElementById('identifyLanesBtn');
+            
+            if (!laneIdentificationMode) {
+                // Start identification mode
+                laneIdentificationMode = true;
+                button.textContent = 'Stop';
+                button.style.backgroundColor = '#dc3545';
+                button.style.color = 'white';
+                
+                // Update the lane names section to show color indicators
+                updateLaneNamesSection();
+                
+                // Send command to ESP32 to light up lanes with identification colors
+                for (let i = 0; i < currentSettings.numLanes; i++) {
+                    const color = laneIdentificationColors[i];
+                    sendLaneIdentificationCommand(i, color);
+                }
+            } else {
+                // Stop identification mode
+                laneIdentificationMode = false;
+                button.textContent = 'Identify Lanes';
+                button.style.backgroundColor = '#007bff';
+                button.style.color = 'white';
+                button.style.borderColor = '#007bff';
+                
+                // Update the lane names section to hide color indicators
+                updateLaneNamesSection();
+                
+                // Send command to ESP32 to stop identification and resume normal operation
+                stopLaneIdentification();
+            }
+        }
+
+        function sendLaneIdentificationCommand(laneIndex, colorHex) {
+            // Convert hex color to RGB
+            const r = parseInt(colorHex.substr(1, 2), 16);
+            const g = parseInt(colorHex.substr(3, 2), 16);
+            const b = parseInt(colorHex.substr(5, 2), 16);
+            
+            fetch('/identifyLane', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `lane=${laneIndex}&r=${r}&g=${g}&b=${b}`
+            }).catch(error => {
+                console.log('Lane identification command failed (standalone mode)');
+            });
+        }
+
+        function stopLaneIdentification() {
+            fetch('/stopIdentification', {
+                method: 'POST'
+            }).catch(error => {
+                console.log('Stop identification command failed (standalone mode)');
+            });
         }
 
         function updateCurrentLane() {
