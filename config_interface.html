@@ -169,10 +169,9 @@
             <div id="laneSelector" style="display: none; margin: 15px 0;">
                 <div class="control">
                     <label for="currentLane">Working Lane:</label>
-                    <select id="currentLane" onchange="updateCurrentLane()" style="margin-right: 10px;">
+                    <select id="currentLane" onchange="updateCurrentLane()">
                         <!-- Options populated by JavaScript -->
                     </select>
-                    <button onclick="editLaneName()" style="padding: 4px 8px; font-size: 12px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit Name</button>
                 </div>
             </div>
 
@@ -406,6 +405,14 @@
                 <label for="numLanes">Number of lanes:</label>
                 <input type="number" id="numLanes" value="2" min="1" max="4" onchange="updateNumLanes()">
             </div>
+
+            <!-- Lane Names Management -->
+            <div id="laneNamesSection" style="margin-top: 20px;">
+                <h4 style="margin: 10px 0; color: #333;">Lane Names:</h4>
+                <div id="laneNamesList">
+                    <!-- Lane name inputs populated by JavaScript -->
+                </div>
+            </div>
         </div>
     </div>
 
@@ -541,6 +548,7 @@
             const numLanes = parseInt(document.getElementById('numLanes').value);
             currentSettings.numLanes = numLanes;
             updateLaneSelector();
+            updateLaneNamesSection();
             updateSettings();
         }
 
@@ -569,24 +577,35 @@
             }
         }
 
+        function updateLaneNamesSection() {
+            const laneNamesList = document.getElementById('laneNamesList');
+            laneNamesList.innerHTML = '';
+            
+            for (let i = 0; i < currentSettings.numLanes; i++) {
+                const laneDiv = document.createElement('div');
+                laneDiv.style.cssText = 'margin: 8px 0;';
+                
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = currentSettings.laneNames[i];
+                input.placeholder = `Lane ${i + 1}`;
+                input.style.cssText = 'width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;';
+                input.onchange = function() {
+                    currentSettings.laneNames[i] = this.value;
+                    updateLaneSelector(); // Refresh the dropdown on main page
+                };
+                
+                laneDiv.appendChild(input);
+                laneNamesList.appendChild(laneDiv);
+            }
+        }
+
         function updateCurrentLane() {
             const newLane = parseInt(document.getElementById('currentLane').value);
             currentSettings.currentLane = newLane;
             
             // Refresh the swimmer set display for the new lane
             updateSwimmerSetDisplay();
-        }
-
-        function editLaneName() {
-            const currentLane = currentSettings.currentLane;
-            const currentName = currentSettings.laneNames[currentLane];
-            const newName = prompt(`Enter new name for lane ${currentLane + 1}:`, currentName);
-            
-            if (newName && newName.trim() !== '') {
-                currentSettings.laneNames[currentLane] = newName.trim();
-                updateLaneSelector(); // Refresh the dropdown with new name
-                updateSettings();
-            }
         }
 
         function getCurrentSwimmerSet() {
@@ -1246,6 +1265,7 @@
         updateVisualSelection();
         initializeBrightnessDisplay();
         updateLaneSelector();
+        updateLaneNamesSection();
     </script>
 </body>
 </html>
