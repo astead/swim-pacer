@@ -48,7 +48,7 @@ struct Settings {
   float poolLengthMeters = 22.86;            // Pool length in meters (25 yards)
   float stripLengthMeters = 23.0;            // LED strip length in meters
   int ledsPerMeter = 30;                     // LEDs per meter
-  int numLanes = 1;                          // Number of LED strips/lanes connected
+  int numLanes = 2;                          // Number of LED strips/lanes connected
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   float speedFeetPerSecond = 5.56;           // Speed in feet per second
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
@@ -652,7 +652,7 @@ void handleRoot() {
 
             <div class="control">
                 <label for="numLanes">Number of lanes:</label>
-                <input type="number" id="numLanes" value="1" min="1" max="4" onchange="updateNumLanes()">
+                <input type="number" id="numLanes" value="2" min="1" max="4" onchange="updateNumLanes()">
             </div>
         </div>
     </div>
@@ -686,7 +686,7 @@ void handleRoot() {
             poolLength: '25',
             stripLength: 23,
             ledsPerMeter: 30,
-            numLanes: 1,
+            numLanes: 2,
             currentLane: 0,
             laneNames: ['Lane 1', 'Lane 2', 'Lane 3', 'Lane 4'],
             isRunning: false,
