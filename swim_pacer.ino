@@ -484,13 +484,14 @@ void handleRoot() {
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <label for="paceDistance">Distance:</label>
                         <select id="paceDistance" onchange="updatePaceDistance()" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
-                            <option value="25">25 yards</option>
-                            <option value="50" selected>50 yards</option>
-                            <option value="75">75 yards</option>
-                            <option value="100">100 yards</option>
-                            <option value="200">200 yards</option>
-                            <option value="500">500 yards</option>
+                            <option value="25">25</option>
+                            <option value="50" selected>50</option>
+                            <option value="75">75</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
                         </select>
+                        <span id="distanceUnits">yards</span>
                     </div>
                 </div>
 
@@ -812,8 +813,14 @@ void handleRoot() {
             const paceDistance = parseInt(document.getElementById('paceDistance').value);
             currentSettings.paceDistance = paceDistance;
 
+            // Determine units based on pool length setting
+            const units = currentSettings.poolLength.includes('m') ? 'meters' : 'yards';
+            
+            // Update the distance units label
+            document.getElementById('distanceUnits').textContent = units;
+
             // Update the pace label
-            document.getElementById('paceDistanceLabel').textContent = paceDistance + ' yards';
+            document.getElementById('paceDistanceLabel').textContent = paceDistance + ' ' + units;
 
             // Recalculate speed based on current pace input and new distance
             updateFromPace();
@@ -829,6 +836,9 @@ void handleRoot() {
             currentSettings.poolLength = poolLength;
             currentSettings.stripLength = stripLength;
             currentSettings.ledsPerMeter = ledsPerMeter;
+
+            // Update distance units when pool length changes
+            updatePaceDistance();
 
             // Apply changes immediately
             updateSettings();
