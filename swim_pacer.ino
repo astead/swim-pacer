@@ -1727,10 +1727,10 @@ void handleRoot() {
                         borderColor = '#28a745';
                     }
                     
-                    statusClass = `style="background: ${backgroundColor}; border: 1px solid ${borderColor};"`;
+                    statusClass = `style="background: ${backgroundColor}; border: 1px solid ${borderColor}; padding: 8px 10px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}"`;
                     
                     html += `
-                        <div ${statusClass} style="padding: 8px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}">
+                        <div ${statusClass}>
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
                                     ${isCompleted ? '✓ ' : ''}${workSet.summary}
