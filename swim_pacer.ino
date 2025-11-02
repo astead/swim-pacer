@@ -248,6 +248,20 @@ void setupWebServer() {
     file.close();
   });
 
+  // Serve JavaScript file
+  server.on("/script.js", []() {
+    Serial.println("JavaScript request received - serving /script.js");
+    File file = SPIFFS.open("/script.js", "r");
+    if (!file) {
+      Serial.println("ERROR: Could not open /script.js from SPIFFS");
+      server.send(404, "text/plain", "JavaScript file not found");
+      return;
+    }
+    Serial.println("Successfully opened /script.js, streaming to client");
+    server.streamFile(file, "application/javascript");
+    file.close();
+  });
+
   // Handle settings updates
   server.on("/update", HTTP_POST, handleUpdate);
 

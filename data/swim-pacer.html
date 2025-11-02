@@ -1,116 +1,313 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
 <title>Swim Pacer</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
-<div class="container">
-<div class="nav-tabs">
-<button class="nav-tab active" onclick="showPage('main')">Swim Pacer</button>
-<button class="nav-tab" onclick="showPage('coach')">Coach Config</button>
-<button class="nav-tab" onclick="showPage('advanced')">Advanced</button>
-</div>
+<body><div class="container">
+        <!-- Navigation -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showPage('main')">Swim Pacer</button>
+            <button class="nav-tab" onclick="showPage('coach')">Coach Config</button>
+            <button class="nav-tab" onclick="showPage('advanced')">Advanced</button>
+        </div>
 
-<div id="main" class="page active">
-<div class="control">
-<label for="numSwimmers">Swimmers:</label>
-<select id="numSwimmers" onchange="updateNumSwimmers()">
-<option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
-<option value="4">4</option><option value="5">5</option><option value="6">6</option>
-</select>
-</div>
+        <!-- Main Pacer Page -->
+        <div id="main" class="page active">
+            <!-- Lane Selector (shown when multiple lanes configured) -->
+            <div id="laneSelector" style="display: none; margin: 15px 0;">
+                <div class="control">
+                    <select id="currentLane" onchange="updateCurrentLane()">
+                        <!-- Options populated by JavaScript -->
+                    </select>
+                </div>
+            </div>
 
-<div class="control">
-<label for="numRounds">Rounds:</label>
-<input type="range" id="numRounds" min="1" max="50" value="10" onchange="updateNumRounds()">
-<span id="numRoundsValue">10</span>
-</div>
+            <!-- Number of Swimmers (lane-specific configuration) -->
+            <div class="control" style="margin: 15px 0;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                    <label for="numSwimmers">Number of Swimmers:</label>
+                    <select id="numSwimmers" onchange="updateNumSwimmers()" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px; width: 60px;">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                        <option value="10">10</option>
+                    </select>
+                </div>
+            </div>
 
-<div class="control">
-<label for="restTime">Rest Time:</label>
-<input type="range" id="restTime" min="0" max="30" value="5" onchange="updateRestTime()">
-<span id="restTimeValue">5s</span>
-</div>
+            <!-- Detailed Status (shown when running) -->
+            <!-- Swim Set Queue Display -->
+            <div id="queueDisplay" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #dc3545;">
+                <h4 style="margin: 0 0 10px 0; color: #dc3545;">Swim Set Queue</h4>
+                <div id="queueList" style="font-size: 14px;">
+                    <div style="color: #666; font-style: italic;">No sets queued</div>
+                </div>
+            </div>
 
-<div class="control">
-<label for="pacePer50">Pace per 50y:</label>
-<input type="range" id="pacePer50" min="0.5" max="3.0" step="0.1" value="1.2" onchange="updateSpeed()">
-<span id="speedValue">1.2s</span>
-</div>
+            <!-- Active Set Status - now integrated into queue display -->
+            <div id="detailedStatus" style="display: none;"></div>
 
-<div class="control">
-<label for="paceDistance">Distance:</label>
-<input type="range" id="paceDistance" min="25" max="200" step="25" value="50" onchange="updatePaceDistance()">
-<span id="paceDistanceValue">50y</span>
-</div>
+            <div class="control">
+                <div class="button-group" id="pacerButtons" style="display: none;">
+                    <button class="big-button" onclick="startQueue()" id="startBtn">Start Queue</button>
+                    <button class="big-button" onclick="stopQueue()" id="stopBtn" style="display: none; background: #dc3545;">Stop</button>
+                </div>
+                <div class="button-group" id="configButtons">
+                    <button class="big-button" onclick="createSwimSet()" id="createSetBtn">Create Set</button>
+                </div>
+                <div class="button-group" id="queueButtons" style="display: none;">
+                    <button class="big-button" onclick="queueSwimSet()" id="queueBtn">Queue Set</button>
+                    <button class="big-button" onclick="cancelSwimSet()" id="cancelBtn" style="background: #dc3545;">Cancel</button>
+                </div>
+                <div class="button-group" id="editButtons" style="display: none;">
+                    <button class="big-button" onclick="saveSwimSet()" id="saveBtn">Save Changes</button>
+                    <button class="big-button" onclick="cancelEdit()" id="cancelEditBtn" style="background: #dc3545;">Cancel</button>
+                </div>
+            </div>
 
-<div class="control">
-<label for="brightness">Brightness:</label>
-<input type="range" id="brightness" min="10" max="100" value="77" onchange="updateBrightness()">
-<span id="brightnessValue">77%</span>
-</div>
+            <!-- Configuration Controls -->
+            <div id="configControls">
+                <div class="control">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label for="numRounds">Rounds:</label>
+                        <input type="number" id="numRounds" min="1" max="20" step="1" value="10" oninput="updateNumRounds()" style="width: 60px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                </div>
 
-<div class="calculations">
-<p>Total Time: <span id="totalTime">60.0s</span></p>
-<p>With Rest: <span id="totalWithRest">65.0s</span></p>
-<p>Set Duration: <span id="setDuration">10.8m</span></p>
-</div>
+                <div class="control">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label for="paceDistance">Distance:</label>
+                        <select id="paceDistance" onchange="updatePaceDistance()" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="25">25</option>
+                            <option value="50" selected>50</option>
+                            <option value="75">75</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
+                        </select>
+                        <span id="distanceUnits">yards</span>
+                    </div>
+                </div>
 
-<div class="pacer-controls">
-<button id="startBtn" class="start-btn" onclick="startPacer()">START PACER</button>
-<button id="stopBtn" class="stop-btn" onclick="stopPacer()" style="display:none">STOP PACER</button>
-</div>
+                <div class="control">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label for="pacePer50">Swim time:</label>
+                        <input type="text" id="pacePer50" value="30" oninput="updateFromPace()" style="width: 80px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;" placeholder="30 or 1:30">
+                        <span>min:sec</span>
+                    </div>
+                </div>
 
-<div id="detailedStatus" style="display:none"></div>
-</div>
+                <div class="control">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="restTime">Rest Time:</label>
+                        <span id="restTimeValue">5 seconds</span>
+                    </div>
+                    <input type="range" id="restTime" min="0" max="30" step="1" value="5" oninput="updateRestTime()">
+                </div>
+            </div>
 
-<div id="coach" class="page">
-<div class="control">
-<label for="poolLength">Pool Length (m):</label>
-<input type="number" id="poolLength" step="0.1" value="22.86">
-</div>
-<div class="control">
-<label for="stripLength">Strip Length (m):</label>
-<input type="number" id="stripLength" step="0.1" value="23.0">
-</div>
-<div class="control">
-<label for="ledsPerMeter">LEDs per Meter:</label>
-<input type="number" id="ledsPerMeter" value="30">
-</div>
-<div class="control">
-<label for="numLanes">Number of Lanes:</label>
-<select id="numLanes">
-<option value="1">1</option><option value="2" selected>2</option>
-<option value="3">3</option><option value="4">4</option>
-</select>
-</div>
-</div>
+            <!-- Swimmer Set Display -->
+            <div id="swimmerSet" style="display: none;">
+                <h3>Swim Set</h3>
+                <div id="setDetails" style="font-size: 16px; font-weight: bold; margin: 10px 0; padding: 10px; background: #f0f8ff; border-radius: 5px;"></div>
+                <div id="swimmerList"></div>
+            </div>
+        </div>
 
-<div id="advanced" class="page">
-<div class="control">
-<label for="initialDelay">Initial Delay (s):</label>
-<input type="number" id="initialDelay" value="10">
-</div>
-<div class="control">
-<label for="swimmerInterval">Swimmer Interval (s):</label>
-<input type="number" id="swimmerInterval" value="4">
-</div>
-<div class="control">
-<label for="pulseWidth">Pulse Width (ft):</label>
-<input type="number" id="pulseWidth" step="0.1" value="1.0">
-</div>
-<div class="color-controls">
-<h4>LED Colors</h4>
-<div class="color-inputs">
-<label>Red: <input type="range" id="colorRed" min="0" max="255" value="0"></label>
-<label>Green: <input type="range" id="colorGreen" min="0" max="255" value="0"></label>
-<label>Blue: <input type="range" id="colorBlue" min="0" max="255" value="255"></label>
-</div>
-</div>
-</div>
-</div>
-<script src="script.js"></script>
+        <!-- Coach Config Page -->
+        <div id="coach" class="page">
+            <h3>Swim Settings</h3>
+            <div class="control">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <label for="initialDelay">Initial Delay:</label>
+                    <span id="initialDelayValue">2 seconds</span>
+                </div>
+                <input type="range" id="initialDelay" min="0" max="30" step="1" value="2" oninput="updateInitialDelay()">
+            </div>
+            <div class="control">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <label for="swimmerInterval">Delay between swimmers:</label>
+                    <span id="swimmerIntervalValue">1 second</span>
+                </div>
+                <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="1" oninput="updateSwimmerInterval()">
+            </div>
+
+            <div class="toggle-container">
+                <h3 style="margin: 0;">Delay Indicators</h3>
+                <div class="toggle-labels">
+                    <span class="toggle-label" id="delayIndicatorOff">OFF</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="delayIndicatorsEnabled" checked onchange="updateDelayIndicatorsEnabled()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label active" id="delayIndicatorOn">ON</span>
+                    <small style="color: #666; margin-left: 10px; font-size: 12px;">max 5 seconds</small>
+                </div>
+            </div>
+
+            <div class="toggle-container" style="margin-top: 20px;">
+                <h3 style="margin: 0;">Underwaters</h3>
+                <div class="toggle-labels">
+                    <span class="toggle-label active" id="toggleOff">OFF</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="underwatersEnabled" onchange="updateUnderwatersEnabled()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label" id="toggleOn">ON</span>
+                </div>
+            </div>
+
+            <div id="underwatersControls" class="underwater-controls" style="display: none;">
+                <div class="control">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="lightSize">Light pulse size:</label>
+                        <span id="lightSizeValue">1.0 foot</span>
+                    </div>
+                    <input type="range" id="lightSize" min="0.5" max="5" step="0.5" value="1.0" oninput="updateLightSize()">
+                </div>
+
+                <div class="control">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="firstUnderwaterDistance">First underwater distance:</label>
+                        <span id="firstUnderwaterDistanceValue">20 feet</span>
+                    </div>
+                    <input type="range" id="firstUnderwaterDistance" min="1" max="50" step="1" value="20" oninput="updateFirstUnderwaterDistance()">
+                </div>
+
+                <div class="control">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="underwaterDistance">Underwater distance:</label>
+                        <span id="underwaterDistanceValue">20 feet</span>
+                    </div>
+                    <input type="range" id="underwaterDistance" min="1" max="50" step="1" value="20" oninput="updateUnderwaterDistance()">
+                </div>
+
+                <div class="control">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="hideAfter">Hide after:</label>
+                        <span id="hideAfterValue">3 seconds</span>
+                    </div>
+                    <input type="range" id="hideAfter" min="1" max="10" step="1" value="3" oninput="updateHideAfter()">
+                </div>
+
+                <div class="control">
+                    <div class="color-selection-row" style="display: flex; align-items: center; gap: 10px;">
+                        <div class="color-indicator" id="underwaterColorIndicator"
+                             style="width: 30px; height: 30px; border-radius: 50%; background-color: #0000ff; border: 2px solid #ccc; cursor: pointer;"
+                             onclick="openColorPickerForUnderwater()"></div>
+                        <label>Underwater Color</label>
+                    </div>
+                </div>
+
+                <div class="control">
+                    <div class="color-selection-row" style="display: flex; align-items: center; gap: 10px;">
+                        <div class="color-indicator" id="surfaceColorIndicator"
+                             style="width: 30px; height: 30px; border-radius: 50%; background-color: #00ff00; border: 2px solid #ccc; cursor: pointer;"
+                             onclick="openColorPickerForSurface()"></div>
+                        <label>Surface Color</label>
+                    </div>
+                </div>
+            </div>
+
+            <h3>Light Settings</h3>
+            <div class="control">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <label for="brightness">Brightness:</label>
+                    <span id="brightnessValue">75%</span>
+                </div>
+                <input type="range" id="brightness" min="0" max="100" value="75" oninput="updateBrightness()">
+            </div>
+
+            <div class="control">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <label for="pulseWidth">Light pulse size:</label>
+                    <span id="pulseWidthValue">1.0 foot</span>
+                </div>
+                <input type="range" id="pulseWidth" min="0.5" max="5" step="0.5" value="1.0" oninput="updatePulseWidth()">
+            </div>
+
+            <div class="control">
+                <label>Swimmer Colors:</label>
+                <div style="margin-top: 10px;">
+                    <div id="individualColorsRow" style="display: flex; align-items: center; margin-bottom: 8px; cursor: pointer; padding: 8px; border-radius: 5px;" onclick="selectIndividualColors()">
+                        <div id="individualColorsIcon" style="width: 30px; height: 30px; border: 2px solid #333; border-radius: 50%; position: relative; flex-shrink: 0; min-width: 30px; min-height: 30px; overflow: hidden;">
+                            <div style="position: absolute; top: 0; left: 0; width: 50%; height: 50%; background-color: #ff0000;"></div>
+                            <div style="position: absolute; top: 0; right: 0; width: 50%; height: 50%; background-color: #00ff00;"></div>
+                            <div style="position: absolute; bottom: 0; left: 0; width: 50%; height: 50%; background-color: #0000ff;"></div>
+                            <div style="position: absolute; bottom: 0; right: 0; width: 50%; height: 50%; background-color: #ffff00;"></div>
+                        </div>
+                        <input type="radio" id="individualColors" name="colorMode" value="individual" checked onchange="updateColorMode()" style="display: none;">
+                        <label for="individualColors" style="margin: 0; margin-left: 8px; cursor: pointer;">Individual colors</label>
+                    </div>
+                    <div id="sameColorRow" style="display: flex; align-items: center; margin-bottom: 8px; cursor: pointer; padding: 8px; border-radius: 5px;">
+                        <div id="colorIndicator" class="swimmer-color" style="background-color: #0000ff; cursor: pointer; flex-shrink: 0; min-width: 30px; min-height: 30px;" onclick="selectSameColorAndOpenPicker(event)"></div>
+                        <input type="radio" id="sameColor" name="colorMode" value="same" onchange="updateColorMode()" style="display: none;">
+                        <label for="sameColor" style="margin: 0; margin-left: 8px; cursor: pointer;" onclick="selectSameColor()">Same color</label>
+                    </div>
+                    <div id="colorPickerSection" style="display: none; margin-top: 10px; margin-left: 24px;">
+                        <input type="color" id="swimmerColorPicker" value="#0000ff" onchange="updateSwimmerColor()" style="opacity: 0; pointer-events: none;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Page -->
+        <div id="advanced" class="page">
+            <div class="control">
+                <label for="poolLength">Pool Length:</label>
+                <select id="poolLength" onchange="updateCalculations()">
+                    <option value="25">25 yards</option>
+                    <option value="50">50 yards</option>
+                    <option value="25m">25 meters</option>
+                    <option value="50m">50 meters</option>
+                </select>
+            </div>
+
+            <div class="control">
+                <label for="stripLength">LED Strip Length (meters):</label>
+                <input type="number" id="stripLength" value="23" min="1" max="50" step="0.5" onchange="updateCalculations()">
+            </div>
+
+            <div class="control">
+                <label for="ledsPerMeter">LEDs per Meter:</label>
+                <input type="number" id="ledsPerMeter" value="30" min="10" max="144" onchange="updateCalculations()">
+            </div>
+
+            <div class="control">
+                <label for="numLanes">Number of lanes:</label>
+                <input type="number" id="numLanes" value="2" min="1" max="4" onchange="updateNumLanes()">
+            </div>
+
+            <!-- Lane Names Management -->
+            <div id="laneNamesSection" style="margin-top: 20px;">
+                <div style="margin: 10px 0;">
+                    <h4 style="margin: 0; color: #333; display: inline-block;">Lane Names:</h4>
+                    <span id="identifyLanesBtn" onclick="toggleLaneIdentification()" style="display: inline-block; margin-left: 10px; padding: 2px 6px; font-size: 12px; border: 1px solid #007bff; border-radius: 3px; background: #007bff; color: white; cursor: pointer; font-weight: 500; white-space: nowrap; user-select: none;">Identify Lanes</span>
+                </div>
+                <div id="laneNamesList">
+                    <!-- Lane name inputs populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Color Picker Modal (Global) -->
+    <div id="customColorPicker" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;" onclick="closeColorPicker()">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" onclick="event.stopPropagation()">
+            <h4 style="margin: 0 0 15px 0; text-align: center;">Choose Color</h4>
+            <div id="colorGrid" style="display: grid; grid-template-columns: repeat(6, 40px); gap: 8px; margin-bottom: 15px;">
+                <!-- Colors will be populated by JavaScript -->
+            </div>
+            <button onclick="closeColorPicker()" style="width: 100%; padding: 8px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">Close</button>
+        </div>
+    </div><script src="script.js"></script>
 </body>
 </html>
