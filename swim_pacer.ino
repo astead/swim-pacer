@@ -47,7 +47,7 @@ IPAddress subnet(255, 255, 255, 0);         // Subnet mask
 // ========== DEFAULT SETTINGS ==========
 struct Settings {
   float poolLengthMeters = 22.86;            // Pool length in meters (25 yards)
-  float stripLengthMeters = 23.0;            // LED strip length in meters
+  float stripLengthMeters = 23.0;            // LED strip length in meters (75 feet)
   int ledsPerMeter = 30;                     // LEDs per meter
   int numLanes = 2;                          // Number of LED strips/lanes connected
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
@@ -59,12 +59,15 @@ struct Settings {
   bool delayIndicatorsEnabled = true;        // Whether to show delay countdown indicators
   int numSwimmers = 3;                       // Number of swimmers (light pulses)
   int numRounds = 10;                        // Number of rounds/sets to complete
-  uint8_t colorRed = 0;                      // RGB color values
+  uint8_t colorRed = 255;                    // RGB color values - default to red
   uint8_t colorGreen = 0;
-  uint8_t colorBlue = 255;
+  uint8_t colorBlue = 0;
   uint8_t brightness = 196;                  // Overall brightness (0-255)
   bool isRunning = false;                    // Whether the effect is active (default: stopped)
   bool laneRunning[4] = {false, false, false, false}; // Per-lane running states
+  bool underwatersEnabled = false;           // Whether underwater indicators are enabled
+  float firstUnderwaterDistanceFeet = 5.0;   // First underwater distance in feet
+  float underwaterDistanceFeet = 3.0;        // Subsequent underwater distance in feet
 };
 
 Settings settings;
@@ -92,6 +95,7 @@ struct Swimmer {
   int direction;
   unsigned long lastUpdate;
   CRGB color;
+  bool hasStarted;  // Track if this swimmer has had their first start
 };
 
 Swimmer swimmers[4][6]; // Support up to 6 swimmers per lane, for up to 4 lanes
@@ -290,6 +294,207 @@ void setupWebServer() {
   server.on("/setNumSwimmers", HTTP_POST, handleSetNumSwimmers);
   server.on("/setNumRounds", HTTP_POST, handleSetNumRounds);
 
+  // Color and swimmer configuration endpoints
+  server.on("/setColorMode", HTTP_POST, handleSetColorMode);
+  server.on("/setSwimmerColor", HTTP_POST, handleSetSwimmerColor);
+  server.on("/setSwimmerColors", HTTP_POST, handleSetSwimmerColors);
+  server.on("/setUnderwaterSettings", HTTP_POST, handleSetUnderwaterSettings);
+
+  // Temporary debug endpoint to reset color preferences
+  server.on("/resetColors", HTTP_POST, []() {
+    preferences.remove("colorRed");
+    preferences.remove("colorGreen");
+    preferences.remove("colorBlue");
+    loadSettings(); // Reload with new defaults
+    initializeSwimmers(); // Apply to swimmers
+    server.send(200, "text/plain", "Color preferences reset to red default");
+  });
+
+  // Color test endpoint - support both GET and POST
+  server.on("/testColors", HTTP_GET, []() {
+    Serial.println("=== COLOR TEST STARTED (GET) ===");
+    
+    if (leds[0] != nullptr) {
+      // Test primary colors - what we send vs what should appear
+      Serial.println("Testing RGB color mapping...");
+      
+      // Clear strip first
+      fill_solid(leds[0], min(10, totalLEDs), CRGB::Black);
+      
+      // Test Red: Should appear RED on strip
+      Serial.println("LED 0: Setting CRGB(255,0,0) - should be RED");
+      leds[0][0] = CRGB(255, 0, 0);
+      
+      // Test Green: Should appear GREEN on strip  
+      Serial.println("LED 1: Setting CRGB(0,255,0) - should be GREEN");
+      if (totalLEDs > 1) leds[0][1] = CRGB(0, 255, 0);
+      
+      // Test Blue: Should appear BLUE on strip
+      Serial.println("LED 2: Setting CRGB(0,0,255) - should be BLUE");
+      if (totalLEDs > 2) leds[0][2] = CRGB(0, 0, 255);
+      
+      // Test Orange: Should appear ORANGE on strip
+      Serial.println("LED 3: Setting CRGB(255,128,0) - should be ORANGE");
+      if (totalLEDs > 3) leds[0][3] = CRGB(255, 128, 0);
+      
+      // Test a different orange variant
+      Serial.println("LED 4: Setting CRGB(255,65,0) - should be DARK ORANGE");
+      if (totalLEDs > 4) leds[0][4] = CRGB(255, 65, 0);
+      
+      // Test pure orange (no green component)
+      Serial.println("LED 5: Setting CRGB(255,0,0) then blend - PURE ORANGE TEST");
+      if (totalLEDs > 5) leds[0][5] = CRGB(255, 0, 0);  // Pure red first
+      
+      FastLED.show();
+      Serial.println("Color test pattern displayed. Check LEDs 0-5.");
+      Serial.println("Colors will stay on for 10 seconds, then turn off.");
+      Serial.println("Compare LED 3 (255,128,0) vs LED 4 (255,65,0) - which looks more orange?");
+      
+      // Keep colors on for 10 seconds
+      delay(10000);
+      
+      // Clear the strip
+      fill_solid(leds[0], min(10, totalLEDs), CRGB::Black);
+      FastLED.show();
+      Serial.println("Color test completed - LEDs cleared.");
+    }
+    
+    server.send(200, "text/html", "<html><body><h2>Color Test Completed</h2><p>Colors were displayed for 10 seconds. Check Serial Monitor for results.</p><p><strong>Expected:</strong><br>LED 0: RED<br>LED 1: GREEN<br>LED 2: BLUE<br>LED 3: ORANGE</p><p><a href='/'>Back to Main Page</a></p></body></html>");
+  });
+
+  server.on("/testColors", HTTP_POST, []() {
+    Serial.println("=== COLOR TEST STARTED (POST) ===");
+    
+    if (leds[0] != nullptr) {
+      // Test primary colors - what we send vs what should appear
+      Serial.println("Testing RGB color mapping...");
+      
+      // Clear strip first
+      fill_solid(leds[0], min(10, totalLEDs), CRGB::Black);
+      
+      // Test Red: Should appear RED on strip
+      Serial.println("LED 0: Setting CRGB(255,0,0) - should be RED");
+      leds[0][0] = CRGB(255, 0, 0);
+      
+      // Test Green: Should appear GREEN on strip  
+      Serial.println("LED 1: Setting CRGB(0,255,0) - should be GREEN");
+      if (totalLEDs > 1) leds[0][1] = CRGB(0, 255, 0);
+      
+      // Test Blue: Should appear BLUE on strip
+      Serial.println("LED 2: Setting CRGB(0,0,255) - should be BLUE");
+      if (totalLEDs > 2) leds[0][2] = CRGB(0, 0, 255);
+      
+      // Test Orange: Should appear ORANGE on strip
+      Serial.println("LED 3: Setting CRGB(255,128,0) - should be ORANGE");
+      if (totalLEDs > 3) leds[0][3] = CRGB(255, 128, 0);
+      
+      FastLED.show();
+      Serial.println("Color test pattern displayed. Check LEDs 0-3.");
+      Serial.println("If colors don't match expectations, there's a color order issue.");
+    }
+    
+    server.send(200, "text/plain", "Color test completed - check serial output and LEDs");
+  });
+
+  // Swimming animation color test endpoint - support both GET and POST
+  server.on("/testSwimColors", HTTP_GET, []() {
+    Serial.println("=== SWIMMING ANIMATION COLOR TEST (GET) ===");
+    
+    if (leds[0] != nullptr) {
+      Serial.println("Testing colors in swimming animation context...");
+      
+      // Clear strip first
+      fill_solid(leds[0], totalLEDs, CRGB::Black);
+      
+      // Test the exact color values stored in settings
+      Serial.println("Current settings colors:");
+      Serial.println("  settings.colorRed: " + String(settings.colorRed));
+      Serial.println("  settings.colorGreen: " + String(settings.colorGreen));
+      Serial.println("  settings.colorBlue: " + String(settings.colorBlue));
+      
+      // Test swimmer colors
+      Serial.println("Swimmer colors:");
+      for (int i = 0; i < 4; i++) {
+        CRGB swimmerColor = swimmers[0][i].color;
+        Serial.println("  Swimmer " + String(i) + ": R=" + String(swimmerColor.r) + " G=" + String(swimmerColor.g) + " B=" + String(swimmerColor.b));
+      }
+      
+      // Draw swimming pulses using the actual animation functions
+      Serial.println("Drawing swimmer pulses at fixed positions...");
+      
+      // Set positions manually for this test
+      swimmers[0][0].position = 10;
+      swimmers[0][1].position = 30;
+      swimmers[0][2].position = 50;
+      
+      // Draw swimmer pulses
+      drawSwimmerPulse(0, 0);
+      drawSwimmerPulse(1, 0);
+      drawSwimmerPulse(2, 0);
+      
+      FastLED.show();
+      Serial.println("Swimming animation colors displayed for 5 seconds...");
+      
+      delay(5000);
+      
+      // Clear the strip
+      fill_solid(leds[0], totalLEDs, CRGB::Black);
+      FastLED.show();
+      Serial.println("Swimming color test completed.");
+    }
+    
+    server.send(200, "text/html", "<html><body><h2>Swimming Animation Color Test</h2><p>Tested actual swimming pulse colors for 5 seconds. Check Serial Monitor for color values.</p><p><a href='/'>Back to Main Page</a></p></body></html>");
+  });
+
+  server.on("/testSwimColors", HTTP_POST, []() {
+    Serial.println("=== SWIMMING ANIMATION COLOR TEST (POST) ===");
+    
+    if (leds[0] != nullptr) {
+      Serial.println("Testing colors in swimming animation context...");
+      
+      // Clear strip first
+      fill_solid(leds[0], totalLEDs, CRGB::Black);
+      
+      // Test the exact color values stored in settings
+      Serial.println("Current settings colors:");
+      Serial.println("  settings.colorRed: " + String(settings.colorRed));
+      Serial.println("  settings.colorGreen: " + String(settings.colorGreen));
+      Serial.println("  settings.colorBlue: " + String(settings.colorBlue));
+      
+      // Test swimmer colors
+      Serial.println("Swimmer colors:");
+      for (int i = 0; i < 4; i++) {
+        CRGB swimmerColor = swimmers[0][i].color;
+        Serial.println("  Swimmer " + String(i) + ": R=" + String(swimmerColor.r) + " G=" + String(swimmerColor.g) + " B=" + String(swimmerColor.b));
+      }
+      
+      // Draw swimming pulses using the actual animation functions
+      Serial.println("Drawing swimmer pulses at fixed positions...");
+      
+      // Set positions manually for this test
+      swimmers[0][0].position = 10;
+      swimmers[0][1].position = 30;
+      swimmers[0][2].position = 50;
+      
+      // Draw swimmer pulses
+      drawSwimmerPulse(0, 0);
+      drawSwimmerPulse(1, 0);
+      drawSwimmerPulse(2, 0);
+      
+      FastLED.show();
+      Serial.println("Swimming animation colors displayed for 5 seconds...");
+      
+      delay(5000);
+      
+      // Clear the strip
+      fill_solid(leds[0], totalLEDs, CRGB::Black);
+      FastLED.show();
+      Serial.println("Swimming color test completed.");
+    }
+    
+    server.send(200, "text/plain", "Swimming color test completed - check serial output and LEDs");
+  });
+
   server.begin();
   Serial.println("Web server started");
 }
@@ -443,23 +648,49 @@ void handleSetSpeed() {
 void handleSetColor() {
   if (server.hasArg("color")) {
     String color = server.arg("color");
-    // Convert color name to RGB values
-    if (color == "red") {
-      settings.colorRed = 255; settings.colorGreen = 0; settings.colorBlue = 0;
-    } else if (color == "green") {
-      settings.colorRed = 0; settings.colorGreen = 255; settings.colorBlue = 0;
-    } else if (color == "blue") {
-      settings.colorRed = 0; settings.colorGreen = 0; settings.colorBlue = 255;
-    } else if (color == "yellow") {
-      settings.colorRed = 255; settings.colorGreen = 255; settings.colorBlue = 0;
-    } else if (color == "purple") {
-      settings.colorRed = 128; settings.colorGreen = 0; settings.colorBlue = 128;
-    } else if (color == "cyan") {
-      settings.colorRed = 0; settings.colorGreen = 255; settings.colorBlue = 255;
-    } else if (color == "white") {
-      settings.colorRed = 255; settings.colorGreen = 255; settings.colorBlue = 255;
+    
+    // Check if it's a hex color (starts with #) or named color
+    if (color.startsWith("#")) {
+      // Use hex-to-RGB conversion for hex colors from browser
+      uint8_t r, g, b;
+      hexToRGB(color, r, g, b);
+      
+      Serial.println("=== HANDLE SET COLOR (HEX) ===");
+      Serial.println("Received hex color: " + color);
+      Serial.println("Parsed RGB: R=" + String(r) + " G=" + String(g) + " B=" + String(b));
+      
+      settings.colorRed = r;
+      settings.colorGreen = g;
+      settings.colorBlue = b;
+    } else {
+      // Handle named colors for backward compatibility
+      if (color == "red") {
+        settings.colorRed = 255; settings.colorGreen = 0; settings.colorBlue = 0;
+      } else if (color == "green") {
+        settings.colorRed = 0; settings.colorGreen = 255; settings.colorBlue = 0;
+      } else if (color == "blue") {
+        settings.colorRed = 0; settings.colorGreen = 0; settings.colorBlue = 255;
+      } else if (color == "yellow") {
+        settings.colorRed = 255; settings.colorGreen = 255; settings.colorBlue = 0;
+      } else if (color == "purple") {
+        settings.colorRed = 128; settings.colorGreen = 0; settings.colorBlue = 128;
+      } else if (color == "cyan") {
+        settings.colorRed = 0; settings.colorGreen = 255; settings.colorBlue = 255;
+      } else if (color == "white") {
+        settings.colorRed = 255; settings.colorGreen = 255; settings.colorBlue = 255;
+      }
+      
+      Serial.println("=== HANDLE SET COLOR (NAMED) ===");
+      Serial.println("Received named color: " + color);
+      Serial.println("Applied RGB: R=" + String(settings.colorRed) + " G=" + String(settings.colorGreen) + " B=" + String(settings.colorBlue));
     }
+    
     saveSettings();
+    // Reinitialize swimmers to apply the new color
+    initializeSwimmers();
+    
+    Serial.println("Color applied to LEDs via initializeSwimmers()");
+    Serial.println("================================");
   }
   server.send(200, "text/plain", "Color updated");
 }
@@ -596,6 +827,153 @@ void handleSetNumRounds() {
   server.send(200, "text/plain", "Number of rounds updated");
 }
 
+// Convert hex color string to RGB values
+void hexToRGB(String hexColor, uint8_t &r, uint8_t &g, uint8_t &b) {
+  // Remove # if present
+  if (hexColor.startsWith("#")) {
+    hexColor = hexColor.substring(1);
+  }
+  
+  // Debug: Print original hex color
+  Serial.println("hexToRGB: Processing hex color: " + hexColor);
+  
+  // Convert hex to RGB
+  long number = strtol(hexColor.c_str(), NULL, 16);
+  r = (number >> 16) & 0xFF;
+  g = (number >> 8) & 0xFF;
+  b = number & 0xFF;
+  
+  // Debug: Print extracted RGB values
+  Serial.println("hexToRGB: Extracted RGB values:");
+  Serial.println("  Red (R): " + String(r));
+  Serial.println("  Green (G): " + String(g));
+  Serial.println("  Blue (B): " + String(b));
+  Serial.println("  Note: These RGB values will be used with CRGB(r,g,b)");
+  Serial.println("  LED strip uses GRB order, but FastLED should handle the conversion");
+  
+  // Test what CRGB actually produces
+  CRGB testColor = CRGB(r, g, b);
+  Serial.println("  CRGB created - Internal values:");
+  Serial.println("    CRGB.r (should be Red): " + String(testColor.r));
+  Serial.println("    CRGB.g (should be Green): " + String(testColor.g)); 
+  Serial.println("    CRGB.b (should be Blue): " + String(testColor.b));
+  
+  // Check if we need manual GRB conversion
+  Serial.println("  Manual GRB conversion would be: G=" + String(g) + " R=" + String(r) + " B=" + String(b));
+}
+
+// Alternative color creation for GRB strips if FastLED auto-conversion fails
+CRGB createGRBColor(uint8_t r, uint8_t g, uint8_t b) {
+  // For GRB strips, we may need to manually swap R and G
+  // This function allows us to test different color orders
+  return CRGB(r, g, b);  // Normal RGB - FastLED should handle conversion
+  // If that doesn't work, try: return CRGB(g, r, b);  // Manual GRB
+}
+
+void handleSetColorMode() {
+  if (server.hasArg("colorMode")) {
+    String colorMode = server.arg("colorMode");
+    // Store color mode for future use
+    preferences.putString("colorMode", colorMode);
+    Serial.println("Color mode updated to: " + colorMode);
+  }
+  server.send(200, "text/plain", "Color mode updated");
+}
+
+void handleSetSwimmerColor() {
+  if (server.hasArg("color")) {
+    String hexColor = server.arg("color");
+    uint8_t r, g, b;
+    hexToRGB(hexColor, r, g, b);
+    
+    // Debug output
+    Serial.println("=== SWIMMER COLOR DEBUG ===");
+    Serial.println("Received hex color: " + hexColor);
+    Serial.println("Parsed RGB: R=" + String(r) + " G=" + String(g) + " B=" + String(b));
+    
+    // Update default color settings for "same color" mode
+    settings.colorRed = r;
+    settings.colorGreen = g;
+    settings.colorBlue = b;
+    
+    saveSettings();
+    initializeSwimmers(); // Apply new color
+    
+    // Debug output for what was applied
+    Serial.println("Applied to swimmers: R=" + String(settings.colorRed) + " G=" + String(settings.colorGreen) + " B=" + String(settings.colorBlue));
+    Serial.println("LED COLOR_ORDER is GRB - may need adjustment");
+    Serial.println("==============================");
+  }
+  server.send(200, "text/plain", "Swimmer color updated");
+}
+
+void handleSetSwimmerColors() {
+  if (server.hasArg("colors")) {
+    String colorsString = server.arg("colors");
+    
+    // Parse comma-separated hex colors
+    int colorIndex = 0;
+    int startIndex = 0;
+    
+    for (int i = 0; i <= colorsString.length() && colorIndex < 6; i++) {
+      if (i == colorsString.length() || colorsString.charAt(i) == ',') {
+        String hexColor = colorsString.substring(startIndex, i);
+        hexColor.trim();
+        
+        if (hexColor.length() > 0) {
+          uint8_t r, g, b;
+          hexToRGB(hexColor, r, g, b);
+          
+          // Update swimmer color for current lane
+          for (int lane = 0; lane < 4; lane++) {
+            if (colorIndex < 6) {
+              swimmers[lane][colorIndex].color = CRGB(r, g, b);
+            }
+          }
+          
+          // If this is the first swimmer, also update default settings
+          if (colorIndex == 0) {
+            settings.colorRed = r;
+            settings.colorGreen = g;
+            settings.colorBlue = b;
+          }
+          
+          Serial.println("Swimmer " + String(colorIndex + 1) + " color updated to: " + hexColor);
+          colorIndex++;
+        }
+        startIndex = i + 1;
+      }
+    }
+    
+    saveSettings();
+    Serial.println("Individual swimmer colors updated");
+  }
+  server.send(200, "text/plain", "Individual swimmer colors updated");
+}
+
+void handleSetUnderwaterSettings() {
+  if (server.hasArg("enabled")) {
+    bool enabled = server.arg("enabled") == "true";
+    settings.underwatersEnabled = enabled;
+    
+    if (enabled && server.hasArg("underwaterColor") && server.hasArg("surfaceColor")) {
+      String underwaterHex = server.arg("underwaterColor");
+      String surfaceHex = server.arg("surfaceColor");
+      
+      // Store underwater colors (could add to settings struct if needed)
+      preferences.putString("underwaterColor", underwaterHex);
+      preferences.putString("surfaceColor", surfaceHex);
+      
+      Serial.println("Underwater settings updated - enabled: " + String(enabled));
+      Serial.println("Underwater color: " + underwaterHex);
+      Serial.println("Surface color: " + surfaceHex);
+    }
+    
+    saveSettings();
+  }
+  server.send(200, "text/plain", "Underwater settings updated");
+}
+
 void saveSettings() {
   preferences.putFloat("poolLengthM", settings.poolLengthMeters);
   preferences.putFloat("stripLengthM", settings.stripLengthMeters);
@@ -613,6 +991,7 @@ void saveSettings() {
   preferences.putUChar("colorBlue", settings.colorBlue);
   preferences.putUChar("brightness", settings.brightness);
   preferences.putBool("isRunning", settings.isRunning);
+  preferences.putBool("underwatersEnabled", settings.underwatersEnabled);
 
   Serial.println("Settings saved to flash memory");
 }
@@ -629,11 +1008,12 @@ void loadSettings() {
   settings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
   settings.numSwimmers = preferences.getInt("numSwimmers", 3);
   settings.numRounds = preferences.getInt("numRounds", 10);
-  settings.colorRed = preferences.getUChar("colorRed", 0);
+  settings.colorRed = preferences.getUChar("colorRed", 255);    // Default to red
   settings.colorGreen = preferences.getUChar("colorGreen", 0);
-  settings.colorBlue = preferences.getUChar("colorBlue", 255);
+  settings.colorBlue = preferences.getUChar("colorBlue", 0);
   settings.brightness = preferences.getUChar("brightness", 100);
   settings.isRunning = preferences.getBool("isRunning", false);  // Default: stopped
+  settings.underwatersEnabled = preferences.getBool("underwatersEnabled", false);
 
   Serial.println("Settings loaded from flash memory");
 }
@@ -696,15 +1076,20 @@ void updateLEDEffect() {
 
       // Only animate if this lane is running
       if (settings.laneRunning[lane]) {
-        // Draw delay indicators if enabled for this lane
-        if (settings.delayIndicatorsEnabled) {
-          drawDelayIndicators(currentTime, lane);
-        }
-
-        // Update and draw each active swimmer for this lane
+        // Update and draw each active swimmer for this lane FIRST (higher priority)
         for (int i = 0; i < settings.numSwimmers; i++) {
           updateSwimmer(i, currentTime, lane);
           drawSwimmerPulse(i, lane);
+          
+          // Draw underwater zone for this swimmer if enabled
+          if (settings.underwatersEnabled) {
+            drawUnderwaterZone(i, currentTime, lane);
+          }
+        }
+
+        // Draw delay indicators if enabled for this lane (lower priority)
+        if (settings.delayIndicatorsEnabled) {
+          drawDelayIndicators(currentTime, lane);
         }
       }
     }
@@ -774,27 +1159,8 @@ void drawDelayIndicators(unsigned long currentTime, int laneIndex) {
       // Check for conflicts with active swimmers and draw delay indicator
       CRGB swimmerColor = swimmers[laneIndex][i].color;
       for (int ledIndex = 0; ledIndex < delayLEDs && ledIndex < totalLEDs; ledIndex++) {
-        // Check if this LED position conflicts with any active swimmer
-        bool hasConflict = false;
-
-        for (int j = 0; j < settings.numSwimmers; j++) {
-          // Skip if this swimmer hasn't started yet
-          if (currentTime < swimmers[laneIndex][j].lastUpdate) continue;
-
-          // Check if this LED is within the swimmer's pulse range
-          int swimmerCenter = swimmers[laneIndex][j].position;
-          int halfWidth = pulseWidthLEDs / 2;
-          int swimmerStart = swimmerCenter - halfWidth;
-          int swimmerEnd = swimmerCenter + halfWidth;
-
-          if (ledIndex >= swimmerStart && ledIndex <= swimmerEnd) {
-            hasConflict = true;
-            break;
-          }
-        }
-
-        // Only draw delay indicator if there's no conflict with active swimmers
-        if (!hasConflict) {
+        // Only draw delay indicator if LED is currently black (swimmers get priority)
+        if (leds[laneIndex][ledIndex] == CRGB::Black) {
           // Create a dimmed version of the swimmer's color for the delay indicator
           CRGB delayColor = swimmerColor;
           delayColor.nscale8(128); // 50% brightness for delay indicator
@@ -811,31 +1177,57 @@ void initializeSwimmers() {
     for (int i = 0; i < 6; i++) {
       swimmers[lane][i].position = 0;
       swimmers[lane][i].direction = 1;
+      swimmers[lane][i].hasStarted = false;  // Initialize as not started
       swimmers[lane][i].lastUpdate = millis() + (settings.initialDelaySeconds * 1000) + (i * settings.swimmerIntervalSeconds * 1000); // Initial delay + staggered start times
-      swimmers[lane][i].color = swimmerColors[i];
+      
+      // Use web interface color for first swimmer, predefined colors for others
+      if (i == 0) {
+        // Debug: Print what color we're setting
+        Serial.println("Setting first swimmer color: R=" + String(settings.colorRed) + " G=" + String(settings.colorGreen) + " B=" + String(settings.colorBlue));
+        swimmers[lane][i].color = CRGB(settings.colorRed, settings.colorGreen, settings.colorBlue);
+        Serial.println("CRGB created with RGB values (note: LED strip uses GRB order)");
+      } else {
+        swimmers[lane][i].color = swimmerColors[i];
+      }
     }
   }
 }
 
 void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
-  if (currentTime - swimmers[laneIndex][swimmerIndex].lastUpdate >= delayMS) {
-    swimmers[laneIndex][swimmerIndex].lastUpdate = currentTime;
+  // Check if swimmer should be active (start time has passed)
+  if (currentTime >= swimmers[laneIndex][swimmerIndex].lastUpdate) {
+    // For movement timing, check if enough time has passed since last movement
+    static unsigned long lastMovement[4][6] = {0}; // Track last movement time separately
+    
+    if (currentTime - lastMovement[laneIndex][swimmerIndex] >= delayMS) {
+      lastMovement[laneIndex][swimmerIndex] = currentTime;
 
-    // Move to next position
-    swimmers[laneIndex][swimmerIndex].position += swimmers[laneIndex][swimmerIndex].direction;
+      // Mark swimmer as started once they begin moving
+      if (!swimmers[laneIndex][swimmerIndex].hasStarted) {
+        swimmers[laneIndex][swimmerIndex].hasStarted = true;
+      }
 
-    // Check for bouncing at ends
-    if (swimmers[laneIndex][swimmerIndex].position >= totalLEDs - 1) {
-      swimmers[laneIndex][swimmerIndex].direction = -1;
-      swimmers[laneIndex][swimmerIndex].position = totalLEDs - 1;
-    } else if (swimmers[laneIndex][swimmerIndex].position <= 0) {
-      swimmers[laneIndex][swimmerIndex].direction = 1;
-      swimmers[laneIndex][swimmerIndex].position = 0;
+      // Move to next position
+      swimmers[laneIndex][swimmerIndex].position += swimmers[laneIndex][swimmerIndex].direction;
+
+      // Check for bouncing at ends
+      if (swimmers[laneIndex][swimmerIndex].position >= totalLEDs - 1) {
+        swimmers[laneIndex][swimmerIndex].direction = -1;
+        swimmers[laneIndex][swimmerIndex].position = totalLEDs - 1;
+      } else if (swimmers[laneIndex][swimmerIndex].position <= 0) {
+        swimmers[laneIndex][swimmerIndex].direction = 1;
+        swimmers[laneIndex][swimmerIndex].position = 0;
+      }
     }
   }
 }
 
 void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
+  // Only draw if swimmer should be active (start time has passed)
+  if (millis() < swimmers[laneIndex][swimmerIndex].lastUpdate) {
+    return; // Swimmer hasn't started yet
+  }
+
   int centerPos = swimmers[laneIndex][swimmerIndex].position;
   int halfWidth = pulseWidthLEDs / 2;
   CRGB pulseColor = swimmers[laneIndex][swimmerIndex].color;
@@ -851,8 +1243,10 @@ void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
       CRGB color = pulseColor;
       color.nscale8((uint8_t)(brightnessFactor * 255));
 
-      // Add this swimmer's color to existing LED (allows overlapping)
-      leds[laneIndex][ledIndex] += color;
+      // Only set color if LED is currently black (first wins priority)
+      if (leds[laneIndex][ledIndex] == CRGB::Black) {
+        leds[laneIndex][ledIndex] = color;
+      }
     }
   }
 }
@@ -873,6 +1267,81 @@ void drawPulse(int centerPos, int laneIndex = 0) {
       color.nscale8((uint8_t)(brightnessFactor * 255));
 
       leds[laneIndex][ledIndex] = color;
+    }
+  }
+}
+
+void drawUnderwaterZone(int swimmerIndex, unsigned long currentTime, int laneIndex) {
+  // Only draw if swimmer should be active (start time has passed)
+  if (currentTime < swimmers[laneIndex][swimmerIndex].lastUpdate) {
+    return; // Swimmer hasn't started yet
+  }
+
+  // Get stored underwater colors
+  String underwaterHex = preferences.getString("underwaterColor", "#0066CC"); // Default blue
+  String surfaceHex = preferences.getString("surfaceColor", "#66CCFF");       // Default light blue
+  
+  // Convert hex colors to RGB
+  uint8_t underwaterR, underwaterG, underwaterB;
+  uint8_t surfaceR, surfaceG, surfaceB;
+  hexToRGB(underwaterHex, underwaterR, underwaterG, underwaterB);
+  hexToRGB(surfaceHex, surfaceR, surfaceG, surfaceB);
+  
+  CRGB underwaterColor = CRGB(underwaterR, underwaterG, underwaterB);
+  CRGB surfaceColor = CRGB(surfaceR, surfaceG, surfaceB);
+  
+  int swimmerPos = swimmers[laneIndex][swimmerIndex].position;
+  int swimmerDirection = swimmers[laneIndex][swimmerIndex].direction;
+  
+  // Determine if this should use the first underwater distance
+  // First underwater distance applies to every swimmer, but only on their very first start
+  bool useFirstUnderwaterDistance = false;
+  
+  // Check if this swimmer is in their first underwater (at starting wall and hasn't started yet)
+  if (!swimmers[laneIndex][swimmerIndex].hasStarted && swimmerPos < (totalLEDs * 0.2)) {
+    useFirstUnderwaterDistance = true;
+  }
+  
+  // Get underwater distances from settings
+  float firstUnderwaterDistanceFeet = settings.firstUnderwaterDistanceFeet;
+  float underwaterDistanceFeet = settings.underwaterDistanceFeet;
+  
+  // Convert to LEDs
+  const float feetToMeters = 0.3048;
+  int firstUnderwaterLEDs = (int)(firstUnderwaterDistanceFeet * feetToMeters * settings.ledsPerMeter);
+  int underwaterLEDs = (int)(underwaterDistanceFeet * feetToMeters * settings.ledsPerMeter);
+  
+  // Determine which underwater distance to use
+  int currentUnderwaterLEDs = useFirstUnderwaterDistance ? firstUnderwaterLEDs : underwaterLEDs;
+  
+  // Check if swimmer is in an underwater zone
+  bool inUnderwaterZone = false;
+  int zoneStart = -1, zoneEnd = -1;
+  
+  // Underwater zone at start wall (0 to currentUnderwaterLEDs)
+  if (swimmerPos >= 0 && swimmerPos < currentUnderwaterLEDs) {
+    inUnderwaterZone = true;
+    zoneStart = 0;
+    zoneEnd = currentUnderwaterLEDs - 1;
+  }
+  // Underwater zone at end wall (totalLEDs-currentUnderwaterLEDs to totalLEDs-1)
+  else if (swimmerPos >= (totalLEDs - currentUnderwaterLEDs) && swimmerPos < totalLEDs) {
+    inUnderwaterZone = true;
+    zoneStart = totalLEDs - currentUnderwaterLEDs;
+    zoneEnd = totalLEDs - 1;
+  }
+  
+  // If swimmer is in an underwater zone, render the entire zone with underwater color
+  if (inUnderwaterZone) {
+    for (int ledIndex = zoneStart; ledIndex <= zoneEnd; ledIndex++) {
+      // Only set color if LED is currently black (first wins priority)
+      if (leds[laneIndex][ledIndex] == CRGB::Black) {
+        // Use the underwater color at the brightness setting from coach config
+        CRGB finalColor = underwaterColor;
+        finalColor.nscale8(settings.brightness);
+        
+        leds[laneIndex][ledIndex] = finalColor;
+      }
     }
   }
 }

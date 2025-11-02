@@ -16,7 +16,7 @@ let currentSettings = {
     colorMode: 'individual',
     swimmerColor: '#0000ff',
     poolLength: '25',
-    stripLength: 23,
+    stripLength: 23,  // 75 feet = 23 meters
     ledsPerMeter: 30,
     numLanes: 2,
     currentLane: 0,
@@ -1527,6 +1527,50 @@ function updateSettings() {
     }).catch(error => {
         console.log('Current lane update - server not available');
     });
+
+    // Send color mode and swimmer color settings
+    fetch('/setColorMode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `colorMode=${currentSettings.colorMode}`
+    }).catch(error => {
+        console.log('Color mode update - server not available');
+    });
+
+    if (currentSettings.colorMode === 'same') {
+        // Send the same color for all swimmers
+        fetch('/setSwimmerColor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `color=${encodeURIComponent(currentSettings.swimmerColor)}`
+        }).catch(error => {
+            console.log('Swimmer color update - server not available');
+        });
+    } else {
+        // Send individual swimmer colors
+        const currentSet = getCurrentSwimmerSet();
+        if (currentSet && currentSet.length > 0) {
+            const swimmerColors = currentSet.map(swimmer => swimmer.color || '#ff0000').join(',');
+            fetch('/setSwimmerColors', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `colors=${encodeURIComponent(swimmerColors)}`
+            }).catch(error => {
+                console.log('Individual swimmer colors update - server not available');
+            });
+        }
+    }
+
+    // Send underwater settings if enabled
+    if (currentSettings.underwatersEnabled) {
+        fetch('/setUnderwaterSettings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `enabled=true&underwaterColor=${encodeURIComponent(currentSettings.underwaterColor)}&surfaceColor=${encodeURIComponent(currentSettings.surfaceColor)}`
+        }).catch(error => {
+            console.log('Underwater settings update - server not available');
+        });
+    }
 }
 
 // Helper function to update all UI elements from settings
@@ -1643,3 +1687,23 @@ document.addEventListener('DOMContentLoaded', function() {
     updateVisualSelection();
     initializeQueueSystem();
 });
+
+// Color testing function
+function testColors() {
+    if (isStandaloneMode) {
+        alert('Color test not available in standalone mode');
+        return;
+    }
+    
+    fetch('/testColors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: ''
+    }).then(response => response.text())
+    .then(data => {
+        alert('Color test completed! Check your LED strip and Serial Monitor for results.\n\nExpected:\nLED 0: RED\nLED 1: GREEN\nLED 2: BLUE\nLED 3: ORANGE');
+    }).catch(error => {
+        console.error('Color test failed:', error);
+        alert('Color test failed - check console for details');
+    });
+}
