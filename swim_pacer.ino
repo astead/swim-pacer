@@ -785,8 +785,12 @@ void handleSetPaceDistance() {
 void handleSetInitialDelay() {
   if (server.hasArg("initialDelay")) {
     int initialDelay = server.arg("initialDelay").toInt();
+    Serial.println("Received initial delay setting: " + String(initialDelay));
     settings.initialDelaySeconds = initialDelay;
+    Serial.println("Updated settings.initialDelaySeconds to: " + String(settings.initialDelaySeconds));
     saveSettings();
+    initializeSwimmers(); // Update swimmer start times with new delay
+    Serial.println("Swimmers reinitialized with new initial delay");
   }
   server.send(200, "text/plain", "Initial delay updated");
 }
@@ -796,6 +800,7 @@ void handleSetSwimmerInterval() {
     int swimmerInterval = server.arg("swimmerInterval").toInt();
     settings.swimmerIntervalSeconds = swimmerInterval;
     saveSettings();
+    initializeSwimmers(); // Update swimmer start times with new interval
   }
   server.send(200, "text/plain", "Swimmer interval updated");
 }
@@ -1005,6 +1010,7 @@ void loadSettings() {
   settings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
   settings.paceDistanceYards = preferences.getInt("paceDistanceYards", 50);
   settings.initialDelaySeconds = preferences.getInt("initialDelay", 10);
+  Serial.println("Loaded initial delay from preferences: " + String(settings.initialDelaySeconds));
   settings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
   settings.numSwimmers = preferences.getInt("numSwimmers", 3);
   settings.numRounds = preferences.getInt("numRounds", 10);
@@ -1173,6 +1179,7 @@ void drawDelayIndicators(unsigned long currentTime, int laneIndex) {
 }
 
 void initializeSwimmers() {
+  Serial.println("Initializing swimmers with initial delay: " + String(settings.initialDelaySeconds) + " seconds");
   for (int lane = 0; lane < 4; lane++) {
     for (int i = 0; i < 6; i++) {
       swimmers[lane][i].position = 0;

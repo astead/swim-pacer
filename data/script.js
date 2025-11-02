@@ -1488,6 +1488,14 @@ function updateSettings() {
         console.log('Pace distance update - server not available');
     });
 
+    fetch('/setInitialDelay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `initialDelay=${currentSettings.initialDelay}`
+    }).catch(error => {
+        console.log('Initial delay update - server not available');
+    });
+
     fetch('/setSwimmerInterval', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
