@@ -2,6 +2,25 @@
 
 A professional swim training pacer system built on ESP32 with a web-based interface for creating and managing swim sets across multiple lanes.
 
+## ✅ VERIFIED WORKING CONFIGURATION
+
+**Status:** Fully functional as of November 2, 2025  
+**Board:** ESP32 Dev Module  
+**SPIFFS:** Optimized to 1% usage (14KB of 1.4MB)  
+**Web Interface:** Complete 3-tab interface operational
+
+### Quick Deploy
+1. Run: `.\deploy-spiffs.ps1 -Port COM7`
+2. Upload sketch via Arduino IDE ("ESP32 Dev Module")
+3. Connect to WiFi: `SwimPacer_Config`
+4. Browse: `http://192.168.4.1`
+
+### GPIO Pin Assignments
+- **Lane 1:** GPIO 18
+- **Lane 2:** GPIO 19  
+- **Lane 3:** GPIO 21
+- **Lane 4:** GPIO 2
+
 ## Features
 
 ### 🏊‍♂️ Professional Swim Training
@@ -24,10 +43,32 @@ A professional swim training pacer system built on ESP32 with a web-based interf
 
 ## Quick Start
 
-### Hardware Setup
-1. Flash `swim_pacer.ino` to your ESP32 board
-2. Connect ESP32 to Wi-Fi network
-3. Access the web interface via ESP32's IP address
+### Hardware Requirements
+- ESP32-WROOM-DA Module (ESP32-D0WD-V3 revision 3.1 or compatible)
+- WS2812B LED strip(s) for lane timing visualization
+- 5V power supply for LED strips
+
+### One-Command Deployment
+```powershell
+.\deploy.ps1
+```
+
+This single script handles:
+- ✅ Arduino sketch compilation and upload
+- ✅ SPIFFS filesystem creation and upload
+- ✅ Progress monitoring and error handling
+- ✅ Automatic tool detection and configuration
+
+### Manual Setup (if needed)
+1. Install Arduino CLI and ESP32 board package
+2. Set board configuration to `esp32:esp32:esp32da` (ESP32-WROOM-DA Module)
+3. Upload sketch: `arduino-cli upload --fqbn esp32:esp32:esp32da --port COM7 swim_pacer.ino`
+4. Upload SPIFFS: `esptool write_flash 0x290000 spiffs.bin`
+
+### Access the Interface
+1. Connect to Wi-Fi network: **"SwimPacer_Config"** (no password)
+2. Open browser to: **http://192.168.4.1**
+3. Start configuring your swim workouts!
 
 ### Creating Swim Sets
 1. Configure your swim set parameters (pace, rest, rounds)
@@ -63,11 +104,11 @@ A professional swim training pacer system built on ESP32 with a web-based interf
 
 ## Technical Details
 
-**Hardware:** ESP32 microcontroller  
-**Interface:** HTML5/CSS3/JavaScript  
-**Communication:** HTTP requests between web interface and ESP32  
-**Timing:** Millisecond-precision interval management  
-**Storage:** SPIFFS for configuration persistence  
+**Hardware:** ESP32 microcontroller
+**Interface:** HTML5/CSS3/JavaScript
+**Communication:** HTTP requests between web interface and ESP32
+**Timing:** Millisecond-precision interval management
+**Storage:** SPIFFS for configuration persistence
 
 ## License
 

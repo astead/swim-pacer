@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Swim Pacer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+<div class="nav-tabs">
+<button class="nav-tab active" onclick="showPage('main')">Swim Pacer</button>
+<button class="nav-tab" onclick="showPage('coach')">Coach Config</button>
+<button class="nav-tab" onclick="showPage('advanced')">Advanced</button>
+</div>
+
+<div id="main" class="page active">
+<div class="control">
+<label for="numSwimmers">Swimmers:</label>
+<select id="numSwimmers" onchange="updateNumSwimmers()">
+<option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
+<option value="4">4</option><option value="5">5</option><option value="6">6</option>
+</select>
+</div>
+
+<div class="control">
+<label for="numRounds">Rounds:</label>
+<input type="range" id="numRounds" min="1" max="50" value="10" onchange="updateNumRounds()">
+<span id="numRoundsValue">10</span>
+</div>
+
+<div class="control">
+<label for="restTime">Rest Time:</label>
+<input type="range" id="restTime" min="0" max="30" value="5" onchange="updateRestTime()">
+<span id="restTimeValue">5s</span>
+</div>
+
+<div class="control">
+<label for="pacePer50">Pace per 50y:</label>
+<input type="range" id="pacePer50" min="0.5" max="3.0" step="0.1" value="1.2" onchange="updateSpeed()">
+<span id="speedValue">1.2s</span>
+</div>
+
+<div class="control">
+<label for="paceDistance">Distance:</label>
+<input type="range" id="paceDistance" min="25" max="200" step="25" value="50" onchange="updatePaceDistance()">
+<span id="paceDistanceValue">50y</span>
+</div>
+
+<div class="control">
+<label for="brightness">Brightness:</label>
+<input type="range" id="brightness" min="10" max="100" value="77" onchange="updateBrightness()">
+<span id="brightnessValue">77%</span>
+</div>
+
+<div class="calculations">
+<p>Total Time: <span id="totalTime">60.0s</span></p>
+<p>With Rest: <span id="totalWithRest">65.0s</span></p>
+<p>Set Duration: <span id="setDuration">10.8m</span></p>
+</div>
+
+<div class="pacer-controls">
+<button id="startBtn" class="start-btn" onclick="startPacer()">START PACER</button>
+<button id="stopBtn" class="stop-btn" onclick="stopPacer()" style="display:none">STOP PACER</button>
+</div>
+
+<div id="detailedStatus" style="display:none"></div>
+</div>
+
+<div id="coach" class="page">
+<div class="control">
+<label for="poolLength">Pool Length (m):</label>
+<input type="number" id="poolLength" step="0.1" value="22.86">
+</div>
+<div class="control">
+<label for="stripLength">Strip Length (m):</label>
+<input type="number" id="stripLength" step="0.1" value="23.0">
+</div>
+<div class="control">
+<label for="ledsPerMeter">LEDs per Meter:</label>
+<input type="number" id="ledsPerMeter" value="30">
+</div>
+<div class="control">
+<label for="numLanes">Number of Lanes:</label>
+<select id="numLanes">
+<option value="1">1</option><option value="2" selected>2</option>
+<option value="3">3</option><option value="4">4</option>
+</select>
+</div>
+</div>
+
+<div id="advanced" class="page">
+<div class="control">
+<label for="initialDelay">Initial Delay (s):</label>
+<input type="number" id="initialDelay" value="10">
+</div>
+<div class="control">
+<label for="swimmerInterval">Swimmer Interval (s):</label>
+<input type="number" id="swimmerInterval" value="4">
+</div>
+<div class="control">
+<label for="pulseWidth">Pulse Width (ft):</label>
+<input type="number" id="pulseWidth" step="0.1" value="1.0">
+</div>
+<div class="color-controls">
+<h4>LED Colors</h4>
+<div class="color-inputs">
+<label>Red: <input type="range" id="colorRed" min="0" max="255" value="0"></label>
+<label>Green: <input type="range" id="colorGreen" min="0" max="255" value="0"></label>
+<label>Blue: <input type="range" id="colorBlue" min="0" max="255" value="255"></label>
+</div>
+</div>
+</div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>
