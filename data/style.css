@@ -1,150 +1,150 @@
 /* Base Styles */
-body { 
-    font-family: Arial; 
-    margin: 20px; 
-    background: #f0f0f0; 
+body {
+    font-family: Arial;
+    margin: 20px;
+    background: #f0f0f0;
 }
 
-.container { 
-    background: white; 
-    padding: 20px; 
-    border-radius: 10px; 
-    max-width: 500px; 
-    margin: 0 auto; 
+.container {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    max-width: 500px;
+    margin: 0 auto;
 }
 
-.control { 
-    margin: 15px 0; 
+.control {
+    margin: 15px 0;
 }
 
-label { 
-    display: block; 
-    margin-bottom: 5px; 
-    font-weight: bold; 
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
 }
 
-input, button, select { 
-    padding: 8px; 
-    border-radius: 5px; 
-    border: 1px solid #ccc; 
-    width: 100%; 
-    box-sizing: border-box; 
+input, button, select {
+    padding: 8px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    width: 100%;
+    box-sizing: border-box;
 }
 
-button { 
-    background: #007bff; 
-    color: white; 
-    cursor: pointer; 
-    margin: 5px 0; 
+button {
+    background: #007bff;
+    color: white;
+    cursor: pointer;
+    margin: 5px 0;
 }
 
-button:hover { 
-    background: #0056b3; 
+button:hover {
+    background: #0056b3;
 }
 
-button.secondary { 
-    background: #6c757d; 
+button.secondary {
+    background: #6c757d;
 }
 
-button.secondary:hover { 
-    background: #545b62; 
+button.secondary:hover {
+    background: #545b62;
 }
 
-.status { 
-    padding: 10px; 
-    border-radius: 5px; 
-    margin: 10px 0; 
+.status {
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
 }
 
-.running { 
-    background: #d4edda; 
-    color: #155724; 
+.running {
+    background: #d4edda;
+    color: #155724;
 }
 
-.stopped { 
-    background: #f8d7da; 
-    color: #721c24; 
+.stopped {
+    background: #f8d7da;
+    color: #721c24;
 }
 
-.color-preview { 
-    width: 50px; 
-    height: 30px; 
-    border: 1px solid #ccc; 
-    display: inline-block; 
-    margin-left: 10px; 
+.color-preview {
+    width: 50px;
+    height: 30px;
+    border: 1px solid #ccc;
+    display: inline-block;
+    margin-left: 10px;
 }
 
 
 /* Navigation */
-.nav-tabs { 
-    display: flex; 
-    margin-bottom: 20px; 
-    border-bottom: 2px solid #dee2e6; 
+.nav-tabs {
+    display: flex;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #dee2e6;
 }
 
-.nav-tab { 
-    flex: 1; 
-    padding: 10px; 
-    text-align: center; 
-    cursor: pointer; 
-    background: #f8f9fa; 
-    border: none; 
-    border-bottom: 3px solid transparent; 
-    color: #495057; 
+.nav-tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    cursor: pointer;
+    background: #f8f9fa;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: #495057;
 }
 
-.nav-tab.active { 
-    background: white; 
-    border-bottom-color: #007bff; 
-    color: #007bff; 
-    font-weight: bold; 
+.nav-tab.active {
+    background: white;
+    border-bottom-color: #007bff;
+    color: #007bff;
+    font-weight: bold;
 }
 
-.nav-tab:hover { 
-    background: #e9ecef; 
-    color: #495057; 
+.nav-tab:hover {
+    background: #e9ecef;
+    color: #495057;
 }
 
 /* Page content */
-.page { 
-    display: none; 
+.page {
+    display: none;
 }
 
-.page.active { 
-    display: block; 
+.page.active {
+    display: block;
 }
 
 /* Main page specific */
-.big-button { 
-    font-size: 18px; 
-    padding: 15px; 
-    margin: 0; 
-    min-width: 140px; 
+.big-button {
+    font-size: 18px;
+    padding: 15px;
+    margin: 0;
+    min-width: 140px;
 }
 
-.button-group { 
-    display: flex; 
-    gap: 10px; 
-    margin: 10px 0; 
+.button-group {
+    display: flex;
+    gap: 10px;
+    margin: 10px 0;
 }
 
-.color-wheel { 
-    display: flex; 
-    gap: 10px; 
-    margin: 10px 0; 
-    flex-wrap: wrap; 
+.color-wheel {
+    display: flex;
+    gap: 10px;
+    margin: 10px 0;
+    flex-wrap: wrap;
 }
 
-.color-option { 
-    width: 40px; 
-    height: 40px; 
-    border-radius: 50%; 
-    border: 3px solid transparent; 
-    cursor: pointer; 
+.color-option {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    cursor: pointer;
 }
 
-.color-option.selected { 
-    border-color: #333; 
+.color-option.selected {
+    border-color: #333;
 }
 
 

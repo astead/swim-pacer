@@ -26,6 +26,7 @@ let currentSettings = {
     lightSize: 1.0,
     firstUnderwaterDistance: 20,
     underwaterDistance: 20,
+    surfaceDistance: 2,
     hideAfter: 3,
     underwaterColor: '#0000ff',
     surfaceColor: '#00ff00'
@@ -465,6 +466,14 @@ function updateUnderwaterDistance() {
     currentSettings.underwaterDistance = parseInt(distance);
     const unit = parseInt(distance) === 1 ? ' foot' : ' feet';
     document.getElementById('underwaterDistanceValue').textContent = distance + unit;
+    updateSettings();
+}
+
+function updateSurfaceDistance() {
+    const distance = document.getElementById('surfaceDistance').value;
+    currentSettings.surfaceDistance = parseFloat(distance);
+    const unit = parseFloat(distance) === 1 ? ' foot' : ' feet';
+    document.getElementById('surfaceDistanceValue').textContent = distance + unit;
     updateSettings();
 }
 
@@ -1431,7 +1440,7 @@ function updateSettings() {
     if (isStandaloneMode) {
         return;
     }
-    
+
     fetch('/setSpeed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1574,7 +1583,7 @@ function updateSettings() {
         fetch('/setUnderwaterSettings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `enabled=true&underwaterColor=${encodeURIComponent(currentSettings.underwaterColor)}&surfaceColor=${encodeURIComponent(currentSettings.surfaceColor)}`
+            body: `enabled=true&firstUnderwaterDistance=${currentSettings.firstUnderwaterDistance}&underwaterDistance=${currentSettings.underwaterDistance}&surfaceDistance=${currentSettings.surfaceDistance}&hideAfter=${currentSettings.hideAfter}&lightSize=${currentSettings.lightSize}&underwaterColor=${encodeURIComponent(currentSettings.underwaterColor)}&surfaceColor=${encodeURIComponent(currentSettings.surfaceColor)}`
         }).catch(error => {
             console.log('Underwater settings update - server not available');
         });
@@ -1593,6 +1602,12 @@ function updateAllUIFromSettings() {
     document.getElementById('paceDistance').value = currentSettings.paceDistance;
     document.getElementById('brightness').value = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
 
+    // Update underwater fields
+    document.getElementById('firstUnderwaterDistance').value = currentSettings.firstUnderwaterDistance;
+    document.getElementById('underwaterDistance').value = currentSettings.underwaterDistance;
+    document.getElementById('surfaceDistance').value = currentSettings.surfaceDistance;
+    document.getElementById('hideAfter').value = currentSettings.hideAfter;
+
     // Update radio button states
     if (currentSettings.colorMode === 'individual') {
         document.getElementById('individualColors').checked = true;
@@ -1609,6 +1624,10 @@ function updateAllUIFromSettings() {
     updateSpeed();
     updatePaceDistance();
     updateBrightness();
+    updateFirstUnderwaterDistance();
+    updateUnderwaterDistance();
+    updateSurfaceDistance();
+    updateHideAfter();
 
     // Update visual selections
     updateVisualSelection();
@@ -1702,7 +1721,7 @@ function testColors() {
         alert('Color test not available in standalone mode');
         return;
     }
-    
+
     fetch('/testColors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

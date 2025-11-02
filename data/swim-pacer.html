@@ -192,6 +192,14 @@
 
                 <div class="control">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="surfaceDistance">Surface distance:</label>
+                        <span id="surfaceDistanceValue">2 feet</span>
+                    </div>
+                    <input type="range" id="surfaceDistance" min="1" max="20" step="0.5" value="2" oninput="updateSurfaceDistance()">
+                </div>
+
+                <div class="control">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                         <label for="hideAfter">Hide after:</label>
                         <span id="hideAfterValue">3 seconds</span>
                     </div>

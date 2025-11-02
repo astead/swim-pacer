@@ -16,7 +16,7 @@
 
 ### GPIO Pin Assignments
 - **Lane 1:** GPIO 18
-- **Lane 2:** GPIO 19  
+- **Lane 2:** GPIO 19
 - **Lane 3:** GPIO 21
 - **Lane 4:** GPIO 2
 
@@ -39,7 +39,7 @@ data/
 
 ### Space Usage
 - **Total Used:** 14,809 bytes
-- **Total Available:** 1,441,792 bytes  
+- **Total Available:** 1,441,792 bytes
 - **Usage:** ~1% (excellent for future expansion)
 
 ---
@@ -76,7 +76,7 @@ When working correctly, Serial Monitor should show:
 ✅ SPIFFS mounted successfully
 ✅ SPIFFS Directory listing:
    - script.js (5905 bytes)
-   - style.css (3847 bytes)  
+   - style.css (3847 bytes)
    - swim-pacer.html (3996 bytes)
 ✅ SPIFFS total bytes: 1318001
 ✅ SPIFFS used bytes: 14809

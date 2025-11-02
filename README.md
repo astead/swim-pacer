@@ -4,9 +4,9 @@ A professional swim training pacer system built on ESP32 with a web-based interf
 
 ## ✅ VERIFIED WORKING CONFIGURATION
 
-**Status:** Fully functional as of November 2, 2025  
-**Board:** ESP32 Dev Module  
-**SPIFFS:** Optimized to 1% usage (14KB of 1.4MB)  
+**Status:** Fully functional as of November 2, 2025
+**Board:** ESP32 Dev Module
+**SPIFFS:** Optimized to 1% usage (14KB of 1.4MB)
 **Web Interface:** Complete 3-tab interface operational
 
 ### Quick Deploy
@@ -17,7 +17,7 @@ A professional swim training pacer system built on ESP32 with a web-based interf
 
 ### GPIO Pin Assignments
 - **Lane 1:** GPIO 18
-- **Lane 2:** GPIO 19  
+- **Lane 2:** GPIO 19
 - **Lane 3:** GPIO 21
 - **Lane 4:** GPIO 2
 
