@@ -25,7 +25,19 @@ if (Test-Path spiffs_deploy.bin) {
 }
 
 Write-Host ""
-Write-Host "Step 2: Uploading SPIFFS to 0x290000..." -ForegroundColor Yellow
+Write-Host "Step 2: Erase SPIFFS on the board..." -ForegroundColor Yellow
+& $esptoolPath --chip esp32 --port $Port --baud 921600 erase_region 0x290000 0x160000
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "SPIFFS erased successfully" -ForegroundColor Green
+} else {
+    Write-Host "SPIFFS erase failed" -ForegroundColor Red
+    exit 1
+}
+
+
+Write-Host ""
+Write-Host "Step 3: Uploading SPIFFS to 0x290000..." -ForegroundColor Yellow
 & $esptoolPath --chip esp32 --port $Port --baud 921600 write_flash 0x290000 spiffs_deploy.bin
 
 if ($LASTEXITCODE -eq 0) {
