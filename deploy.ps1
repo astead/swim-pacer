@@ -35,9 +35,50 @@ arduino-cli upload --fqbn $BoardFQBN --port $Port --build-path ./build -v -t swi
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Sketch uploaded" -ForegroundColor Green
+    $endTime = Get-Date
+    $uploadDuration = $endTime - $startTime - $compileDuration
+    Write-Host "Upload time: $($uploadDuration.Hours) hours, $($uploadDuration.Minutes) minutes, $($uploadDuration.Seconds) seconds" -ForegroundColor Green
 } else {
     Write-Host "Upload failed - use Arduino IDE instead" -ForegroundColor Yellow
     exit 1
+}
+
+Write-Host ""
+Write-Host "=== STEP 2: SPIFFS ===" -ForegroundColor Yellow
+
+$spiffsDataPath = "data"
+$spiffsFiles = Get-ChildItem -Path $spiffsDataPath -Recurse | Where-Object { -not $_.PSIsContainer }
+if ($spiffsFiles.Count -eq 0) {
+    Write-Host "No files found in data folder. Skipping SPIFFS deployment." -ForegroundColor Yellow
+    Write-Host ""
+} else {
+    Write-Host "Files found in data folder. Proceeding with SPIFFS deployment." -ForegroundColor Green
+    # Check last modified date of files in data folder to see if it is newer than last SPIFFS binary
+    $lastSpiffsBin = Get-ChildItem -Path ./build/spiffs_deploy.bin -ErrorAction SilentlyContinue
+    if ($lastSpiffsBin) {
+        $lastSpiffsDate = $lastSpiffsBin.LastWriteTime
+        $newerFiles = $spiffsFiles | Where-Object { $_.LastWriteTime -gt $lastSpiffsDate }
+        if ($newerFiles.Count -eq 0) {
+            Write-Host "No new files found. Skipping SPIFFS deployment." -ForegroundColor Yellow
+            Write-Host ""
+        } else {
+            Write-Host "New or modified files found. Proceeding with SPIFFS deployment." -ForegroundColor Green
+            # Call deploy-spiffs.ps1 to handle SPIFFS deployment
+            .\deploy-spiffs.ps1 -Port $Port
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "SPIFFS deployment failed." -ForegroundColor Red
+                exit 1
+            }
+        }
+    } else {
+        Write-Host "No existing SPIFFS binary found. Proceeding with SPIFFS deployment." -ForegroundColor Green
+        # Call deploy-spiffs.ps1 to handle SPIFFS deployment
+        .\deploy-spiffs.ps1 -Port $Port
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "SPIFFS deployment failed." -ForegroundColor Red
+            exit 1
+        }
+    }
 }
 
 Write-Host ""
@@ -45,7 +86,5 @@ Write-Host "=== DEPLOYMENT COMPLETE ===" -ForegroundColor Cyan
 # Calculate and display duration in human readable format
 $endTime = Get-Date
 $totalDuration = $endTime - $startTime
-$uploadDuration = $endTime - $startTime - $compileDuration
-Write-Host "Upload time: $($uploadDuration.Hours) hours, $($uploadDuration.Minutes) minutes, $($uploadDuration.Seconds) seconds" -ForegroundColor Green
 Write-Host "Total deployment time: $($totalDuration.Hours) hours, $($totalDuration.Minutes) minutes, $($totalDuration.Seconds) seconds" -ForegroundColor Green
 Write-Host ""
