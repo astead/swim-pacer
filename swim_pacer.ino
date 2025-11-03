@@ -102,7 +102,6 @@ struct Swimmer {
 
   // Underwater tracking
   bool underwaterActive;        // Is underwater light currently active
-  unsigned long underwaterStartTime;  // When underwater phase started
   bool inSurfacePhase;         // Has switched to surface color
   bool isFirstUnderwater;      // Is this the first underwater for this swimmer
   float distanceTraveled;      // Distance traveled in current underwater phase
@@ -638,7 +637,7 @@ void handleSetColorMode() {
     String colorMode = server.arg("colorMode");
     // Store color mode for future use
     preferences.putString("colorMode", colorMode);
-    Serial.println("Color mode updated to: " + colorMode);
+    //Serial.println("Color mode updated to: " + colorMode);
   }
   server.send(200, "text/plain", "Color mode updated");
 }
@@ -691,7 +690,7 @@ void handleSetSwimmerColors() {
             settings.colorBlue = b;
           }
 
-          Serial.println("Swimmer " + String(colorIndex + 1) + " color updated to: " + hexColor);
+          //Serial.println("Swimmer " + String(colorIndex + 1) + " color updated to: " + hexColor);
           colorIndex++;
         }
         startIndex = i + 1;
@@ -936,7 +935,6 @@ void initializeSwimmers() {
 
       // Initialize underwater tracking
       swimmers[lane][i].underwaterActive = false;
-      swimmers[lane][i].underwaterStartTime = 0;
       swimmers[lane][i].inSurfacePhase = false;
       swimmers[lane][i].isFirstUnderwater = true;  // First underwater will use first distance
       swimmers[lane][i].distanceTraveled = 0.0;
@@ -961,6 +959,33 @@ void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
     if (currentTime - lastMovement[laneIndex][swimmerIndex] >= delayMS) {
       lastMovement[laneIndex][swimmerIndex] = currentTime;
 
+      // Check for bouncing at ends
+      if (swimmers[laneIndex][swimmerIndex].position >= totalLEDs - 1) {
+        swimmers[laneIndex][swimmerIndex].direction = -1;
+        swimmers[laneIndex][swimmerIndex].position = totalLEDs - 1;
+
+        // Start underwater phase at wall
+        if (settings.underwatersEnabled) {
+          swimmers[laneIndex][swimmerIndex].underwaterActive = true;
+          swimmers[laneIndex][swimmerIndex].inSurfacePhase = false;
+          swimmers[laneIndex][swimmerIndex].distanceTraveled = 0.0;
+          swimmers[laneIndex][swimmerIndex].hideTimerStart = 0;
+          // Note: isFirstUnderwater stays true for the first underwater, then gets set to false
+        }
+      } else if (swimmers[laneIndex][swimmerIndex].position <= 0) {
+        swimmers[laneIndex][swimmerIndex].direction = 1;
+        swimmers[laneIndex][swimmerIndex].position = 0;
+
+        // Start underwater phase at wall (determine if first or subsequent)
+        if (settings.underwatersEnabled) {
+          swimmers[laneIndex][swimmerIndex].underwaterActive = true;
+          swimmers[laneIndex][swimmerIndex].inSurfacePhase = false;
+          swimmers[laneIndex][swimmerIndex].distanceTraveled = 0.0;
+          swimmers[laneIndex][swimmerIndex].hideTimerStart = 0;
+          swimmers[laneIndex][swimmerIndex].isFirstUnderwater = true;
+        }
+      }
+
       // Mark swimmer as started once they begin moving
       if (!swimmers[laneIndex][swimmerIndex].hasStarted) {
         swimmers[laneIndex][swimmerIndex].hasStarted = true;
@@ -971,6 +996,7 @@ void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
 
       // Track distance for underwater calculations
       if (swimmers[laneIndex][swimmerIndex].underwaterActive) {
+
         // Calculate distance moved (in feet)
         const float feetToMeters = 0.3048;
         float ledSpacing = 1.0 / settings.ledsPerMeter; // meters per LED
@@ -989,6 +1015,7 @@ void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
               swimmers[laneIndex][swimmerIndex].inSurfacePhase = false;
               swimmers[laneIndex][swimmerIndex].distanceTraveled = 0.0;
               swimmers[laneIndex][swimmerIndex].hideTimerStart = 0;
+              swimmers[laneIndex][swimmerIndex].isFirstUnderwater = false; // After first wall hit, subsequent underwaters use regular distance
             }
           }
         } else {
@@ -1002,35 +1029,6 @@ void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
           if (swimmers[laneIndex][swimmerIndex].distanceTraveled >= targetDistance) {
             swimmers[laneIndex][swimmerIndex].inSurfacePhase = true;
           }
-        }
-      }
-
-      // Check for bouncing at ends
-      if (swimmers[laneIndex][swimmerIndex].position >= totalLEDs - 1) {
-        swimmers[laneIndex][swimmerIndex].direction = -1;
-        swimmers[laneIndex][swimmerIndex].position = totalLEDs - 1;
-
-        // Start underwater phase at wall
-        if (settings.underwatersEnabled) {
-          swimmers[laneIndex][swimmerIndex].underwaterActive = true;
-          swimmers[laneIndex][swimmerIndex].underwaterStartTime = currentTime;
-          swimmers[laneIndex][swimmerIndex].inSurfacePhase = false;
-          swimmers[laneIndex][swimmerIndex].distanceTraveled = 0.0;
-          swimmers[laneIndex][swimmerIndex].hideTimerStart = 0;
-          // Note: isFirstUnderwater stays true for the first underwater, then gets set to false
-        }
-      } else if (swimmers[laneIndex][swimmerIndex].position <= 0) {
-        swimmers[laneIndex][swimmerIndex].direction = 1;
-        swimmers[laneIndex][swimmerIndex].position = 0;
-
-        // Start underwater phase at wall (determine if first or subsequent)
-        if (settings.underwatersEnabled) {
-          swimmers[laneIndex][swimmerIndex].underwaterActive = true;
-          swimmers[laneIndex][swimmerIndex].underwaterStartTime = currentTime;
-          swimmers[laneIndex][swimmerIndex].inSurfacePhase = false;
-          swimmers[laneIndex][swimmerIndex].distanceTraveled = 0.0;
-          swimmers[laneIndex][swimmerIndex].hideTimerStart = 0;
-          swimmers[laneIndex][swimmerIndex].isFirstUnderwater = false; // After first wall hit, subsequent underwaters use regular distance
         }
       }
     }

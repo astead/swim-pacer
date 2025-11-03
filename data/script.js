@@ -960,7 +960,7 @@ function createSwimSet() {
         };
 
         newSet.push(newSwimmer);
-        console.log(`Created swimmer ${i + 1} for ${currentSettings.laneNames[currentSettings.currentLane]} with color: ${swimmerColor}`);
+        //console.log(`Created swimmer ${i + 1} for ${currentSettings.laneNames[currentSettings.currentLane]} with color: ${swimmerColor}`);
     }
 
     // Store the set for current lane
