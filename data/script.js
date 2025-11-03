@@ -469,14 +469,6 @@ function updateUnderwaterDistance() {
     updateSettings();
 }
 
-function updateSurfaceDistance() {
-    const distance = document.getElementById('surfaceDistance').value;
-    currentSettings.surfaceDistance = parseFloat(distance);
-    const unit = parseFloat(distance) === 1 ? ' foot' : ' feet';
-    document.getElementById('surfaceDistanceValue').textContent = distance + unit;
-    updateSettings();
-}
-
 function updateHideAfter() {
     const hideAfter = document.getElementById('hideAfter').value;
     currentSettings.hideAfter = parseInt(hideAfter);
@@ -1605,7 +1597,6 @@ function updateAllUIFromSettings() {
     // Update underwater fields
     document.getElementById('firstUnderwaterDistance').value = currentSettings.firstUnderwaterDistance;
     document.getElementById('underwaterDistance').value = currentSettings.underwaterDistance;
-    document.getElementById('surfaceDistance').value = currentSettings.surfaceDistance;
     document.getElementById('hideAfter').value = currentSettings.hideAfter;
 
     // Update radio button states
@@ -1626,7 +1617,6 @@ function updateAllUIFromSettings() {
     updateBrightness();
     updateFirstUnderwaterDistance();
     updateUnderwaterDistance();
-    updateSurfaceDistance();
     updateHideAfter();
 
     // Update visual selections

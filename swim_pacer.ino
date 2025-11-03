@@ -106,7 +106,6 @@ struct Swimmer {
   bool inSurfacePhase;         // Has switched to surface color
   bool isFirstUnderwater;      // Is this the first underwater for this swimmer
   float distanceTraveled;      // Distance traveled in current underwater phase
-  float surfaceDistanceTraveled; // Distance traveled in surface phase
   unsigned long hideTimerStart;   // When hide timer started (after surface distance completed)
 };
 
@@ -717,9 +716,6 @@ void handleSetUnderwaterSettings() {
       if (server.hasArg("underwaterDistance")) {
         settings.underwaterDistanceFeet = server.arg("underwaterDistance").toFloat();
       }
-      if (server.hasArg("surfaceDistance")) {
-        settings.surfaceDistanceFeet = server.arg("surfaceDistance").toFloat();
-      }
       if (server.hasArg("hideAfter")) {
         settings.hideAfterSeconds = server.arg("hideAfter").toFloat();
       }
@@ -944,7 +940,6 @@ void initializeSwimmers() {
       swimmers[lane][i].inSurfacePhase = false;
       swimmers[lane][i].isFirstUnderwater = true;  // First underwater will use first distance
       swimmers[lane][i].distanceTraveled = 0.0;
-      swimmers[lane][i].surfaceDistanceTraveled = 0.0;
       swimmers[lane][i].hideTimerStart = 0;
 
       // Use web interface color for first swimmer, predefined colors for others
@@ -982,13 +977,19 @@ void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
         float distanceMovedFeet = ledSpacing / feetToMeters; // convert to feet
 
         if (swimmers[laneIndex][swimmerIndex].inSurfacePhase) {
-          // In surface phase - track surface distance
-          swimmers[laneIndex][swimmerIndex].surfaceDistanceTraveled += distanceMovedFeet;
-
           // Check if surface distance is complete to start hide timer
-          if (swimmers[laneIndex][swimmerIndex].hideTimerStart == 0 &&
-              swimmers[laneIndex][swimmerIndex].surfaceDistanceTraveled >= settings.surfaceDistanceFeet) {
+          if (swimmers[laneIndex][swimmerIndex].hideTimerStart == 0) {
             swimmers[laneIndex][swimmerIndex].hideTimerStart = currentTime;
+          } else {
+            // Check if hide timer has elapsed to turn off underwater light
+            float hideAfterSeconds = settings.hideAfterSeconds;
+            if ((currentTime - swimmers[laneIndex][swimmerIndex].hideTimerStart) >= (unsigned long)(hideAfterSeconds * 1000)) {
+              // Turn off underwater light
+              swimmers[laneIndex][swimmerIndex].underwaterActive = false;
+              swimmers[laneIndex][swimmerIndex].inSurfacePhase = false;
+              swimmers[laneIndex][swimmerIndex].distanceTraveled = 0.0;
+              swimmers[laneIndex][swimmerIndex].hideTimerStart = 0;
+            }
           }
         } else {
           // In underwater phase - track underwater distance
@@ -1000,7 +1001,6 @@ void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
 
           if (swimmers[laneIndex][swimmerIndex].distanceTraveled >= targetDistance) {
             swimmers[laneIndex][swimmerIndex].inSurfacePhase = true;
-            swimmers[laneIndex][swimmerIndex].surfaceDistanceTraveled = 0.0;
           }
         }
       }
@@ -1016,7 +1016,6 @@ void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
           swimmers[laneIndex][swimmerIndex].underwaterStartTime = currentTime;
           swimmers[laneIndex][swimmerIndex].inSurfacePhase = false;
           swimmers[laneIndex][swimmerIndex].distanceTraveled = 0.0;
-          swimmers[laneIndex][swimmerIndex].surfaceDistanceTraveled = 0.0;
           swimmers[laneIndex][swimmerIndex].hideTimerStart = 0;
           // Note: isFirstUnderwater stays true for the first underwater, then gets set to false
         }
@@ -1030,7 +1029,6 @@ void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
           swimmers[laneIndex][swimmerIndex].underwaterStartTime = currentTime;
           swimmers[laneIndex][swimmerIndex].inSurfacePhase = false;
           swimmers[laneIndex][swimmerIndex].distanceTraveled = 0.0;
-          swimmers[laneIndex][swimmerIndex].surfaceDistanceTraveled = 0.0;
           swimmers[laneIndex][swimmerIndex].hideTimerStart = 0;
           swimmers[laneIndex][swimmerIndex].isFirstUnderwater = false; // After first wall hit, subsequent underwaters use regular distance
         }
