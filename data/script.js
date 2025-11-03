@@ -630,7 +630,15 @@ function selectColor(color) {
         // Updating coach config same color setting
         currentSettings.swimmerColor = color;
         document.getElementById('colorIndicator').style.backgroundColor = color;
-        updateSettings();
+
+        // Send the same color for all swimmers
+        fetch('/setSwimmerColor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `color=${encodeURIComponent(currentSettings.swimmerColor)}`
+        }).catch(error => {
+            console.log('Swimmer color update - server not available');
+        });
     }
 
     currentColorContext = null; // Reset context
