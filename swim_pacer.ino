@@ -664,8 +664,13 @@ void handleSetSwimmerColor() {
     settings.colorGreen = g;
     settings.colorBlue = b;
 
+    // Update all first swimmers' colors across all lanes (for "same color" mode)
+    CRGB newColor = CRGB(r, g, b);
+    for (int lane = 0; lane < 4; lane++) {
+      swimmers[lane][0].color = newColor;
+    }
+
     saveSettings();
-    initializeSwimmers(); // Apply new color
   }
   server.send(200, "text/plain", "Swimmer color updated");
 }
@@ -687,10 +692,11 @@ void handleSetSwimmerColors() {
           uint8_t r, g, b;
           hexToRGB(hexColor, r, g, b);
 
-          // Update swimmer color for current lane
+          // Update swimmer color for all lanes (just the color, not position/timing)
+          CRGB newColor = CRGB(r, g, b);
           for (int lane = 0; lane < 4; lane++) {
             if (colorIndex < 6) {
-              swimmers[lane][colorIndex].color = CRGB(r, g, b);
+              swimmers[lane][colorIndex].color = newColor;
             }
           }
 
