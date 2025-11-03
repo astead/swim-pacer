@@ -644,7 +644,17 @@ function updateSwimmerColor() {
     // Update the color indicator
     document.getElementById('colorIndicator').style.backgroundColor = swimmerColor;
 
-    updateSettings();
+    // Send the color to the server (without resetting the swim set)
+    // Skip server communication in standalone mode
+    if (!isStandaloneMode) {
+        fetch('/setSwimmerColor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `color=${encodeURIComponent(swimmerColor)}`
+        }).catch(error => {
+            console.log('Swimmer color update - server not available');
+        });
+    }
 }
 
 // Pacer status tracking variables - now lane-specific
@@ -1569,7 +1579,7 @@ function updateSettings() {
         // Send individual swimmer colors
         const currentSet = getCurrentSwimmerSet();
         if (currentSet && currentSet.length > 0) {
-            const swimmerColors = currentSet.map(swimmer => swimmer.color || '#ff0000').join(',');
+            const swimmerColors = currentSet.map(swimmer => swimmer.color || '#0000ff').join(',');
             fetch('/setSwimmerColors', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

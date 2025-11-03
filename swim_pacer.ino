@@ -59,9 +59,9 @@ struct Settings {
   bool delayIndicatorsEnabled = true;        // Whether to show delay countdown indicators
   int numSwimmers = 3;                       // Number of swimmers (light pulses)
   int numRounds = 10;                        // Number of rounds/sets to complete
-  uint8_t colorRed = 255;                    // RGB color values - default to red
+  uint8_t colorRed = 0;                      // RGB color values - default to blue
   uint8_t colorGreen = 0;
-  uint8_t colorBlue = 0;
+  uint8_t colorBlue = 255;
   uint8_t brightness = 196;                  // Overall brightness (0-255)
   bool isRunning = false;                    // Whether the effect is active (default: stopped)
   bool laneRunning[4] = {false, false, false, false}; // Per-lane running states
@@ -628,15 +628,20 @@ void handleSetColorMode() {
 
     // Update settings based on color mode
     settings.sameColorMode = (colorMode == "same");
-
-    // Store color mode string for future use
-    preferences.putString("colorMode", colorMode);
     saveSettings();
 
-    // Update swimmer colors without resetting their positions/timing
-    updateSwimmerColors();
-
-    //Serial.println("Color mode updated to: " + colorMode);
+    // Update ALL swimmer colors based on new mode (without resetting position/timing)
+    for (int lane = 0; lane < 4; lane++) {
+      for (int i = 0; i < 6; i++) {
+        if (settings.sameColorMode) {
+          // Same mode: all swimmers get the default color
+          swimmers[lane][i].color = CRGB(settings.colorRed, settings.colorGreen, settings.colorBlue);
+        } else {
+          // Individual mode: each swimmer gets their predefined color
+          swimmers[lane][i].color = swimmerColors[i];
+        }
+      }
+    }
   }
   server.send(200, "text/plain", "Color mode updated");
 }
@@ -647,18 +652,22 @@ void handleSetSwimmerColor() {
     uint8_t r, g, b;
     hexToRGB(hexColor, r, g, b);
 
-    // Update default color settings for "same color" mode
+    // Update default color settings
     settings.colorRed = r;
     settings.colorGreen = g;
     settings.colorBlue = b;
-
-    // Update all first swimmers' colors across all lanes (for "same color" mode)
-    CRGB newColor = CRGB(r, g, b);
-    for (int lane = 0; lane < 4; lane++) {
-      swimmers[lane][0].color = newColor;
-    }
-
     saveSettings();
+
+    // If in "same color" mode, update ALL swimmers to use this color
+    if (settings.sameColorMode) {
+      CRGB newColor = CRGB(r, g, b);
+      for (int lane = 0; lane < 4; lane++) {
+        for (int i = 0; i < 6; i++) {
+          swimmers[lane][i].color = newColor;
+        }
+      }
+    }
+    // If in "individual" mode, don't update swimmers - they keep their individual colors
   }
   server.send(200, "text/plain", "Swimmer color updated");
 }
@@ -680,7 +689,7 @@ void handleSetSwimmerColors() {
           uint8_t r, g, b;
           hexToRGB(hexColor, r, g, b);
 
-          // Update swimmer color for all lanes (just the color, not position/timing)
+          // Update this specific swimmer's color for all lanes (just the color, not position/timing)
           CRGB newColor = CRGB(r, g, b);
           for (int lane = 0; lane < 4; lane++) {
             if (colorIndex < 6) {
@@ -688,21 +697,12 @@ void handleSetSwimmerColors() {
             }
           }
 
-          // If this is the first swimmer, also update default settings
-          if (colorIndex == 0) {
-            settings.colorRed = r;
-            settings.colorGreen = g;
-            settings.colorBlue = b;
-          }
-
-          //Serial.println("Swimmer " + String(colorIndex + 1) + " color updated to: " + hexColor);
           colorIndex++;
         }
         startIndex = i + 1;
       }
     }
-
-    saveSettings();
+    // Note: This does NOT update default settings - it's for individual customization only
   }
   server.send(200, "text/plain", "Individual swimmer colors updated");
 }
@@ -776,9 +776,9 @@ void loadSettings() {
   settings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
   settings.numSwimmers = preferences.getInt("numSwimmers", 3);
   settings.numRounds = preferences.getInt("numRounds", 10);
-  settings.colorRed = preferences.getUChar("colorRed", 255);    // Default to red
+  settings.colorRed = preferences.getUChar("colorRed", 0);      // Default to blue
   settings.colorGreen = preferences.getUChar("colorGreen", 0);
-  settings.colorBlue = preferences.getUChar("colorBlue", 0);
+  settings.colorBlue = preferences.getUChar("colorBlue", 255);
   settings.brightness = preferences.getUChar("brightness", 100);
   settings.isRunning = preferences.getBool("isRunning", false);  // Default: stopped
   settings.sameColorMode = preferences.getBool("sameColorMode", false); // Default: individual colors
