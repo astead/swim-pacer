@@ -119,10 +119,19 @@ function updateFromPace() {
     const paceInput = document.getElementById('pacePer50').value;
     const pace = parseTimeInput(paceInput);
     const paceDistance = currentSettings.paceDistance;
-    // Convert pace to speed (feet per second) based on selected distance
-    const distanceFeet = paceDistance * 3; // yards to feet
-    const speed = distanceFeet / pace;
-    currentSettings.speed = speed;
+
+    // Determine units based on pool length setting
+    const units = currentSettings.poolLength.includes('m') ? 'meters' : 'yards';
+
+    // Let's always set pace to speed (meters per second)
+    if (units === 'yards') {
+        const distanceFeet = paceDistance * 3; // yards to feet
+        const speed = distanceFeet / pace;
+        currentSettings.speed = speed * 0.3048; // Convert to meters per second
+    } else {
+        const speed = paceDistance / pace;
+        currentSettings.speed = speed;
+    }
 }
 
 function updatePaceDistance() {
