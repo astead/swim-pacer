@@ -289,6 +289,7 @@ void setupWebServer() {
   server.on("/setBrightness", HTTP_POST, handleSetBrightness);
   server.on("/setPulseWidth", HTTP_POST, handleSetPulseWidth);
   server.on("/setStripLength", HTTP_POST, handleSetStripLength);
+  server.on("/setPoolLength", HTTP_POST, handleSetPoolLength);
   server.on("/setLedsPerMeter", HTTP_POST, handleSetLedsPerMeter);
   server.on("/setNumLanes", HTTP_POST, handleSetNumLanes);
   server.on("/setCurrentLane", HTTP_POST, handleSetCurrentLane);
@@ -502,6 +503,16 @@ void handleSetStripLength() {
     setupLEDs();  // Reinitialize LED array with new length
   }
   server.send(200, "text/plain", "Strip length updated");
+}
+
+void handleSetPoolLength() {
+  if (server.hasArg("poolLength")) {
+    float poolLength = server.arg("poolLength").toFloat();
+    settings.poolLengthMeters = poolLength;
+    saveSettings();
+    needsRecalculation = true;
+  }
+  server.send(200, "text/plain", "Pool length updated");
 }
 
 void handleSetLedsPerMeter() {
