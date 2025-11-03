@@ -503,7 +503,17 @@ function updateColorMode() {
     const colorMode = document.querySelector('input[name="colorMode"]:checked').value;
     currentSettings.colorMode = colorMode;
     updateVisualSelection();
-    updateSettings();
+
+    // Only send color mode change, don't call updateSettings() which would reset swimmers
+    if (!isStandaloneMode) {
+        fetch('/setColorMode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `colorMode=${colorMode}`
+        }).catch(error => {
+            console.log('Color mode update - server not available');
+        });
+    }
 }
 
 function selectIndividualColors() {
