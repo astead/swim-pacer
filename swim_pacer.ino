@@ -252,28 +252,24 @@ void setupWebServer() {
 
   // Serve CSS file
   server.on("/style.css", []() {
-    Serial.println("CSS request received - serving /style.css");
     File file = SPIFFS.open("/style.css", "r");
     if (!file) {
       Serial.println("ERROR: Could not open /style.css from SPIFFS");
       server.send(404, "text/plain", "CSS file not found");
       return;
     }
-    Serial.println("Successfully opened /style.css, streaming to client");
     server.streamFile(file, "text/css");
     file.close();
   });
 
   // Serve JavaScript file
   server.on("/script.js", []() {
-    Serial.println("JavaScript request received - serving /script.js");
     File file = SPIFFS.open("/script.js", "r");
     if (!file) {
       Serial.println("ERROR: Could not open /script.js from SPIFFS");
       server.send(404, "text/plain", "JavaScript file not found");
       return;
     }
-    Serial.println("Successfully opened /script.js, streaming to client");
     server.streamFile(file, "application/javascript");
     file.close();
   });
@@ -331,41 +327,9 @@ void handleRoot() {
 
   // Enhanced SPIFFS debugging
   if (SPIFFS.begin()) {
-    Serial.println("=== SPIFFS DEBUG INFO ===");
-    Serial.printf("SPIFFS total bytes: %u\n", SPIFFS.totalBytes());
-    Serial.printf("SPIFFS used bytes: %u\n", SPIFFS.usedBytes());
-
-    // List all files with full details
-    File root = SPIFFS.open("/");
-    if (root) {
-      File file = root.openNextFile();
-      int count = 0;
-      while (file) {
-        count++;
-        Serial.printf("File %d: '%s' - %u bytes\n", count, file.name(), file.size());
-
-        // Try to read first few bytes
-        if (file.size() > 0) {
-          file.seek(0);
-          char buffer[50];
-          int bytesRead = file.readBytes(buffer, 49);
-          buffer[bytesRead] = '\0';
-          Serial.printf("  First %d bytes: %s\n", bytesRead, buffer);
-        }
-
-        file = root.openNextFile();
-      }
-      root.close();
-      Serial.printf("Total files found: %d\n", count);
-    }
-    Serial.println("=== END SPIFFS DEBUG ===");
-
     // Try to open the main file
     File file = SPIFFS.open("/swim-pacer.html", "r");
     if (file && file.size() > 0) {
-      Serial.print("SUCCESS: Serving from SPIFFS - file size: ");
-      Serial.print(file.size());
-      Serial.println(" bytes");
       server.streamFile(file, "text/html");
       file.close();
       return;
