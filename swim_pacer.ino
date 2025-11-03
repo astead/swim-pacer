@@ -273,9 +273,6 @@ void setupWebServer() {
     file.close();
   });
 
-  // Handle settings updates
-  server.on("/update", HTTP_POST, handleUpdate);
-
   // Handle getting current settings (for dynamic updates)
   server.on("/settings", HTTP_GET, handleGetSettings);
   server.on("/currentLane", HTTP_GET, handleGetCurrentLane);
@@ -348,25 +345,6 @@ void handleRoot() {
   html += "</body></html>";
 
   server.send(200, "text/html", html);
-}
-
-void handleUpdate() {
-  // Update settings from web form
-  if (server.hasArg("ledsPerMeter")) settings.ledsPerMeter = server.arg("ledsPerMeter").toInt();
-  if (server.hasArg("pulseWidthFeet")) settings.pulseWidthFeet = server.arg("pulseWidthFeet").toFloat();
-  if (server.hasArg("speedFeetPerSecond")) settings.speedFeetPerSecond = server.arg("speedFeetPerSecond").toFloat();
-  if (server.hasArg("colorRed")) settings.colorRed = server.arg("colorRed").toInt();
-  if (server.hasArg("colorGreen")) settings.colorGreen = server.arg("colorGreen").toInt();
-  if (server.hasArg("colorBlue")) settings.colorBlue = server.arg("colorBlue").toInt();
-  if (server.hasArg("brightness")) {
-    settings.brightness = server.arg("brightness").toInt();
-    FastLED.setBrightness(settings.brightness);
-  }
-
-  saveSettings();
-  needsRecalculation = true;
-
-  server.send(200, "text/plain", "Settings updated");
 }
 
 void handleGetSettings() {
@@ -647,13 +625,17 @@ CRGB createGRBColor(uint8_t r, uint8_t g, uint8_t b) {
 void handleSetColorMode() {
   if (server.hasArg("colorMode")) {
     String colorMode = server.arg("colorMode");
-    
+
     // Update settings based on color mode
     settings.sameColorMode = (colorMode == "same");
-    
+
     // Store color mode string for future use
     preferences.putString("colorMode", colorMode);
     saveSettings();
+
+    // Update swimmer colors without resetting their positions/timing
+    updateSwimmerColors();
+
     //Serial.println("Color mode updated to: " + colorMode);
   }
   server.send(200, "text/plain", "Color mode updated");
@@ -965,7 +947,17 @@ void initializeSwimmers() {
       swimmers[lane][i].distanceTraveled = 0.0;
       swimmers[lane][i].hideTimerStart = 0;
 
-      // Use web interface color for first swimmer, predefined colors for others
+      // Set colors based on mode
+      updateSwimmerColors();
+    }
+  }
+}
+
+void updateSwimmerColors() {
+  // Update swimmer colors without resetting position/timing
+  for (int lane = 0; lane < 4; lane++) {
+    for (int i = 0; i < 6; i++) {
+      // Use web interface color for all swimmers in same color mode, predefined colors for individual mode
       if (settings.sameColorMode) {
         swimmers[lane][i].color = CRGB(settings.colorRed, settings.colorGreen, settings.colorBlue);
       } else {
