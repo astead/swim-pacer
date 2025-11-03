@@ -101,6 +101,15 @@ struct Swimmer {
   CRGB color;
   bool hasStarted;  // Track if this swimmer has had their first start
 
+  // Round and rest tracking
+  int currentRound;              // Current round number (1-based)
+  int currentLength;             // Current length within the round (1-based)
+  int lengthsPerRound;           // Number of lengths needed to complete one round
+  bool isResting;                // Is swimmer currently resting at wall
+  unsigned long restStartTime;   // When rest period started
+  float totalDistanceMeters;     // Total distance traveled in current length (meters)
+  int lengthDirection;           // Direction for current length: 1 = going away, -1 = returning
+
   // Underwater tracking
   bool underwaterActive;        // Is underwater light currently active
   bool inSurfacePhase;         // Has switched to surface color
@@ -933,12 +942,26 @@ void drawDelayIndicators(unsigned long currentTime, int laneIndex) {
 }
 
 void initializeSwimmers() {
+  // Calculate how many pool lengths equal one round
+  // paceDistanceYards is in yards, poolLengthMeters is in meters
+  float poolLengthYards = settings.poolLengthMeters * 1.09361; // Convert meters to yards
+  int lengthsPerRound = (int)ceil((float)settings.paceDistanceYards / poolLengthYards);
+
   for (int lane = 0; lane < 4; lane++) {
     for (int i = 0; i < 6; i++) {
       swimmers[lane][i].position = 0;
       swimmers[lane][i].direction = 1;
       swimmers[lane][i].hasStarted = false;  // Initialize as not started
       swimmers[lane][i].lastUpdate = millis() + (settings.initialDelaySeconds * 1000) + (i * settings.swimmerIntervalSeconds * 1000); // Initial delay + staggered start times
+
+      // Initialize round and rest tracking
+      swimmers[lane][i].currentRound = 1;
+      swimmers[lane][i].currentLength = 1;
+      swimmers[lane][i].lengthsPerRound = lengthsPerRound;
+      swimmers[lane][i].isResting = false;
+      swimmers[lane][i].restStartTime = 0;
+      swimmers[lane][i].totalDistanceMeters = 0.0;
+      swimmers[lane][i].lengthDirection = 1;  // Start going away from start wall
 
       // Initialize underwater tracking
       swimmers[lane][i].underwaterActive = false;
@@ -970,16 +993,53 @@ void updateSwimmerColors() {
 void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
   // Check if swimmer should be active (start time has passed)
   if (currentTime >= swimmers[laneIndex][swimmerIndex].lastUpdate) {
+
+    // Check if swimmer is resting
+    if (swimmers[laneIndex][swimmerIndex].isResting) {
+      unsigned long restElapsed = currentTime - swimmers[laneIndex][swimmerIndex].restStartTime;
+      if (restElapsed >= (unsigned long)(settings.restTimeSeconds * 1000)) {
+        // Rest period complete, resume swimming
+        swimmers[laneIndex][swimmerIndex].isResting = false;
+        swimmers[laneIndex][swimmerIndex].restStartTime = 0;
+      } else {
+        // Still resting, don't move
+        return;
+      }
+    }
+
     // For movement timing, check if enough time has passed since last movement
     static unsigned long lastMovement[4][6] = {0}; // Track last movement time separately
 
     if (currentTime - lastMovement[laneIndex][swimmerIndex] >= delayMS) {
       lastMovement[laneIndex][swimmerIndex] = currentTime;
 
-      // Check for bouncing at ends
-      if (swimmers[laneIndex][swimmerIndex].position >= totalLEDs - 1) {
-        swimmers[laneIndex][swimmerIndex].direction = -1;
-        swimmers[laneIndex][swimmerIndex].position = totalLEDs - 1;
+      // Calculate distance per LED movement
+      float metersPerLED = 1.0 / settings.ledsPerMeter;
+
+      // Track actual distance traveled for pool length detection
+      swimmers[laneIndex][swimmerIndex].totalDistanceMeters += metersPerLED;
+
+      // Check if swimmer has completed one pool length based on actual distance
+      if (swimmers[laneIndex][swimmerIndex].totalDistanceMeters >= settings.poolLengthMeters) {
+        // Completed one pool length - turn around
+        swimmers[laneIndex][swimmerIndex].totalDistanceMeters = 0.0;  // Reset distance for next length
+        swimmers[laneIndex][swimmerIndex].lengthDirection *= -1;  // Change direction
+
+        // Increment length counter
+        swimmers[laneIndex][swimmerIndex].currentLength++;
+
+        // Check if round is complete (all lengths done)
+        if (swimmers[laneIndex][swimmerIndex].currentLength > swimmers[laneIndex][swimmerIndex].lengthsPerRound) {
+          // Round complete - reset length counter and check if we should rest
+          swimmers[laneIndex][swimmerIndex].currentLength = 1;
+
+          // Only rest if we haven't completed all rounds yet
+          if (swimmers[laneIndex][swimmerIndex].currentRound < settings.numRounds) {
+            swimmers[laneIndex][swimmerIndex].currentRound++;
+            swimmers[laneIndex][swimmerIndex].isResting = true;
+            swimmers[laneIndex][swimmerIndex].restStartTime = currentTime;
+          }
+        }
 
         // Start underwater phase at wall
         if (settings.underwatersEnabled) {
@@ -987,21 +1047,16 @@ void updateSwimmer(int swimmerIndex, unsigned long currentTime, int laneIndex) {
           swimmers[laneIndex][swimmerIndex].inSurfacePhase = false;
           swimmers[laneIndex][swimmerIndex].distanceTraveled = 0.0;
           swimmers[laneIndex][swimmerIndex].hideTimerStart = 0;
-          // Note: isFirstUnderwater stays true for the first underwater, then gets set to false
-        }
-      } else if (swimmers[laneIndex][swimmerIndex].position <= 0) {
-        swimmers[laneIndex][swimmerIndex].direction = 1;
-        swimmers[laneIndex][swimmerIndex].position = 0;
-
-        // Start underwater phase at wall (determine if first or subsequent)
-        if (settings.underwatersEnabled) {
-          swimmers[laneIndex][swimmerIndex].underwaterActive = true;
-          swimmers[laneIndex][swimmerIndex].inSurfacePhase = false;
-          swimmers[laneIndex][swimmerIndex].distanceTraveled = 0.0;
-          swimmers[laneIndex][swimmerIndex].hideTimerStart = 0;
-          swimmers[laneIndex][swimmerIndex].isFirstUnderwater = true;
         }
       }
+
+      // Error handling for beyond LED array bounds
+      // Not sure what happens with a negative index - clamp to 0
+      if (swimmers[laneIndex][swimmerIndex].position <= 0) {
+        swimmers[laneIndex][swimmerIndex].position = 0;
+      }
+      // We don't need to worry about exceeding totalLEDs, since
+      // those will just get ignored.
 
       // Mark swimmer as started once they begin moving
       if (!swimmers[laneIndex][swimmerIndex].hasStarted) {
