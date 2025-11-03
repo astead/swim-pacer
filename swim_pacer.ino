@@ -65,6 +65,7 @@ struct Settings {
   uint8_t brightness = 196;                  // Overall brightness (0-255)
   bool isRunning = false;                    // Whether the effect is active (default: stopped)
   bool laneRunning[4] = {false, false, false, false}; // Per-lane running states
+  bool sameColorMode = false;                // Whether all swimmers use the same color (true) or individual colors (false)
   bool underwatersEnabled = false;           // Whether underwater indicators are enabled
   float firstUnderwaterDistanceFeet = 5.0;   // First underwater distance in feet
   float underwaterDistanceFeet = 3.0;        // Subsequent underwater distance in feet
@@ -646,8 +647,13 @@ CRGB createGRBColor(uint8_t r, uint8_t g, uint8_t b) {
 void handleSetColorMode() {
   if (server.hasArg("colorMode")) {
     String colorMode = server.arg("colorMode");
-    // Store color mode for future use
+    
+    // Update settings based on color mode
+    settings.sameColorMode = (colorMode == "same");
+    
+    // Store color mode string for future use
     preferences.putString("colorMode", colorMode);
+    saveSettings();
     //Serial.println("Color mode updated to: " + colorMode);
   }
   server.send(200, "text/plain", "Color mode updated");
@@ -772,6 +778,7 @@ void saveSettings() {
   preferences.putUChar("colorBlue", settings.colorBlue);
   preferences.putUChar("brightness", settings.brightness);
   preferences.putBool("isRunning", settings.isRunning);
+  preferences.putBool("sameColorMode", settings.sameColorMode);
   preferences.putBool("underwatersEnabled", settings.underwatersEnabled);
 }
 
@@ -792,6 +799,7 @@ void loadSettings() {
   settings.colorBlue = preferences.getUChar("colorBlue", 0);
   settings.brightness = preferences.getUChar("brightness", 100);
   settings.isRunning = preferences.getBool("isRunning", false);  // Default: stopped
+  settings.sameColorMode = preferences.getBool("sameColorMode", false); // Default: individual colors
   settings.underwatersEnabled = preferences.getBool("underwatersEnabled", false);
 }
 
@@ -958,7 +966,7 @@ void initializeSwimmers() {
       swimmers[lane][i].hideTimerStart = 0;
 
       // Use web interface color for first swimmer, predefined colors for others
-      if (i == 0) {
+      if (settings.sameColorMode) {
         swimmers[lane][i].color = CRGB(settings.colorRed, settings.colorGreen, settings.colorBlue);
       } else {
         swimmers[lane][i].color = swimmerColors[i];
