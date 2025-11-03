@@ -5,10 +5,6 @@ param(
 # Get current time so we can show deployment duration
 $startTime = Get-Date
 
-# Tool paths
-$esptoolPath = "C:\Users\$env:USERNAME\AppData\Local\Arduino15\packages\esp32\tools\esptool_py\5.1.0\esptool.exe"
-$mkspiffsPath = "C:\Users\$env:USERNAME\AppData\Local\Arduino15\packages\esp32\tools\mkspiffs\0.2.3\mkspiffs.exe"
-
 # CRITICAL: Board configuration must match Arduino IDE$env:PATH += ";C:\Program Files\Arduino CLI"
 $BoardFQBN = "esp32:esp32:esp32"  # ESP32 Dev Module
 
