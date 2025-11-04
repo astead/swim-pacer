@@ -1142,7 +1142,9 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       Serial.print(", Lap ");
       Serial.print(swimmer->currentLap);
       Serial.print("/");
-      Serial.println(swimmer->lapsPerRound);
+      Serial.print(swimmer->lapsPerRound);
+      Serial.print(", Distance: 0.0");
+      Serial.println(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
       swimmer->debugSwimmingPrinted = true;
       swimmer->debugRestingPrinted = false; // Reset for next rest phase
     }
@@ -1167,13 +1169,14 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     swimmer->totalDistance += distanceTraveled;
 
     // Check if swimmer has completed one pool length based on actual distance
-    float currentLap = floor(swimmer->totalDistance / globalConfigSettings.poolLength);
+    // Calculate 1-based lap number (lap 1 = 0 to poolLength, lap 2 = poolLength to 2*poolLength, etc.)
+    int calculatedLap = (int)floor(swimmer->totalDistance / globalConfigSettings.poolLength) + 1;
 
     // distance for current length/lap
-    float distanceForCurrentLength = swimmer->totalDistance - (currentLap * globalConfigSettings.poolLength);
+    float distanceForCurrentLength = swimmer->totalDistance - ((calculatedLap - 1) * globalConfigSettings.poolLength);
 
-    if (currentLap > swimmer->currentLap) {
-      float overshoot = swimmer->totalDistance - ((currentLap + 1) * globalConfigSettings.poolLength);
+    if (calculatedLap > swimmer->currentLap) {
+      float overshoot = swimmer->totalDistance - (calculatedLap * globalConfigSettings.poolLength);
 
       if (DEBUG_ENABLED) {
         Serial.println("  *** WALL TURN ***");
@@ -1269,7 +1272,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     // Track distance for underwater calculations
     if (swimmer->underwaterActive) {
       // Which underwater values to use based on if it's the first underwater or not
-      float targetUnderwaterDistanceFeet = (currentLap == 1) ?
+      float targetUnderwaterDistanceFeet = (swimmer->currentLap == 1) ?
         globalConfigSettings.firstUnderwaterDistanceFeet :
         globalConfigSettings.underwaterDistanceFeet;
 
@@ -1338,6 +1341,14 @@ void printPeriodicStatus() {
           Serial.print(s->currentLap);
           Serial.print("/");
           Serial.print(s->lapsPerRound);
+
+          // Calculate distance in current lap (1-based lap calculation)
+          int currentLapNum = (int)floor(s->totalDistance / globalConfigSettings.poolLength) + 1;
+          float distanceInCurrentLap = s->totalDistance - ((currentLapNum - 1) * globalConfigSettings.poolLength);
+
+          Serial.print(" Dist:");
+          Serial.print(distanceInCurrentLap, 1);
+          Serial.print(globalConfigSettings.poolUnitsYards ? "yd" : "m");
           Serial.print(" Pos:");
           Serial.print(s->position);
         }
