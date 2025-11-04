@@ -37,9 +37,10 @@
 // Lane 1: GPIO 18, Lane 2: GPIO 19, Lane 3: GPIO 21, Lane 4: GPIO 2
 const int LED_PINS[4] = {18, 19, 21, 2}; // GPIO pins for lanes 1-4
 
-int printed_debug_info = 0;
-int printed_debug_info_resting = 0;
-bool printed_init = false;
+// Debug control - set to true to enable detailed debug output
+const bool DEBUG_ENABLED = true;
+const unsigned long DEBUG_INTERVAL_MS = 2000; // Print periodic status every 2 seconds
+unsigned long lastDebugPrint = 0;
 
 // ========== WIFI CONFIGURATION ==========
 const char* ssid = "SwimPacer_Config";        // WiFi network name
@@ -50,7 +51,8 @@ IPAddress subnet(255, 255, 255, 0);         // Subnet mask
 
 // ========== DEFAULT SETTINGS ==========
 struct GlobalConfigSettings {
-  float poolLengthMeters = 22.86;            // Pool length in meters (25 yards)
+  float poolLength = 25.0;                   // Pool length (in poolUnits - yards or meters)
+  bool poolUnitsYards = true;                // true = yards, false = meters
   float stripLengthMeters = 23.0;            // LED strip length in meters (75 feet)
   int ledsPerMeter = 30;                     // LEDs per meter
   int numLanes = 1;                          // Number of LED strips/lanes connected
@@ -78,7 +80,7 @@ GlobalConfigSettings globalConfigSettings;
 struct SwimSetSettings {
   float speedFeetPerSecond = 5.56;           // Speed in feet per second
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
-  int swimSetDistanceYards = 50;             // Distance for pace calculation in yards
+  int swimSetDistance = 50;                  // Distance for pace calculation (in pool's native units)
   int initialDelaySeconds = 10;              // Initial delay before first swimmer starts
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
   int numRounds = 10;                        // Number of rounds/sets to complete
@@ -118,8 +120,12 @@ struct Swimmer {
   int lapsPerRound;           // Number of lengths needed to complete one round
   bool isResting;                // Is swimmer currently resting at wall
   unsigned long restStartTime;   // When rest period started
-  float totalDistanceMeters;     // Total distance traveled in current length (meters)
+  float totalDistance;           // Total distance traveled in current length (in pool's native units)
   int lapDirection;           // Direction for current length: 1 = going away, -1 = returning
+
+  // Debug tracking - to avoid repeated messages
+  bool debugRestingPrinted;      // Has the "resting" state been printed already
+  bool debugSwimmingPrinted;     // Has the "swimming" state been printed already
 
   // Underwater tracking
   bool underwaterActive;        // Is underwater light currently active
@@ -172,6 +178,7 @@ void loop() {
 
   if (globalConfigSettings.isRunning) {
     updateLEDEffect();
+    printPeriodicStatus(); // Print status update every few seconds
   } else {
     // If stopped, just clear the strip
     FastLED.clear();
@@ -400,7 +407,7 @@ void handleControl() {
     String action = server.arg("action");
     if (action == "toggle") {
       globalConfigSettings.isRunning = !globalConfigSettings.isRunning;
-      saveSettings();
+      saveGlobalConfigSettings();
     }
   }
 
@@ -421,7 +428,7 @@ void handleToggle() {
     }
   }
 
-  saveSettings();
+  saveGlobalConfigSettings();
 
   String status = globalConfigSettings.laneRunning[currentLane] ? "Lane Pacer Started" : "Lane Pacer Stopped";
   server.send(200, "text/plain", status);
@@ -432,7 +439,7 @@ void handleSetSpeed() {
     float speed = server.arg("speed").toFloat();
     // speed comes in meters per second
     swimSetSettings.speedFeetPerSecond = speed * 3.28084;
-    saveSettings();
+    saveSwimSetSettings();
     needsRecalculation = true;
   }
   server.send(200, "text/plain", "Speed updated");
@@ -470,7 +477,7 @@ void handleSetColor() {
       }
     }
 
-    saveSettings();
+    saveGlobalConfigSettings();
     // Reinitialize swimmers to apply the new color
     initializeSwimmers();
   }
@@ -482,7 +489,7 @@ void handleSetBrightness() {
     int brightness = server.arg("brightness").toInt();
     globalConfigSettings.brightness = brightness;
     FastLED.setBrightness(brightness);
-    saveSettings();
+    saveGlobalConfigSettings();
   }
   server.send(200, "text/plain", "Brightness updated");
 }
@@ -491,7 +498,7 @@ void handleSetPulseWidth() {
   if (server.hasArg("pulseWidth")) {
     float pulseWidth = server.arg("pulseWidth").toFloat();
     globalConfigSettings.pulseWidthFeet = pulseWidth;
-    saveSettings();
+    saveGlobalConfigSettings();
     needsRecalculation = true;
   }
   server.send(200, "text/plain", "Pulse width updated");
@@ -501,7 +508,7 @@ void handleSetStripLength() {
   if (server.hasArg("stripLength")) {
     float stripLength = server.arg("stripLength").toFloat();
     globalConfigSettings.stripLengthMeters = stripLength;
-    saveSettings();
+    saveGlobalConfigSettings();
     needsRecalculation = true;
     setupLEDs();  // Reinitialize LED array with new length
   }
@@ -510,10 +517,19 @@ void handleSetStripLength() {
 
 void handleSetPoolLength() {
   if (server.hasArg("poolLength")) {
-    float poolLength = server.arg("poolLength").toFloat();
-    globalConfigSettings.poolLengthMeters = poolLength;
-    saveSettings();
+    String poolLengthStr = server.arg("poolLength");
+
+    // Parse the pool length and units
+    // Format examples: "25", "50", "25m", "50m"
+    bool isMeters = poolLengthStr.endsWith("m");
+    float poolLength = poolLengthStr.toFloat(); // This will parse the number part
+
+    globalConfigSettings.poolLength = poolLength;
+    globalConfigSettings.poolUnitsYards = !isMeters; // true if yards, false if meters
+
+    saveGlobalConfigSettings();
     needsRecalculation = true;
+    initializeSwimmers(); // Reinitialize with new pool length
   }
   server.send(200, "text/plain", "Pool length updated");
 }
@@ -522,7 +538,7 @@ void handleSetLedsPerMeter() {
   if (server.hasArg("ledsPerMeter")) {
     int ledsPerMeter = server.arg("ledsPerMeter").toInt();
     globalConfigSettings.ledsPerMeter = ledsPerMeter;
-    saveSettings();
+    saveGlobalConfigSettings();
     needsRecalculation = true;
     setupLEDs();  // Reinitialize LED array with new density
   }
@@ -533,7 +549,7 @@ void handleSetNumLanes() {
   if (server.hasArg("numLanes")) {
     int numLanes = server.arg("numLanes").toInt();
     globalConfigSettings.numLanes = numLanes;
-    saveSettings();
+    saveGlobalConfigSettings();
     // Reinitialize LEDs when number of lanes changes
     setupLEDs();
   }
@@ -558,8 +574,7 @@ void handleSetRestTime() {
   if (server.hasArg("restTime")) {
     int restTime = server.arg("restTime").toInt();
     swimSetSettings.restTimeSeconds = restTime;
-    saveSettings();
-    needsRecalculation = true;
+    saveSwimSetSettings();
   }
   server.send(200, "text/plain", "Rest time updated");
 }
@@ -567,9 +582,8 @@ void handleSetRestTime() {
 void handleSetPaceDistance() {
   if (server.hasArg("paceDistance")) {
     int paceDistance = server.arg("paceDistance").toInt();
-    swimSetSettings.swimSetDistanceYards = paceDistance;
-    saveSettings();
-    needsRecalculation = true;
+    swimSetSettings.swimSetDistance = paceDistance;
+    saveSwimSetSettings();
   }
   server.send(200, "text/plain", "Pace distance updated");
 }
@@ -578,7 +592,7 @@ void handleSetInitialDelay() {
   if (server.hasArg("initialDelay")) {
     int initialDelay = server.arg("initialDelay").toInt();
     swimSetSettings.initialDelaySeconds = initialDelay;
-    saveSettings();
+    saveSwimSetSettings();
     initializeSwimmers(); // Update swimmer start times with new delay
   }
   server.send(200, "text/plain", "Initial delay updated");
@@ -588,7 +602,7 @@ void handleSetSwimmerInterval() {
   if (server.hasArg("swimmerInterval")) {
     int swimmerInterval = server.arg("swimmerInterval").toInt();
     swimSetSettings.swimmerIntervalSeconds = swimmerInterval;
-    saveSettings();
+    saveSwimSetSettings();
     initializeSwimmers(); // Update swimmer start times with new interval
   }
   server.send(200, "text/plain", "Swimmer interval updated");
@@ -598,7 +612,7 @@ void handleSetDelayIndicators() {
   if (server.hasArg("enabled")) {
     bool enabled = server.arg("enabled") == "true";
     globalConfigSettings.delayIndicatorsEnabled = enabled;
-    saveSettings();
+    saveGlobalConfigSettings();
   }
   server.send(200, "text/plain", "Delay indicators updated");
 }
@@ -607,7 +621,7 @@ void handleSetNumSwimmers() {
   if (server.hasArg("numSwimmers")) {
     int numSwimmers = server.arg("numSwimmers").toInt();
     globalConfigSettings.numSwimmers = numSwimmers;
-    saveSettings();
+    saveGlobalConfigSettings();
   }
   server.send(200, "text/plain", "Number of swimmers updated");
 }
@@ -616,7 +630,7 @@ void handleSetNumRounds() {
   if (server.hasArg("numRounds")) {
     int numRounds = server.arg("numRounds").toInt();
     swimSetSettings.numRounds = numRounds;
-    saveSettings();
+    saveSwimSetSettings();
   }
   server.send(200, "text/plain", "Number of rounds updated");
 }
@@ -652,7 +666,7 @@ void handleSetColorMode() {
 
     // Update globalConfigSettings based on color mode
     globalConfigSettings.sameColorMode = (colorMode == "same");
-    saveSettings();
+    saveGlobalConfigSettings();
 
     // Update ALL swimmer colors based on new mode (without resetting position/timing)
     for (int lane = 0; lane < 4; lane++) {
@@ -680,7 +694,7 @@ void handleSetSwimmerColor() {
     globalConfigSettings.colorRed = r;
     globalConfigSettings.colorGreen = g;
     globalConfigSettings.colorBlue = b;
-    saveSettings();
+    saveGlobalConfigSettings();
 
     // If in "same color" mode, update ALL swimmers to use this color
     if (globalConfigSettings.sameColorMode) {
@@ -762,23 +776,18 @@ void handleSetUnderwaterSettings() {
       }
     }
 
-    saveSettings();
+    saveGlobalConfigSettings();
   }
   server.send(200, "text/plain", "Underwater globalConfigSettings updated");
 }
 
-void saveSettings() {
-  preferences.putFloat("poolLengthM", globalConfigSettings.poolLengthMeters);
+void saveGlobalConfigSettings() {
+  preferences.putFloat("poolLength", globalConfigSettings.poolLength);
+  preferences.putBool("poolUnitsYards", globalConfigSettings.poolUnitsYards);
   preferences.putFloat("stripLengthM", globalConfigSettings.stripLengthMeters);
   preferences.putInt("ledsPerMeter", globalConfigSettings.ledsPerMeter);
   preferences.putFloat("pulseWidthFeet", globalConfigSettings.pulseWidthFeet);
-  preferences.putFloat("speedFPS", swimSetSettings.speedFeetPerSecond);
-  preferences.putInt("restTimeSeconds", swimSetSettings.restTimeSeconds);
-  preferences.putInt("swimSetDistanceYards", swimSetSettings.swimSetDistanceYards);
-  preferences.putInt("initialDelay", swimSetSettings.initialDelaySeconds);
-  preferences.putInt("swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
   preferences.putInt("numSwimmers", globalConfigSettings.numSwimmers);
-  preferences.putInt("numRounds", swimSetSettings.numRounds);
   preferences.putUChar("colorRed", globalConfigSettings.colorRed);
   preferences.putUChar("colorGreen", globalConfigSettings.colorGreen);
   preferences.putUChar("colorBlue", globalConfigSettings.colorBlue);
@@ -788,18 +797,27 @@ void saveSettings() {
   preferences.putBool("underwatersEnabled", globalConfigSettings.underwatersEnabled);
 }
 
-void loadSettings() {
-  globalConfigSettings.poolLengthMeters = preferences.getFloat("poolLengthM", 22.86);  // 25 yards
+void saveSwimSetSettings() {
+  preferences.putFloat("speedFPS", swimSetSettings.speedFeetPerSecond);
+  preferences.putInt("restTimeSeconds", swimSetSettings.restTimeSeconds);
+  preferences.putInt("swimSetDistance", swimSetSettings.swimSetDistance);
+  preferences.putInt("initialDelay", swimSetSettings.initialDelaySeconds);
+  preferences.putInt("swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
+  preferences.putInt("numRounds", swimSetSettings.numRounds);
+}
+
+void saveSettings() {
+  saveGlobalConfigSettings();
+  saveSwimSetSettings();
+}
+
+void loadGlobalConfigSettings() {
+  globalConfigSettings.poolLength = preferences.getFloat("poolLength", 25.0);  // 25 yards default
+  globalConfigSettings.poolUnitsYards = preferences.getBool("poolUnitsYards", true);  // Default to yards
   globalConfigSettings.stripLengthMeters = preferences.getFloat("stripLengthM", 23.0);
   globalConfigSettings.ledsPerMeter = preferences.getInt("ledsPerMeter", 30);
   globalConfigSettings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
-  swimSetSettings.speedFeetPerSecond = preferences.getFloat("speedFPS", 5.56);
-  swimSetSettings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
-  swimSetSettings.swimSetDistanceYards = preferences.getInt("swimSetDistanceYards", 50);
-  swimSetSettings.initialDelaySeconds = preferences.getInt("initialDelay", 10);
-  swimSetSettings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
   globalConfigSettings.numSwimmers = preferences.getInt("numSwimmers", 3);
-  swimSetSettings.numRounds = preferences.getInt("numRounds", 10);
   globalConfigSettings.colorRed = preferences.getUChar("colorRed", 0);      // Default to blue
   globalConfigSettings.colorGreen = preferences.getUChar("colorGreen", 0);
   globalConfigSettings.colorBlue = preferences.getUChar("colorBlue", 255);
@@ -807,6 +825,20 @@ void loadSettings() {
   globalConfigSettings.isRunning = preferences.getBool("isRunning", false);  // Default: stopped
   globalConfigSettings.sameColorMode = preferences.getBool("sameColorMode", false); // Default: individual colors
   globalConfigSettings.underwatersEnabled = preferences.getBool("underwatersEnabled", false);
+}
+
+void loadSwimSetSettings() {
+  swimSetSettings.speedFeetPerSecond = preferences.getFloat("speedFPS", 5.56);
+  swimSetSettings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
+  swimSetSettings.swimSetDistance = preferences.getInt("swimSetDistance", 50);  // Default in yards (matches pool default)
+  swimSetSettings.initialDelaySeconds = preferences.getInt("initialDelay", 10);
+  swimSetSettings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
+  swimSetSettings.numRounds = preferences.getInt("numRounds", 10);
+}
+
+void loadSettings() {
+  loadGlobalConfigSettings();
+  loadSwimSetSettings();
 }
 
 void recalculateValues() {
@@ -821,7 +853,8 @@ void recalculateValues() {
   pulseWidthLEDs = (int)(pulseWidthCM / ledSpacingCM);
 
   // Calculate pool to strip ratio for timing adjustments
-  poolToStripRatio = globalConfigSettings.poolLengthMeters / globalConfigSettings.stripLengthMeters;
+  float poolLengthInMeters = convertPoolToStripUnits(globalConfigSettings.poolLength);
+  poolToStripRatio = poolLengthInMeters / globalConfigSettings.stripLengthMeters;
 
   // Calculate delayMS based on swim pace and distance between LEDs
   // start with distance per LED in meters
@@ -843,6 +876,17 @@ void recalculateValues() {
   // Reinitialize swimmers when values change
   // TODO: it would be better to de-couple this
   //initializeSwimmers();
+}
+
+// Helper function to convert pool units (yards or meters) to LED strip units (meters)
+float convertPoolToStripUnits(float distanceInPoolUnits) {
+  if (globalConfigSettings.poolUnitsYards) {
+    // Convert yards to meters for LED strip
+    return distanceInPoolUnits * 0.9144;
+  } else {
+    // Already in meters
+    return distanceInPoolUnits;
+  }
 }
 
 void updateLEDEffect() {
@@ -954,9 +998,21 @@ void drawDelayIndicators(int laneIndex) {
 
 void initializeSwimmers() {
   // Calculate how many pool lengths equal one round
-  // swimSetDistanceYards is in yards, poolLengthMeters is in meters
-  float poolLengthYards = globalConfigSettings.poolLengthMeters * 1.09361; // Convert meters to yards
-  int lapsPerRound = (int)ceil((float)swimSetSettings.swimSetDistanceYards / poolLengthYards);
+  // Both swimSetDistance and poolLength are in the same units (pool's native units)
+  int lapsPerRound = (int)ceil((float)swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
+
+  if (DEBUG_ENABLED) {
+    Serial.println("\n========== INITIALIZING SWIMMERS ==========");
+    Serial.print("Pool length: ");
+    Serial.print(globalConfigSettings.poolLength);
+    Serial.println(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
+    Serial.print("Swim set distance: ");
+    Serial.print(swimSetSettings.swimSetDistance);
+    Serial.println(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
+    Serial.print("Calculated laps per round: ");
+    Serial.println(lapsPerRound);
+    Serial.println("===========================================\n");
+  }
 
   unsigned long currentTime = millis();
 
@@ -973,8 +1029,12 @@ void initializeSwimmers() {
       swimmers[lane][i].lapsPerRound = lapsPerRound;
       swimmers[lane][i].isResting = true;
       swimmers[lane][i].restStartTime = currentTime;
-      swimmers[lane][i].totalDistanceMeters = 0.0;
+      swimmers[lane][i].totalDistance = 0.0;
       swimmers[lane][i].lapDirection = 1;  // Start going away from start wall
+
+      // Initialize debug tracking
+      swimmers[lane][i].debugRestingPrinted = false;
+      swimmers[lane][i].debugSwimmingPrinted = false;
 
       // Initialize underwater tracking
       swimmers[lane][i].underwaterActive = false;
@@ -1010,143 +1070,118 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
   }
   Swimmer* swimmer = &swimmers[laneIndex][swimmerIndex];
   unsigned long currentTime = millis();
-  bool print_debug = false;
-  bool started_printing_debug = false;
-  if (printed_debug_info == 0) {
-    started_printing_debug = false;
-  }
 
   // Check if swimmer is resting
   if (swimmer->isResting) {
-    if (printed_debug_info_resting < 10) {
-      printed_debug_info_resting++;
-      print_debug = true;
-      Serial.println("------------------------------------------------");
-    }
-
     // How much time have they been resting
     unsigned long restElapsed = currentTime - swimmer->restStartTime;
 
-    // What is our target rest time.
-    // If this is the first round, it is:
-    // the init delay plus delay in between swimmers
-    unsigned long targetRestStopTime =
+    // What is our target rest duration (in milliseconds)?
+    unsigned long targetRestDuration =
       (swimmer->currentRound == 1) ?
-        // This is the first round, so we use the initial delay
-        swimmer->restStartTime +
+        // This is the first round, so we use the initial delay plus swimmer interval
         swimSetSettings.initialDelaySeconds * 1000 +
         ((swimmerIndex) * swimSetSettings.swimmerIntervalSeconds * 1000) :
         // This is not the first round, so we use the rest period
-        swimmer->restStartTime + swimSetSettings.restTimeSeconds * 1000;
+        swimSetSettings.restTimeSeconds * 1000;
 
-    if (restElapsed >= targetRestStopTime) {
-      if (print_debug) {
-        Serial.print("Swimmer ");
-        Serial.print(swimmerIndex);
-        Serial.println(" is resting, but should start swimming now.");
-        Serial.print("Rest elapsed time (ms): ");
-        Serial.println(restElapsed);
-        Serial.print("Target rest time (ms): ");
-        Serial.println(targetRestStopTime);
-      }
+    // Print debug info only once when entering rest state
+    if (DEBUG_ENABLED && !swimmer->debugRestingPrinted) {
+      Serial.println("================================================");
+      Serial.print("Lane ");
+      Serial.print(laneIndex);
+      Serial.print(", Swimmer ");
+      Serial.print(swimmerIndex);
+      Serial.print(" - Round ");
+      Serial.print(swimmer->currentRound);
+      Serial.println(" - RESTING at wall");
+      Serial.print("  Target rest duration: ");
+      Serial.print(targetRestDuration / 1000.0);
+      Serial.println(" seconds");
+      swimmer->debugRestingPrinted = true;
+      swimmer->debugSwimmingPrinted = false; // Reset for next swim phase
+    }
+
+    if (restElapsed >= targetRestDuration) {
       // Rest period complete, resume swimming
+      if (DEBUG_ENABLED) {
+        Serial.println("------------------------------------------------");
+        Serial.print("Lane ");
+        Serial.print(laneIndex);
+        Serial.print(", Swimmer ");
+        Serial.print(swimmerIndex);
+        Serial.println(" - REST COMPLETE, starting to swim");
+        Serial.print("  Rest duration: ");
+        Serial.print(restElapsed / 1000.0);
+        Serial.print(" sec (target: ");
+        Serial.print(targetRestDuration / 1000.0);
+        Serial.println(" sec)");
+      }
+
       swimmer->isResting = false;
       swimmer->restStartTime = 0;
-      // Set last updated time to when the rest ended
-      // We might want to instead set a swim start time
-      // just in case lastUpdate is used for other things.
-      // However we'd have to also track the last updated swim time
-      swimmer->lastUpdate = currentTime - (restElapsed - targetRestStopTime);
-      if (print_debug) {
-        Serial.print("setting lastUpdate time to: ");
-        Serial.println(swimmer->lastUpdate);
-        Serial.print("Time in sec that swimmer started swimming again: ");
-        Serial.println((restElapsed - targetRestStopTime) / 1000.0);
-      }
+      // Set last updated time to account for any overshoot
+      swimmer->lastUpdate = currentTime - (restElapsed - targetRestDuration);
     } else {
-      if (print_debug && !started_printing_debug) {
-        Serial.print("Swimmer ");
-        Serial.print(swimmerIndex);
-        Serial.println(" is resting, and is still resting.");
-        Serial.print("Rest elapsed time (ms): ");
-        Serial.println(restElapsed);
-        Serial.print("Configured rest time (ms): ");
-        Serial.println((unsigned long)(swimSetSettings.restTimeSeconds * 1000));
-      }
       // Still resting, don't move
       return;
     }
-  } else {
-    if (printed_debug_info < 10) {
-      printed_debug_info++;
-      print_debug = true;
-      Serial.println("------------------------------------------------");
-    }
-    if (print_debug) {
-      Serial.print("Swimmer ");
-      Serial.print(swimmerIndex);
-      Serial.println(" is swimming.");
-    }
   }
 
+  // Swimmer is actively swimming
   if (currentTime - swimmer->lastUpdate >= delayMS) {
-    if (print_debug) {
-      Serial.print("Updating swimmer ");
-      Serial.println(swimmerIndex);
-      Serial.print("Current Time: ");
-      Serial.println(currentTime);
-      Serial.print("Last Update: ");
-      Serial.println(swimmer->lastUpdate);
-      Serial.print("Delta Time (s): ");
-      Serial.println((currentTime - swimmer->lastUpdate) / 1000.0);
+    // Print debug info only once when entering swimming state
+    if (DEBUG_ENABLED && !swimmer->debugSwimmingPrinted) {
+      Serial.println("------------------------------------------------");
+      Serial.print("Lane ");
+      Serial.print(laneIndex);
+      Serial.print(", Swimmer ");
+      Serial.print(swimmerIndex);
+      Serial.print(" - SWIMMING - Round ");
+      Serial.print(swimmer->currentRound);
+      Serial.print(", Lap ");
+      Serial.print(swimmer->currentLap);
+      Serial.print("/");
+      Serial.println(swimmer->lapsPerRound);
+      swimmer->debugSwimmingPrinted = true;
+      swimmer->debugRestingPrinted = false; // Reset for next rest phase
     }
+
     // Calculate time elapsed since last position update
     float deltaSeconds = (currentTime - swimmer->lastUpdate) / 1000.0;
     swimmer->lastUpdate = currentTime;
 
-    // Calculate distance traveled this frame
-    float metersPerSecond = swimSetSettings.speedFeetPerSecond * 0.3048;
-    float distanceTraveled = metersPerSecond * deltaSeconds;
+    // Calculate distance traveled this frame in pool's native units
+    // Convert speed from feet/sec to pool's native units
+    float speedInPoolUnits;
+    if (globalConfigSettings.poolUnitsYards) {
+      // Convert feet/sec to yards/sec
+      speedInPoolUnits = swimSetSettings.speedFeetPerSecond / 3.0;
+    } else {
+      // Convert feet/sec to meters/sec
+      speedInPoolUnits = swimSetSettings.speedFeetPerSecond * 0.3048;
+    }
+    float distanceTraveled = speedInPoolUnits * deltaSeconds;
 
     // Update total distance
-    swimmer->totalDistanceMeters += distanceTraveled;
+    swimmer->totalDistance += distanceTraveled;
 
     // Check if swimmer has completed one pool length based on actual distance
-    // We do this by checking if we overshot the pool length on this lap,
-    // carry over the extra distance in the opposite direction
-    // We do this by dividing by pool length and seeing if we exceed
-    // the current length count.
-    float currentLap = floor(swimmer->totalDistanceMeters / globalConfigSettings.poolLengthMeters);
+    float currentLap = floor(swimmer->totalDistance / globalConfigSettings.poolLength);
 
     // distance for current length/lap
-    float distanceForCurrentLength = swimmer->totalDistanceMeters - (currentLap - 1) * globalConfigSettings.poolLengthMeters;
-
-    if (print_debug) {
-      Serial.print("Distance Traveled this update (m): ");
-      Serial.println(distanceTraveled);
-      Serial.print("Total Distance Meters: ");
-      Serial.println(swimmer->totalDistanceMeters);
-      Serial.print("Swimmer was on Lap: ");
-      Serial.println(swimmer->currentLap);
-      Serial.print("Current Lap based on distance: ");
-      Serial.println(currentLap);
-      Serial.print("Distance for Current Lap (m): ");
-      Serial.println(distanceForCurrentLength);
-      Serial.print("Lengths Per Round: ");
-      Serial.println(swimmer->lapsPerRound);
-      Serial.print("Length Direction: ");
-      Serial.println(swimmer->lapDirection);
-      Serial.print("Swimmer Direction: ");
-      Serial.println(swimmer->lapDirection);
-    }
+    float distanceForCurrentLength = swimmer->totalDistance - (currentLap * globalConfigSettings.poolLength);
 
     if (currentLap > swimmer->currentLap) {
-      float overshootMeters = swimmer->totalDistanceMeters - (currentLap * globalConfigSettings.poolLengthMeters);
+      float overshoot = swimmer->totalDistance - ((currentLap + 1) * globalConfigSettings.poolLength);
 
-      if (print_debug) {
-        Serial.println("Swimmer already made a turn at the wall.");
-        Serial.print("Overshoot Meters: ");
-        Serial.println(overshootMeters);
+      if (DEBUG_ENABLED) {
+        Serial.println("  *** WALL TURN ***");
+        Serial.print("    Completed lap ");
+        Serial.print(swimmer->currentLap);
+        Serial.print(", overshoot: ");
+        Serial.print(overshoot);
+        Serial.println(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
       }
 
       // Change direction
@@ -1155,55 +1190,42 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       // Increment length counter
       swimmer->currentLap++;
 
-      if (print_debug) {
-        Serial.print("Swimmer new lap Direction: ");
-        Serial.println(swimmer->lapDirection);
-        Serial.print("Swimmer new Current lap: ");
-        Serial.println(swimmer->currentLap);
-      }
-
       // Check if round is complete (all lengths done)
       if (swimmer->currentLap > swimmer->lapsPerRound) {
-        if (print_debug) {
-          Serial.println("Swimmer completed a round.");
+        if (DEBUG_ENABLED) {
+          Serial.println("  *** ROUND COMPLETE ***");
+          Serial.print("    Completed round ");
+          Serial.println(swimmer->currentRound);
         }
 
         // Round complete - reset length counter and check if we should rest
         swimmer->currentLap = 1;
-        swimmer->totalDistanceMeters = 0.0;
+        swimmer->totalDistance = 0.0;
 
         // Only rest if we haven't completed all rounds yet
         if (swimmer->currentRound < swimSetSettings.numRounds) {
           swimmer->currentRound++;
           swimmer->isResting = true;
           swimmer->restStartTime = currentTime;
+        } else {
+          if (DEBUG_ENABLED) {
+            Serial.println("  *** ALL ROUNDS COMPLETE ***");
+            Serial.print("    Swimmer ");
+            Serial.print(swimmerIndex);
+            Serial.println(" finished!");
+          }
         }
 
         // Place LED at the wall based on direction
         if (swimmer->lapDirection == 1) {
-          // Going away from start wall
           swimmer->position = 0;
         } else {
-          // Going toward start wall
-          // LED position is based on LEDs per pool length, not actual LEDs
-          float ledPosition = floor((globalConfigSettings.poolLengthMeters * globalConfigSettings.ledsPerMeter)-1);
+          // Convert pool length to LED position
+          float poolLengthInStripUnits = convertPoolToStripUnits(globalConfigSettings.poolLength);
+          float ledPosition = floor((poolLengthInStripUnits * globalConfigSettings.ledsPerMeter)-1);
           swimmer->position = ledPosition;
         }
-        if (print_debug) {
-          Serial.println("Swimmer starting new round.");
-          Serial.print("Swimmer new lap Direction: ");
-          Serial.println(swimmer->lapDirection);
-          Serial.print("Swimmer new Current lap: ");
-          Serial.println(swimmer->currentLap);
-          Serial.println("Swimmer set to resting: true");
-          Serial.print("Swimmer new position at wall: ");
-          Serial.println(swimmer->position);
-        }
       } else {
-        if (print_debug) {
-          Serial.println("Swimmer continuing to next length.");
-        }
-
         // Still in the same round
         // Start underwater phase at wall
         if (globalConfigSettings.underwatersEnabled) {
@@ -1214,125 +1236,116 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         }
 
         // Place LED position where we overshot the wall
-        // Based on overshot distance and LEDs per meter
-        int overshootLEDs = (int)(overshootMeters * globalConfigSettings.ledsPerMeter);
+        float overshootInStripUnits = convertPoolToStripUnits(overshoot);
+        int overshootLEDs = (int)(overshootInStripUnits * globalConfigSettings.ledsPerMeter);
         if (swimmer->lapDirection == 1) {
-          // Going away from start wall
           swimmer->position = overshootLEDs;
         } else {
-          // Going toward start wall
-          // LED position is based on LEDs per pool length, minus overshoot
-          float ledPosition = floor((globalConfigSettings.poolLengthMeters * globalConfigSettings.ledsPerMeter)-1) - overshootLEDs;
+          float poolLengthInStripUnits = convertPoolToStripUnits(globalConfigSettings.poolLength);
+          float ledPosition = floor((poolLengthInStripUnits * globalConfigSettings.ledsPerMeter)-1) - overshootLEDs;
           swimmer->position = ledPosition;
-        }
-
-        if (print_debug) {
-          Serial.print("Swimmer new lap Direction: ");
-          Serial.println(swimmer->lapDirection);
-          Serial.print("Swimmer new Current lap: ");
-          Serial.println(swimmer->currentLap);
-          Serial.print("Swimmer new position after overshoot: ");
-          Serial.println(swimmer->position);
         }
       }
     } else {
       // Normal movement within the pool length
-      int distanceLEDs = (int)(distanceTraveled * globalConfigSettings.ledsPerMeter);
+      // Convert distance to LED strip units for position calculation
+      float distanceInStripUnits = convertPoolToStripUnits(distanceTraveled);
+      int distanceLEDs = (int)(distanceInStripUnits * globalConfigSettings.ledsPerMeter);
 
       // Update position based on direction
       swimmer->position += distanceLEDs * swimmer->lapDirection;
-
-      if (print_debug) {
-        Serial.print("Swimmer moving normally in the same direction.");
-        Serial.print("Distance LEDs this update: ");
-        Serial.println(distanceLEDs);
-        Serial.print("New Swimmer Position: ");
-        Serial.println(swimmer->position);
-      }
     }
 
     // Mark swimmer as started once they begin moving
     if (!swimmer->hasStarted) {
       swimmer->hasStarted = true;
-      if (print_debug) {
-        Serial.print("Swimmer ");
+      if (DEBUG_ENABLED) {
+        Serial.print("  Swimmer ");
         Serial.print(swimmerIndex);
-        Serial.println(" has started swimming.");
+        Serial.println(" has STARTED");
       }
     }
 
     // Track distance for underwater calculations
     if (swimmer->underwaterActive) {
-      Serial.print("Tracking underwater distance for swimmer ");
-      Serial.println(swimmerIndex);
-
       // Which underwater values to use based on if it's the first underwater or not
-      float targetUnderwaterDistance = (currentLap == 1) ? globalConfigSettings.firstUnderwaterDistanceFeet : globalConfigSettings.underwaterDistanceFeet;
+      float targetUnderwaterDistanceFeet = (currentLap == 1) ?
+        globalConfigSettings.firstUnderwaterDistanceFeet :
+        globalConfigSettings.underwaterDistanceFeet;
+
+      // Convert feet to pool's native units
+      float targetUnderwaterDistance;
+      if (globalConfigSettings.poolUnitsYards) {
+        targetUnderwaterDistance = targetUnderwaterDistanceFeet / 3.0; // feet to yards
+      } else {
+        targetUnderwaterDistance = targetUnderwaterDistanceFeet * 0.3048; // feet to meters
+      }
 
       // Are we within underwater distance from a wall?
       if (distanceForCurrentLength < targetUnderwaterDistance) {
-        // We are within the underwater distance
         swimmer->underwaterActive = true;
         swimmer->inSurfacePhase = false;
         swimmer->hideTimerStart = 0; // Reset hide timer
-
-        if (print_debug) {
-          Serial.print("Swimmer ");
-          Serial.print(swimmerIndex);
-          Serial.println(" is within underwater distance.");
-          Serial.print("Distance for Current Lap (m): ");
-          Serial.println(distanceForCurrentLength);
-          Serial.print("Target Underwater Distance (ft): ");
-          Serial.println(targetUnderwaterDistance);
-        }
       } else {
-        if (print_debug) {
-          Serial.print("Swimmer ");
-          Serial.print(swimmerIndex);
-          Serial.println(" has exceeded underwater distance.");
-          Serial.print("Distance for Current Lap (m): ");
-          Serial.println(distanceForCurrentLength);
-          Serial.print("Target Underwater Distance (ft): ");
-          Serial.println(targetUnderwaterDistance);
-        }
         // Is this the first time we're exceeding the underwater distance?
         if (!swimmer->inSurfacePhase) {
           swimmer->inSurfacePhase = true;
           swimmer->hideTimerStart = currentTime;
-          if (print_debug) {
-            Serial.print("Swimmer ");
-            Serial.print(swimmerIndex);
-            Serial.println(" entering surface phase, starting hide timer.");
-          }
         } else {
-          if (print_debug) {
-            Serial.print("Swimmer ");
-            Serial.print(swimmerIndex);
-            Serial.println(" already in surface phase, checking hide timer.");
-          }
           // Check if hide timer has elapsed to turn off underwater light
           float hideAfterSeconds = globalConfigSettings.hideAfterSeconds;
           if ((currentTime - swimmer->hideTimerStart) >= (unsigned long)(hideAfterSeconds * 1000)) {
-            // Turn off underwater light
             swimmer->underwaterActive = false;
             swimmer->inSurfacePhase = false;
             swimmer->hideTimerStart = 0;
-            if (print_debug) {
-              Serial.print("Swimmer ");
-              Serial.print(swimmerIndex);
-              Serial.println(" hide timer elapsed, turning off surface light.");
-            }
-           } else {
-            if (print_debug) {
-              Serial.print("Swimmer ");
-              Serial.print(swimmerIndex);
-              Serial.println(" hide timer not yet elapsed, surface light remains on.");
-            }
-           }
+          }
         }
       }
     }
   }
+}
+
+// Print periodic status for all swimmers (called from loop)
+void printPeriodicStatus() {
+  if (!DEBUG_ENABLED) return;
+
+  unsigned long currentTime = millis();
+  if (currentTime - lastDebugPrint < DEBUG_INTERVAL_MS) return;
+
+  lastDebugPrint = currentTime;
+
+  Serial.println("\n========== STATUS UPDATE ==========");
+  for (int lane = 0; lane < globalConfigSettings.numLanes; lane++) {
+    if (globalConfigSettings.laneRunning[lane]) {
+      Serial.print("Lane ");
+      Serial.print(lane);
+      Serial.println(":");
+      for (int i = 0; i < globalConfigSettings.numSwimmers; i++) {
+        Swimmer* s = &swimmers[lane][i];
+        Serial.print("  Swimmer ");
+        Serial.print(i);
+        Serial.print(": ");
+        if (s->isResting) {
+          Serial.print("RESTING (");
+          Serial.print((currentTime - s->restStartTime) / 1000.0);
+          Serial.print("s)");
+        } else {
+          Serial.print("Swimming - R");
+          Serial.print(s->currentRound);
+          Serial.print("/");
+          Serial.print(swimSetSettings.numRounds);
+          Serial.print(" L");
+          Serial.print(s->currentLap);
+          Serial.print("/");
+          Serial.print(s->lapsPerRound);
+          Serial.print(" Pos:");
+          Serial.print(s->position);
+        }
+        Serial.println();
+      }
+    }
+  }
+  Serial.println("===================================\n");
 }
 
 void drawSwimmerPulse(int swimmerIndex, int laneIndex) {

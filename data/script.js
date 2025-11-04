@@ -164,9 +164,6 @@ function updateCalculations() {
 
     // Update distance units when pool length changes
     updatePaceDistance();
-
-    // Apply changes immediately
-    updateSettings();
 }
 
 function updateNumLanes() {
@@ -1492,6 +1489,14 @@ function updateSettings() {
         body: `stripLength=${currentSettings.stripLength}`
     }).catch(error => {
         console.log('Strip length update - server not available');
+    });
+
+    fetch('/setPoolLength', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `poolLength=${currentSettings.poolLength}`
+    }).catch(error => {
+        console.log('Pool length update - server not available');
     });
 
     fetch('/setLedsPerMeter', {
