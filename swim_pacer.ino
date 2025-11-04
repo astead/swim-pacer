@@ -924,74 +924,105 @@ void updateLEDEffect() {
 void drawDelayIndicators(int laneIndex) {
   unsigned long currentTime = millis();
 
-  // Convert feet to meters for calculations
-  const float feetToMeters = 0.3048;
-  const float maxDelayDistanceFeet = 5.0;
-  const float maxDelayDistanceMeters = maxDelayDistanceFeet * feetToMeters;
+  // Max delay distance in pool's native units
+  // Convert 5 feet to pool's native units
+  float maxDelayDistanceFeet = 5.0;
+  float maxDelayDistance;
+  if (globalConfigSettings.poolUnitsYards) {
+    maxDelayDistance = maxDelayDistanceFeet / 3.0; // feet to yards
+  } else {
+    maxDelayDistance = maxDelayDistanceFeet * 0.3048; // feet to meters
+  }
 
-  // Calculate LEDs for maximum delay distance (5 feet)
-  int maxDelayLEDs = (int)(maxDelayDistanceMeters * globalConfigSettings.ledsPerMeter);
+  // Convert to strip units and calculate LEDs
+  float maxDelayDistanceInStripUnits = convertPoolToStripUnits(maxDelayDistance);
+  int maxDelayLEDs = (int)(maxDelayDistanceInStripUnits * globalConfigSettings.ledsPerMeter);
 
-  // Check each swimmer (including swimmer 0 for initial delay)
+  // Find the next swimmer who is resting and has the shortest time until they start
+  int nextSwimmerIndex = -1;
+  float shortestRemainingDelay = 999999.0;
+
   for (int i = 0; i < globalConfigSettings.numSwimmers; i++) {
-    unsigned long swimmerStartTime = swimmers[laneIndex][i].lastUpdate;
-    unsigned long delayStartTime;
-    int delaySeconds;
+    Swimmer* swimmer = &swimmers[laneIndex][i];
 
-    if (i == 0) {
-      // First swimmer uses initial delay
-      delaySeconds = swimSetSettings.initialDelaySeconds;
-      delayStartTime = swimmerStartTime - (swimSetSettings.initialDelaySeconds * 1000);
-    } else {
-      // Subsequent swimmers use swimmer interval delay
-      delaySeconds = swimSetSettings.swimmerIntervalSeconds;
-      delayStartTime = swimmerStartTime - (swimSetSettings.swimmerIntervalSeconds * 1000);
+    // Only consider swimmers who are resting
+    if (!swimmer->isResting) {
+      continue;
     }
 
-    // Check if we're in the delay period for this swimmer
-    if (currentTime >= delayStartTime && currentTime < swimmerStartTime) {
-      // Calculate remaining delay time in seconds
+    // Calculate when this swimmer should start
+    unsigned long targetRestDuration;
+    if (swimmer->currentRound == 1) {
+      // First round: use initial delay + swimmer interval
+      targetRestDuration =
+        swimSetSettings.initialDelaySeconds * 1000 +
+        (i * swimSetSettings.swimmerIntervalSeconds * 1000);
+    } else {
+      // Subsequent rounds: use rest time + swimmer interval
+      targetRestDuration =
+        swimSetSettings.restTimeSeconds * 1000 +
+        (i * swimSetSettings.swimmerIntervalSeconds * 1000);
+    }
+
+    unsigned long swimmerStartTime = swimmer->restStartTime + targetRestDuration;
+
+    // Check if this swimmer hasn't started yet
+    if (currentTime < swimmerStartTime) {
       float remainingDelaySeconds = (float)(swimmerStartTime - currentTime) / 1000.0;
 
-      // Determine the delay distance based on remaining time
-      float delayDistanceFeet = 0;
-
-      if (delaySeconds <= 5) {
-        // For delays 5 seconds or less, show full countdown at 1 foot per second
-        delayDistanceFeet = remainingDelaySeconds;
-      } else {
-        // For delays more than 5 seconds, only show indicator during final 5 seconds
-        if (remainingDelaySeconds <= 5.0) {
-          delayDistanceFeet = remainingDelaySeconds;
-        }
-        // If more than 5 seconds remain, delayDistanceFeet stays 0 (no indicator)
+      // Track the swimmer with the shortest remaining delay
+      if (remainingDelaySeconds < shortestRemainingDelay) {
+        shortestRemainingDelay = remainingDelaySeconds;
+        nextSwimmerIndex = i;
       }
+    }
+  }
 
-      // Only proceed if we should show an indicator
-      if (delayDistanceFeet > 0) {
-        // Ensure minimum of 0 feet
-        if (delayDistanceFeet < 0) delayDistanceFeet = 0;
+  // Only draw delay indicator for the next swimmer (if any)
+  if (nextSwimmerIndex >= 0 && shortestRemainingDelay <= 5.0) {
+    Swimmer* nextSwimmer = &swimmers[laneIndex][nextSwimmerIndex];
 
-      // Convert to LEDs
-      float delayDistanceMeters = delayDistanceFeet * feetToMeters;
-      int delayLEDs = (int)(delayDistanceMeters * globalConfigSettings.ledsPerMeter);
+    // Delay distance at 1 foot per second
+    float delayDistanceFeet = shortestRemainingDelay;
 
-      // Limit to available space and ensure minimum visibility
-      if (delayLEDs > maxDelayLEDs) delayLEDs = maxDelayLEDs;
-      if (delayLEDs < 1 && delayDistanceFeet > 0) delayLEDs = 1; // Ensure at least 1 LED if there's time left
+    // Convert feet to pool's native units
+    float delayDistanceInPoolUnits;
+    if (globalConfigSettings.poolUnitsYards) {
+      delayDistanceInPoolUnits = delayDistanceFeet / 3.0; // feet to yards
+    } else {
+      delayDistanceInPoolUnits = delayDistanceFeet * 0.3048; // feet to meters
+    }
 
-      // Check for conflicts with active swimmers and draw delay indicator
-      CRGB swimmerColor = swimmers[laneIndex][i].color;
-      for (int ledIndex = 0; ledIndex < delayLEDs && ledIndex < totalLEDs; ledIndex++) {
-        // Only draw delay indicator if LED is currently black (swimmers get priority)
-        if (leds[laneIndex][ledIndex] == CRGB::Black) {
-          // Create a dimmed version of the swimmer's color for the delay indicator
-          CRGB delayColor = swimmerColor;
-          delayColor.nscale8(128); // 50% brightness for delay indicator
-          leds[laneIndex][ledIndex] = delayColor;
-        }
+    // Convert to strip units and then to LEDs
+    float delayDistanceInStripUnits = convertPoolToStripUnits(delayDistanceInPoolUnits);
+    int delayLEDs = (int)(delayDistanceInStripUnits * globalConfigSettings.ledsPerMeter);
+
+    // Ensure at least 1 LED if there's time remaining
+    if (delayLEDs < 1) delayLEDs = 1;
+    if (delayLEDs > maxDelayLEDs) delayLEDs = maxDelayLEDs;
+
+    if (DEBUG_ENABLED && (int)(shortestRemainingDelay * 10) % 10 == 0) {
+      Serial.print("Lane ");
+      Serial.print(laneIndex);
+      Serial.print(", Swimmer ");
+      Serial.print(nextSwimmerIndex);
+      Serial.print(" - Delay indicator: ");
+      Serial.print(shortestRemainingDelay);
+      Serial.print(" sec, ");
+      Serial.print(delayLEDs);
+      Serial.println(" LEDs");
+    }
+
+    // Draw delay indicator
+    CRGB swimmerColor = nextSwimmer->color;
+    for (int ledIndex = 0; ledIndex < delayLEDs && ledIndex < totalLEDs; ledIndex++) {
+      // Only draw delay indicator if LED is currently black (swimmers get priority)
+      if (leds[laneIndex][ledIndex] == CRGB::Black) {
+        // Create a dimmed version of the swimmer's color for the delay indicator
+        CRGB delayColor = swimmerColor;
+        delayColor.nscale8(128); // 50% brightness for delay indicator
+        leds[laneIndex][ledIndex] = delayColor;
       }
-      } // Close the "if (delayDistanceFeet > 0)" condition
     }
   }
 }
@@ -1011,6 +1042,8 @@ void initializeSwimmers() {
     Serial.println(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
     Serial.print("Calculated laps per round: ");
     Serial.println(lapsPerRound);
+    Serial.print("Delay indicators: ");
+    Serial.println(globalConfigSettings.delayIndicatorsEnabled ? "ENABLED" : "DISABLED");
     Serial.println("===========================================\n");
   }
 
@@ -1255,7 +1288,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       // Convert to LED strip units
       float distanceInStripUnits = convertPoolToStripUnits(distanceForCurrentLength);
       float poolLengthInStripUnits = convertPoolToStripUnits(globalConfigSettings.poolLength);
-      
+
       // Calculate LED position based on direction
       if (swimmer->lapDirection == 1) {
         // Swimming away from start: position = 0 + distance
@@ -1448,8 +1481,18 @@ void drawUnderwaterZone(int swimmerIndex, int laneIndex) {
 
   // Calculate underwater light size
   float lightPulseSizeFeet = globalConfigSettings.lightPulseSizeFeet;
-  const float feetToMeters = 0.3048;
-  int lightSizeLEDs = (int)(lightPulseSizeFeet * feetToMeters * globalConfigSettings.ledsPerMeter);
+
+  // Convert feet to pool's native units
+  float lightSizeInPoolUnits;
+  if (globalConfigSettings.poolUnitsYards) {
+    lightSizeInPoolUnits = lightPulseSizeFeet / 3.0; // feet to yards
+  } else {
+    lightSizeInPoolUnits = lightPulseSizeFeet * 0.3048; // feet to meters
+  }
+
+  // Convert to strip units and then to LEDs
+  float lightSizeInStripUnits = convertPoolToStripUnits(lightSizeInPoolUnits);
+  int lightSizeLEDs = (int)(lightSizeInStripUnits * globalConfigSettings.ledsPerMeter);
   if (lightSizeLEDs < 1) lightSizeLEDs = 1; // Minimum 1 LED
 
   // Position underwater light exactly at the swimmer's position (moves with swimmer)
