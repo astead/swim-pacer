@@ -1001,18 +1001,6 @@ void drawDelayIndicators(int laneIndex) {
     if (delayLEDs < 1) delayLEDs = 1;
     if (delayLEDs > maxDelayLEDs) delayLEDs = maxDelayLEDs;
 
-    if (DEBUG_ENABLED && (int)(shortestRemainingDelay * 10) % 10 == 0) {
-      Serial.print("Lane ");
-      Serial.print(laneIndex);
-      Serial.print(", Swimmer ");
-      Serial.print(nextSwimmerIndex);
-      Serial.print(" - Delay indicator: ");
-      Serial.print(shortestRemainingDelay);
-      Serial.print(" sec, ");
-      Serial.print(delayLEDs);
-      Serial.println(" LEDs");
-    }
-
     // Draw delay indicator
     CRGB swimmerColor = nextSwimmer->color;
     for (int ledIndex = 0; ledIndex < delayLEDs && ledIndex < totalLEDs; ledIndex++) {
@@ -1044,6 +1032,8 @@ void initializeSwimmers() {
     Serial.println(lapsPerRound);
     Serial.print("Delay indicators: ");
     Serial.println(globalConfigSettings.delayIndicatorsEnabled ? "ENABLED" : "DISABLED");
+    Serial.print("Underwaters: ");
+    Serial.println(globalConfigSettings.underwatersEnabled ? "ENABLED" : "DISABLED");
     Serial.println("===========================================\n");
   }
 
@@ -1155,6 +1145,14 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       swimmer->restStartTime = 0;
       // Set last updated time to account for any overshoot
       swimmer->lastUpdate = currentTime - (restElapsed - targetRestDuration);
+      
+      // Start underwater phase when leaving the wall
+      if (globalConfigSettings.underwatersEnabled) {
+        swimmer->underwaterActive = true;
+        swimmer->inSurfacePhase = false;
+        swimmer->distanceTraveled = 0.0;
+        swimmer->hideTimerStart = 0;
+      }
     } else {
       // Still resting, don't move
       return;
@@ -1312,7 +1310,9 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
 
     // Track distance for underwater calculations
     if (swimmer->underwaterActive) {
-      // Which underwater values to use based on if it's the first underwater or not
+      // Which underwater values to use based on if it's the first lap or not
+      // First lap of each round uses firstUnderwaterDistance (off the wall)
+      // Second lap uses regular underwaterDistance
       float targetUnderwaterDistanceFeet = (swimmer->currentLap == 1) ?
         globalConfigSettings.firstUnderwaterDistanceFeet :
         globalConfigSettings.underwaterDistanceFeet;
