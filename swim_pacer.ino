@@ -1370,6 +1370,11 @@ void printPeriodicStatus() {
 void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
   Swimmer* swimmer = &swimmers[laneIndex][swimmerIndex];
 
+  // Don't draw if swimmer is resting
+  if (swimmer->isResting) {
+    return;
+  }
+
   // Only draw if swimmer should be active (start time has passed)
   if (millis() < swimmer->lastUpdate) {
     return; // Swimmer hasn't started yet
