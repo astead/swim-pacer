@@ -1251,12 +1251,20 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       }
     } else {
       // Normal movement within the pool length
-      // Convert distance to LED strip units for position calculation
-      float distanceInStripUnits = convertPoolToStripUnits(distanceTraveled);
-      int distanceLEDs = (int)(distanceInStripUnits * globalConfigSettings.ledsPerMeter);
-
-      // Update position based on direction
-      swimmer->position += distanceLEDs * swimmer->lapDirection;
+      // distanceForCurrentLength is the distance traveled in the current lap
+      // Convert to LED strip units
+      float distanceInStripUnits = convertPoolToStripUnits(distanceForCurrentLength);
+      float poolLengthInStripUnits = convertPoolToStripUnits(globalConfigSettings.poolLength);
+      
+      // Calculate LED position based on direction
+      if (swimmer->lapDirection == 1) {
+        // Swimming away from start: position = 0 + distance
+        swimmer->position = (int)(distanceInStripUnits * globalConfigSettings.ledsPerMeter);
+      } else {
+        // Swimming back to start: position = poolLength - distance
+        float positionInStripUnits = poolLengthInStripUnits - distanceInStripUnits;
+        swimmer->position = (int)(positionInStripUnits * globalConfigSettings.ledsPerMeter);
+      }
     }
 
     // Mark swimmer as started once they begin moving
