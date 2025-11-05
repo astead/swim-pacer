@@ -96,7 +96,7 @@ GlobalConfigSettings globalConfigSettings;
 
 // ========= Swim Set Settings ==========
 struct SwimSetSettings {
-  float speedFeetPerSecond = 5.56;           // Speed in feet per second
+  float speedMetersPerSecond = 1.693;        // Speed in meters per second (~5.56 ft/s)
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
   int swimSetDistance = 50;                  // Distance for pace calculation (in pool's native units)
   int initialDelaySeconds = 10;              // Initial delay before first swimmer starts
@@ -338,6 +338,27 @@ void setupWebServer() {
   server.on("/globalConfigSettings", HTTP_GET, handleGetSettings);
   server.on("/currentLane", HTTP_GET, handleGetCurrentLane);
 
+  // API Units and persistence notes:
+  // - Speed: stored and returned as meters per second (m/s). Client should POST /setSpeed with m/s.
+  //   Preference key: "speedMPS" (float)
+  // - Brightness: stored as 0-255 (byte) on the device, but the UI displays 0-100%.
+  //   Preference key: "brightness" (uchar)
+  // - Strip length: meters (float) - preference key: "stripLengthM"
+  // - LEDs per meter: integer - preference key: "ledsPerMeter"
+  // - Colors: swimmer default color stored as three bytes colorRed/colorGreen/colorBlue; client uses hex (#rrggbb)
+
+
+  // Expose API info & units for client-side consumption
+  server.on("/apiInfo", HTTP_GET, []() {
+    String info = "{";
+    info += "\"speedUnits\":\"m/s\","; // client-facing units for setSpeed endpoint
+    info += "\"colorFormat\":\"#rrggbb\",";
+    info += "\"brightnessClient\":\"percent\","; // client should show 0-100%
+    info += "\"stripLengthUnits\":\"meters\"";
+    info += "}";
+    server.send(200, "application/json", info);
+  });
+
   // Handle start/stop commands
   server.on("/control", HTTP_POST, handleControl);
 
@@ -409,18 +430,33 @@ void handleRoot() {
 }
 
 void handleGetSettings() {
+  // Provide an expanded JSON blob the client can consume to reflect device state
   String json = "{";
   json += "\"totalLEDs\":" + String(totalLEDs) + ",";
+  json += "\"stripLengthMeters\":" + String(globalConfigSettings.stripLengthMeters, 2) + ",";
   json += "\"ledsPerMeter\":" + String(globalConfigSettings.ledsPerMeter) + ",";
-  json += "\"pulseWidthFeet\":" + String(globalConfigSettings.pulseWidthFeet) + ",";
-  json += "\"speedFeetPerSecond\":" + String(swimSetSettings.speedFeetPerSecond) + ",";
+  json += "\"pulseWidthFeet\":" + String(globalConfigSettings.pulseWidthFeet, 2) + ",";
+  // Return swim speed in feet/sec (legacy) but include a named field for clarity
+  // Return speed in meters per second for consistent units with the client
+  json += "\"speedMetersPerSecond\":" + String(swimSetSettings.speedMetersPerSecond, 3) + ",";
   json += "\"colorRed\":" + String(globalConfigSettings.colorRed) + ",";
   json += "\"colorGreen\":" + String(globalConfigSettings.colorGreen) + ",";
   json += "\"colorBlue\":" + String(globalConfigSettings.colorBlue) + ",";
-  json += "\"brightness\":" + String(globalConfigSettings.brightness) + ",";
+  json += "\"brightness\":" + String(globalConfigSettings.brightness) + ","; // 0-255
+  json += "\"numLanes\":" + String(globalConfigSettings.numLanes) + ",";
+  json += "\"numSwimmers\":" + String(globalConfigSettings.numSwimmers) + ",";
+  json += "\"poolLength\":" + String(globalConfigSettings.poolLength, 2) + ",";
+  json += "\"poolUnitsYards\":" + String(globalConfigSettings.poolUnitsYards ? "true" : "false") + ",";
+  json += "\"underwatersEnabled\":" + String(globalConfigSettings.underwatersEnabled ? "true" : "false") + ",";
+  json += "\"delayIndicatorsEnabled\":" + String(globalConfigSettings.delayIndicatorsEnabled ? "true" : "false") + ",";
   json += "\"isRunning\":" + String(globalConfigSettings.laneRunning[currentLane] ? "true" : "false") + ",";
-  json += "\"currentLane\":" + String(currentLane);
-  json += "}";
+  json += "\"currentLane\":" + String(currentLane) + ",";
+
+  // Include underwater colors stored in Preferences as hex strings (fallbacks match drawUnderwaterZone())
+  String underwaterHex = preferences.getString("underwaterColor", "#0066CC");
+  String surfaceHex = preferences.getString("surfaceColor", "#66CCFF");
+  json += "\"underwaterColor\":\"" + underwaterHex + "\",";
+  json += "\"surfaceColor\":\"" + surfaceHex + "\"}";
 
   server.send(200, "application/json", json);
 }
@@ -468,8 +504,8 @@ void handleToggle() {
 void handleSetSpeed() {
   if (server.hasArg("speed")) {
     float speed = server.arg("speed").toFloat();
-    // speed comes in meters per second
-    swimSetSettings.speedFeetPerSecond = speed * 3.28084;
+    // speed comes in meters per second (client and server now use m/s)
+    swimSetSettings.speedMetersPerSecond = speed;
     saveSwimSetSettings();
     needsRecalculation = true;
   }
@@ -829,7 +865,8 @@ void saveGlobalConfigSettings() {
 }
 
 void saveSwimSetSettings() {
-  preferences.putFloat("speedFPS", swimSetSettings.speedFeetPerSecond);
+  // Persist speed in meters per second
+  preferences.putFloat("speedMPS", swimSetSettings.speedMetersPerSecond);
   preferences.putInt("restTimeSeconds", swimSetSettings.restTimeSeconds);
   preferences.putInt("swimSetDistance", swimSetSettings.swimSetDistance);
   preferences.putInt("initialDelay", swimSetSettings.initialDelaySeconds);
@@ -848,18 +885,20 @@ void loadGlobalConfigSettings() {
   globalConfigSettings.stripLengthMeters = preferences.getFloat("stripLengthM", 23.0);
   globalConfigSettings.ledsPerMeter = preferences.getInt("ledsPerMeter", 30);
   globalConfigSettings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
-  globalConfigSettings.numSwimmers = preferences.getInt("numSwimmers", 3);
+  // Keep preference fallbacks consistent with struct defaults
+  globalConfigSettings.numSwimmers = preferences.getInt("numSwimmers", 1);
   globalConfigSettings.colorRed = preferences.getUChar("colorRed", 0);      // Default to blue
   globalConfigSettings.colorGreen = preferences.getUChar("colorGreen", 0);
   globalConfigSettings.colorBlue = preferences.getUChar("colorBlue", 255);
-  globalConfigSettings.brightness = preferences.getUChar("brightness", 100);
+  globalConfigSettings.brightness = preferences.getUChar("brightness", 196);
   globalConfigSettings.isRunning = preferences.getBool("isRunning", false);  // Default: stopped
   globalConfigSettings.sameColorMode = preferences.getBool("sameColorMode", false); // Default: individual colors
   globalConfigSettings.underwatersEnabled = preferences.getBool("underwatersEnabled", false);
 }
 
 void loadSwimSetSettings() {
-  swimSetSettings.speedFeetPerSecond = preferences.getFloat("speedFPS", 5.56);
+  // Load speed (meters per second) with a sensible default ~1.693 m/s (5.56 ft/s)
+  swimSetSettings.speedMetersPerSecond = preferences.getFloat("speedMPS", 1.693);
   swimSetSettings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
   swimSetSettings.swimSetDistance = preferences.getInt("swimSetDistance", 50);  // Default in yards (matches pool default)
   swimSetSettings.initialDelaySeconds = preferences.getInt("initialDelay", 10);
@@ -895,7 +934,8 @@ void recalculateValues() {
   // start with distance per LED in meters
   float ledSpacingMeters = ledSpacingCM / 100.0;
   // Now calculate time to swim 1 meter at given speed
-  float timeToSwim1Meter = 1.0 / (swimSetSettings.speedFeetPerSecond * 0.3048);
+  // swimSetSettings.speedMetersPerSecond is already in meters/second
+  float timeToSwim1Meter = 1.0 / (swimSetSettings.speedMetersPerSecond);
   // Now calculate time to swim distance between 1 LED
   float timeToSwim1LED = timeToSwim1Meter / globalConfigSettings.ledsPerMeter;
   delayMS = (int)(timeToSwim1LED * 1000);
@@ -1220,14 +1260,14 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     swimmer->lastUpdate = currentTime;
 
     // Calculate distance traveled this frame in pool's native units
-    // Convert speed from feet/sec to pool's native units
+    // Convert speed (meters/sec) to pool's native units
     float speedInPoolUnits;
     if (globalConfigSettings.poolUnitsYards) {
-      // Convert feet/sec to yards/sec
-      speedInPoolUnits = swimSetSettings.speedFeetPerSecond / 3.0;
+      // Convert meters/sec to yards/sec (1 yard = 0.9144 m)
+      speedInPoolUnits = swimSetSettings.speedMetersPerSecond / 0.9144;
     } else {
-      // Convert feet/sec to meters/sec
-      speedInPoolUnits = swimSetSettings.speedFeetPerSecond * 0.3048;
+      // Already meters/sec
+      speedInPoolUnits = swimSetSettings.speedMetersPerSecond;
     }
     float distanceTraveled = speedInPoolUnits * deltaSeconds;
 
