@@ -147,6 +147,12 @@ button.secondary:hover {
     border-color: #333;
 }
 
+/* Selected color swatch in the custom picker/grid */
+.color-swatch.selected {
+    outline: 3px solid rgba(0,0,0,0.15);
+    transform: scale(1.05);
+}
+
 
 /* Swimmer set styles */
 .swimmer-row {

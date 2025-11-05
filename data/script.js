@@ -2,7 +2,8 @@
 const isStandaloneMode = window.location.protocol === 'file:';
 
 let currentSettings = {
-    speed: 5.0,
+    // speed is meters per second (client and device now use m/s)
+    speed: 1.693,
     color: 'red',
     brightness: 196,
     pulseWidth: 1.0,
@@ -85,13 +86,16 @@ function showPage(pageId) {
 
 // Conversion functions for swimming
 function paceToSpeed(paceSeconds, poolYards = 50) {
-    const poolFeet = poolYards * 3; // Convert yards to feet
-    return poolFeet / paceSeconds;
+    // Return speed in meters/second for a given pace (seconds per pool length).
+    // poolYards is the pool length in yards (default 50 yards). Convert to meters then divide by time.
+    const poolMeters = poolYards * 0.9144;
+    return poolMeters / paceSeconds; // meters per second
 }
 
 function speedToPace(speedFps, poolYards = 50) {
-    const poolFeet = poolYards * 3; // Convert yards to feet
-    return poolFeet / speedFps;
+    // speed is meters/second; return pace (seconds per pool length)
+    const poolMeters = poolYards * 0.9144;
+    return poolMeters / speedFps;
 }
 
 // Helper function to parse time input (supports both "30" and "1:30" formats)
@@ -581,19 +585,14 @@ function closeColorPicker() {
 
 function populateColorGrid() {
     const colorGrid = document.getElementById('colorGrid');
+    if (!colorGrid) return;
     if (colorGrid.children.length > 0) return; // Already populated
 
-    // Define a palette of common colors
-    const colors = [
-        '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff',
-        '#800000', '#008000', '#000080', '#808000', '#800080', '#008080',
-        '#ff8000', '#80ff00', '#8000ff', '#ff0080', '#0080ff', '#ff8080',
-        '#ffa500', '#90ee90', '#add8e6', '#f0e68c', '#dda0dd', '#afeeee',
-        '#ffffff', '#c0c0c0', '#808080', '#404040', '#202020', '#000000'
-    ];
-
-    colors.forEach(color => {
+    // Render the shared masterPalette into the grid
+    masterPalette.forEach(color => {
         const colorDiv = document.createElement('div');
+        colorDiv.className = 'color-swatch';
+        colorDiv.setAttribute('data-color', color);
         colorDiv.style.cssText = `
             width: 40px;
             height: 40px;
@@ -602,12 +601,110 @@ function populateColorGrid() {
             border-radius: 50%;
             cursor: pointer;
             transition: transform 0.1s;
+            box-sizing: border-box;
         `;
         colorDiv.onmouseover = () => colorDiv.style.transform = 'scale(1.1)';
         colorDiv.onmouseout = () => colorDiv.style.transform = 'scale(1)';
         colorDiv.onclick = () => selectColor(color);
         colorGrid.appendChild(colorDiv);
     });
+}
+
+// Shared palette used by the color picker. Exported here so we can ensure device colors
+// are present without destroying the rest of the palette.
+const masterPalette = [
+    '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff',
+    '#800000', '#008000', '#000080', '#808000', '#800080', '#008080',
+    '#ff8000', '#80ff00', '#8000ff', '#ff0080', '#0080ff', '#ff8080',
+    '#ffa500', '#90ee90', '#add8e6', '#f0e68c', '#dda0dd', '#afeeee',
+    '#ffffff', '#c0c0c0', '#808080', '#404040', '#202020', '#000000'
+];
+
+// Maximum capacity for the master palette. If more device colors are needed
+// we'll replace redundant entries instead of growing unbounded.
+const PALETTE_CAPACITY = 32;
+
+// Helper: convert #rrggbb to {r,g,b}
+function hexToRgb(hex) {
+    if (!hex) return { r: 0, g: 0, b: 0 };
+    const s = hex.replace('#', '');
+    return {
+        r: parseInt(s.substring(0,2), 16),
+        g: parseInt(s.substring(2,4), 16),
+        b: parseInt(s.substring(4,6), 16)
+    };
+}
+
+// Euclidean color distance between two hex colors
+function colorDistanceHex(a, b) {
+    const aa = hexToRgb(a);
+    const bb = hexToRgb(b);
+    const dr = aa.r - bb.r;
+    const dg = aa.g - bb.g;
+    const db = aa.b - bb.b;
+    return Math.sqrt(dr*dr + dg*dg + db*db);
+}
+
+// Ensure the provided hex color exists in masterPalette.
+// If palette has room, append. If full, replace the most redundant color
+// (the one whose nearest-neighbor distance is smallest). Returns the index.
+function ensureColorInPalette(hex) {
+    if (!hex) return -1;
+    hex = hex.toLowerCase();
+    // Normalize to 7-char hex (#rrggbb)
+    if (!hex.startsWith('#') && hex.length === 6) hex = '#' + hex;
+
+    const existing = masterPalette.findIndex(c => c.toLowerCase() === hex);
+    if (existing !== -1) return existing;
+
+    const MAX = PALETTE_CAPACITY;
+    // If there's space, append
+    if (masterPalette.length < MAX) {
+        masterPalette.push(hex);
+        // If DOM already populated, append a swatch
+        const colorGrid = document.getElementById('colorGrid');
+        if (colorGrid) {
+            const colorDiv = document.createElement('div');
+            colorDiv.className = 'color-swatch';
+            colorDiv.setAttribute('data-color', hex);
+            colorDiv.style.cssText = `width:40px;height:40px;background-color:${hex};border:2px solid #333;border-radius:50%;cursor:pointer;transition:transform 0.1s;box-sizing:border-box;`;
+            colorDiv.onmouseover = () => colorDiv.style.transform = 'scale(1.1)';
+            colorDiv.onmouseout = () => colorDiv.style.transform = 'scale(1)';
+            colorDiv.onclick = () => selectColor(hex);
+            colorGrid.appendChild(colorDiv);
+        }
+        return masterPalette.length - 1;
+    }
+
+    // Palette full: find the most redundant color (smallest nearest-neighbor distance)
+    let bestIdx = 0;
+    let bestMinDist = Infinity;
+    for (let i = 0; i < masterPalette.length; i++) {
+        let minDist = Infinity;
+        for (let j = 0; j < masterPalette.length; j++) {
+            if (i === j) continue;
+            const d = colorDistanceHex(masterPalette[i], masterPalette[j]);
+            if (d < minDist) minDist = d;
+        }
+        if (minDist < bestMinDist) {
+            bestMinDist = minDist;
+            bestIdx = i;
+        }
+    }
+
+    // Replace the most redundant color at bestIdx
+    masterPalette[bestIdx] = hex;
+    // If DOM populated, update the corresponding swatch element
+    const colorGrid = document.getElementById('colorGrid');
+    if (colorGrid && colorGrid.children.length > bestIdx) {
+        const el = colorGrid.children[bestIdx];
+        if (el) {
+            el.setAttribute('data-color', hex);
+            el.style.backgroundColor = hex;
+            el.onclick = () => selectColor(hex);
+        }
+    }
+    return bestIdx;
 }
 
 function selectColor(color) {
@@ -1641,6 +1738,23 @@ function updateAllUIFromSettings() {
     document.getElementById('underwaterDistance').value = currentSettings.underwaterDistance;
     document.getElementById('hideAfter').value = currentSettings.hideAfter;
 
+    // Update underwaters checkbox and labels WITHOUT triggering server updates
+    const underChk = document.getElementById('underwatersEnabled');
+    const underControls = document.getElementById('underwatersControls');
+    const toggleOff = document.getElementById('toggleOff');
+    const toggleOn = document.getElementById('toggleOn');
+    if (underChk) underChk.checked = !!currentSettings.underwatersEnabled;
+    if (underControls) underControls.style.display = currentSettings.underwatersEnabled ? 'block' : 'none';
+    if (toggleOff && toggleOn) {
+        if (currentSettings.underwatersEnabled) {
+            toggleOff.classList.remove('active');
+            toggleOn.classList.add('active');
+        } else {
+            toggleOff.classList.add('active');
+            toggleOn.classList.remove('active');
+        }
+    }
+
     // Update radio button states
     if (currentSettings.colorMode === 'individual') {
         document.getElementById('individualColors').checked = true;
@@ -1745,7 +1859,125 @@ document.addEventListener('DOMContentLoaded', function() {
     // Ensure visual selection is applied after DOM is ready
     updateVisualSelection();
     initializeQueueSystem();
+    // Attempt to fetch device settings from ESP32 and merge into UI defaults
+    fetchDeviceSettingsAndApply();
 });
+
+// Convert bytes to hex color string
+function rgbBytesToHex(r, g, b) {
+    const toHex = (v) => v.toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+async function fetchDeviceSettingsAndApply() {
+    if (isStandaloneMode) return;
+
+    try {
+        // Optionally fetch apiInfo (for future use / validation)
+        await fetch('/apiInfo').catch(() => {});
+
+        // Ensure we have the current lane first
+        const laneRes = await fetch('/currentLane');
+        if (laneRes.ok) {
+            const laneJson = await laneRes.json();
+            if (laneJson.currentLane !== undefined) {
+                currentSettings.currentLane = Number(laneJson.currentLane);
+            }
+        }
+
+        const res = await fetch('/globalConfigSettings');
+        if (!res.ok) return;
+        const dev = await res.json();
+
+        // Merge device settings into currentSettings with conversions
+        if (dev.stripLengthMeters !== undefined) currentSettings.stripLength = parseFloat(dev.stripLengthMeters);
+        if (dev.ledsPerMeter !== undefined) currentSettings.ledsPerMeter = parseInt(dev.ledsPerMeter);
+        if (dev.numLanes !== undefined) currentSettings.numLanes = parseInt(dev.numLanes);
+        if (dev.numSwimmers !== undefined) currentSettings.numSwimmers = parseInt(dev.numSwimmers);
+        if (dev.poolLength !== undefined) currentSettings.poolLength = String(dev.poolLength) + (dev.poolUnitsYards === 'true' || dev.poolUnitsYards === true ? '' : 'm');
+
+        // Convert firmware speed (feet/sec) to m/s for client
+        if (dev.speedMetersPerSecond !== undefined) {
+            currentSettings.speed = parseFloat(dev.speedMetersPerSecond);
+        }
+
+        // Convert brightness 0-255 to percent (0-100)
+        if (dev.brightness !== undefined) {
+            const b = parseInt(dev.brightness);
+            const percent = Math.round(((b - 20) * 100) / (255 - 20));
+            // Clamp
+            const clamped = Math.max(0, Math.min(100, percent));
+            // Set both internal brightness (0-255) and UI control
+            currentSettings.brightness = b;
+            document.getElementById('brightness').value = clamped;
+            document.getElementById('brightnessValue').textContent = clamped + '%';
+        }
+
+        // Colors as bytes -> hex
+        if (dev.colorRed !== undefined && dev.colorGreen !== undefined && dev.colorBlue !== undefined) {
+            currentSettings.swimmerColor = rgbBytesToHex(Number(dev.colorRed), Number(dev.colorGreen), Number(dev.colorBlue));
+            document.getElementById('colorIndicator').style.backgroundColor = currentSettings.swimmerColor;
+        }
+
+        // Underwaters enabled + colors
+        if (dev.underwatersEnabled !== undefined) {
+            currentSettings.underwatersEnabled = (dev.underwatersEnabled === 'true' || dev.underwatersEnabled === true);
+        }
+        if (dev.underwaterColor !== undefined) {
+            currentSettings.underwaterColor = dev.underwaterColor;
+            const el = document.getElementById('underwaterColorIndicator');
+            if (el) el.style.backgroundColor = currentSettings.underwaterColor;
+        }
+        if (dev.surfaceColor !== undefined) {
+            currentSettings.surfaceColor = dev.surfaceColor;
+            const el = document.getElementById('surfaceColorIndicator');
+            if (el) el.style.backgroundColor = currentSettings.surfaceColor;
+        }
+
+        // Ensure device colors appear in the shared palette
+        try {
+            // Populate the grid if not already
+            populateColorGrid();
+
+            if (currentSettings.underwaterColor) {
+                ensureColorInPalette(currentSettings.underwaterColor);
+            }
+            if (currentSettings.surfaceColor) {
+                ensureColorInPalette(currentSettings.surfaceColor);
+            }
+            if (currentSettings.swimmerColor) {
+                ensureColorInPalette(currentSettings.swimmerColor);
+            }
+
+            // Mark selected swatches visually
+            const colorGrid = document.getElementById('colorGrid');
+            if (colorGrid) {
+                for (let i = 0; i < colorGrid.children.length; i++) {
+                    const child = colorGrid.children[i];
+                    const c = (child.getAttribute('data-color') || '').toLowerCase();
+                    child.classList.remove('selected');
+                    // simple marking: if matches any active color, add selected
+                    if (c && (c === (currentSettings.underwaterColor || '').toLowerCase() || c === (currentSettings.surfaceColor || '').toLowerCase() || c === (currentSettings.swimmerColor || '').toLowerCase())) {
+                        child.classList.add('selected');
+                    }
+                }
+            }
+        } catch (e) {
+            // Non-fatal
+            console.log('Palette sync skipped:', e);
+        }
+
+        // isRunning
+        if (dev.isRunning !== undefined) {
+            currentSettings.isRunning = (dev.isRunning === 'true' || dev.isRunning === true);
+        }
+
+        // After merging, update full UI
+        updateAllUIFromSettings();
+    } catch (e) {
+        console.log('Device settings fetch failed:', e);
+    }
+}
 
 // Color testing function
 function testColors() {
