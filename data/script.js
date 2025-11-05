@@ -1861,7 +1861,35 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeQueueSystem();
     // Attempt to fetch device settings from ESP32 and merge into UI defaults
     fetchDeviceSettingsAndApply();
+    // Some browsers restore form control values after load (preserve user inputs).
+    // To ensure labels stay in sync with actual slider values (which may be restored
+    // by the browser after scripts run), schedule a short re-sync.
+    setTimeout(syncRangeLabels, 60);
 });
+
+// When navigating back/forward some browsers restore form values. Use pageshow
+// to ensure labels reflect any restored control values.
+window.addEventListener('pageshow', function() {
+    setTimeout(syncRangeLabels, 20);
+});
+
+// Sync labels for range/number controls by calling the existing update handlers.
+function syncRangeLabels() {
+    try {
+        updateInitialDelay();
+        updateRestTime();
+        updateSwimmerInterval();
+        updatePulseWidth();
+        updateFirstUnderwaterDistance();
+        updateUnderwaterDistance();
+        updateHideAfter();
+        updateLightSize();
+        updateBrightness();
+    } catch (e) {
+        // Non-fatal - if elements not present just ignore
+        //console.log('syncRangeLabels failed', e);
+    }
+}
 
 // Convert bytes to hex color string
 function rgbBytesToHex(r, g, b) {
