@@ -40,7 +40,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 Write-Host ""
-Write-Host "=== STEP 2: SPIFFS ===" -ForegroundColor Yellow
+Write-Host "=== STEP 3: SPIFFS ===" -ForegroundColor Yellow
 
 $spiffsDataPath = "data"
 $spiffsFiles = Get-ChildItem -Path $spiffsDataPath -Recurse | Where-Object { -not $_.PSIsContainer }
