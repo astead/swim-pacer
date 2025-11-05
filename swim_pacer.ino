@@ -28,10 +28,28 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <SPIFFS.h>
+#include <new>
+// ESP-IDF Bluetooth control (only needed on ESP32 builds)
+#ifdef ARDUINO_ARCH_ESP32
+#include "esp_bt.h"
+#endif
+
+// Build tag for runtime verification. If GIT_COMMIT is provided by build system,
+// use it, otherwise use compile time.
+#ifndef BUILD_TAG
+#ifdef GIT_COMMIT
+#define BUILD_TAG "git:" GIT_COMMIT
+#else
+#define BUILD_TAG __DATE__ " " __TIME__
+#endif
+#endif
 
 // ========== HARDWARE CONFIGURATION ==========
 #define LED_TYPE        WS2812B     // LED strip type
 #define COLOR_ORDER     GRB         // Color order (may need adjustment)
+
+// Maximum supported LEDs by FastLED for this project
+#define MAX_LEDS 150
 
 // GPIO pins for multiple LED strips (lanes)
 // Lane 1: GPIO 18, Lane 2: GPIO 19, Lane 3: GPIO 21, Lane 4: GPIO 2
@@ -146,8 +164,10 @@ CRGB swimmerColors[] = {
 };
 
 void setup() {
+  pinMode(2, OUTPUT); // On many ESP32 dev boards the on-board LED is on GPIO2
   Serial.begin(115200);
-  Serial.println("ESP32 Swim Pacer Starting...");
+  Serial.print("ESP32 Swim Pacer Starting... build=");
+  Serial.println(BUILD_TAG);
 
   // Initialize preferences (flash storage)
   preferences.begin("swim_pacer", false);
@@ -175,6 +195,12 @@ void setup() {
 
 void loop() {
   server.handleClient();  // Handle web requests
+
+  // Blink the LED to give an easy to see message the program is working.
+  digitalWrite(2, HIGH);
+  delay(250);
+  digitalWrite(2, LOW);
+  delay(250);
 
   if (globalConfigSettings.isRunning) {
     updateLEDEffect();
@@ -244,6 +270,11 @@ void setupLEDs() {
 
 void setupWiFi() {
   Serial.println("Setting up WiFi Access Point...");
+  // Try to reduce peak power draw: disable Bluetooth
+#if defined(ESP_BT_CONTROLLER_INIT_CONFIG) || defined(CONFIG_BT_ENABLED)
+  Serial.println("DEBUG: Disabling BT controller");
+  esp_bt_controller_disable();
+#endif
 
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(local_IP, gateway, subnet);
@@ -844,6 +875,10 @@ void loadSettings() {
 void recalculateValues() {
   // Calculate total LEDs from strip length and density
   totalLEDs = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
+  // Enforce a maximum to match allocation limits and hardware/FastLED constraints
+  if (totalLEDs > MAX_LEDS) {
+    totalLEDs = MAX_LEDS;
+  }
 
   // Calculate LED spacing
   ledSpacingCM = 100.0 / globalConfigSettings.ledsPerMeter;
@@ -1145,7 +1180,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       swimmer->restStartTime = 0;
       // Set last updated time to account for any overshoot
       swimmer->lastUpdate = currentTime - (restElapsed - targetRestDuration);
-      
+
       // Start underwater phase when leaving the wall
       if (globalConfigSettings.underwatersEnabled) {
         swimmer->underwaterActive = true;
