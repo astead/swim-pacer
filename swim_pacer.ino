@@ -198,9 +198,6 @@ void loop() {
 
   // Blink the LED to give an easy to see message the program is working.
   digitalWrite(2, HIGH);
-  delay(250);
-  digitalWrite(2, LOW);
-  delay(250);
 
   if (globalConfigSettings.isRunning) {
     updateLEDEffect();
@@ -216,6 +213,8 @@ void loop() {
     recalculateValues();
     needsRecalculation = false;
   }
+
+  digitalWrite(2, LOW);
 }
 
 void setupLEDs() {
@@ -347,18 +346,6 @@ void setupWebServer() {
   // - LEDs per meter: integer - preference key: "ledsPerMeter"
   // - Colors: swimmer default color stored as three bytes colorRed/colorGreen/colorBlue; client uses hex (#rrggbb)
 
-
-  // Expose API info & units for client-side consumption
-  server.on("/apiInfo", HTTP_GET, []() {
-    String info = "{";
-    info += "\"speedUnits\":\"m/s\","; // client-facing units for setSpeed endpoint
-    info += "\"colorFormat\":\"#rrggbb\",";
-    info += "\"brightnessClient\":\"percent\","; // client should show 0-100%
-    info += "\"stripLengthUnits\":\"meters\"";
-    info += "}";
-    server.send(200, "application/json", info);
-  });
-
   // Handle start/stop commands
   server.on("/control", HTTP_POST, handleControl);
 
@@ -430,6 +417,7 @@ void handleRoot() {
 }
 
 void handleGetSettings() {
+  Serial.println("Received request for /globalConfigSettings");
   // Provide an expanded JSON blob the client can consume to reflect device state
   String json = "{";
   json += "\"totalLEDs\":" + String(totalLEDs) + ",";
@@ -459,6 +447,8 @@ void handleGetSettings() {
   json += "\"surfaceColor\":\"" + surfaceHex + "\"}";
 
   server.send(200, "application/json", json);
+  Serial.print("Responded to request for /globalConfigSettings, underwatersEnabled: ");
+  Serial.println(globalConfigSettings.underwatersEnabled);
 }
 
 void handleGetCurrentLane() {
@@ -813,8 +803,11 @@ void handleSetSwimmerColors() {
 }
 
 void handleSetUnderwaterSettings() {
+  Serial.print("Received call to /setUnderwaterSettings, enabled: ");
+
   if (server.hasArg("enabled")) {
     bool enabled = server.arg("enabled") == "true";
+    Serial.println(enabled);
     globalConfigSettings.underwatersEnabled = enabled;
 
     if (enabled) {
@@ -844,6 +837,8 @@ void handleSetUnderwaterSettings() {
     }
 
     saveGlobalConfigSettings();
+  } else {
+    Serial.println(false);
   }
   server.send(200, "text/plain", "Underwater globalConfigSettings updated");
 }
@@ -1095,7 +1090,7 @@ void initializeSwimmers() {
   // Both swimSetDistance and poolLength are in the same units (pool's native units)
   int lapsPerRound = (int)ceil((float)swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
 
-  if (DEBUG_ENABLED) {
+  if (false && DEBUG_ENABLED) {
     Serial.println("\n========== INITIALIZING SWIMMERS ==========");
     Serial.print("Pool length: ");
     Serial.print(globalConfigSettings.poolLength);

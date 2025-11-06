@@ -138,7 +138,7 @@ function updateFromPace() {
     }
 }
 
-function updatePaceDistance() {
+function updatePaceDistance(triggerSave = true) {
     const paceDistance = parseInt(document.getElementById('paceDistance').value);
     currentSettings.paceDistance = paceDistance;
 
@@ -153,10 +153,10 @@ function updatePaceDistance() {
 
     // Recalculate speed based on current pace input and new distance
     updateFromPace();
-    updateSettings();
+    if (triggerSave) updateSettings();
 }
 
-function updateCalculations() {
+function updateCalculations(triggerSave = true) {
     const poolLength = document.getElementById('poolLength').value;
     const stripLength = parseFloat(document.getElementById('stripLength').value);
     const ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
@@ -167,7 +167,7 @@ function updateCalculations() {
     currentSettings.ledsPerMeter = ledsPerMeter;
 
     // Update distance units when pool length changes
-    updatePaceDistance();
+    updatePaceDistance(triggerSave);
 }
 
 function updateNumLanes() {
@@ -432,27 +432,42 @@ function updateDelayIndicatorsEnabled() {
     updateSettings();
 }
 
-function updateUnderwatersEnabled() {
-    const enabled = document.getElementById('underwatersEnabled').checked;
+function updateUnderwatersEnabled(triggerSave = true, enabledArg) {
+    const chk = document.getElementById('underwatersEnabled');
+    // If caller provided enabledArg, use it and update the checkbox; otherwise read from the checkbox
+    let enabled;
+    if (typeof enabledArg !== 'undefined') {
+        enabled = !!enabledArg;
+        if (chk) chk.checked = enabled;
+    } else {
+        enabled = chk ? chk.checked : false;
+    }
+
     currentSettings.underwatersEnabled = enabled;
+
+    console.log(`Underwaters enabled set to: ${enabled}, triggerSave: ${triggerSave}`);
 
     // Show/hide underwaters controls
     const controls = document.getElementById('underwatersControls');
-    controls.style.display = enabled ? 'block' : 'none';
+    if (controls) controls.style.display = enabled ? 'block' : 'none';
 
     // Update toggle labels
     const toggleOff = document.getElementById('toggleOff');
     const toggleOn = document.getElementById('toggleOn');
 
-    if (enabled) {
-        toggleOff.classList.remove('active');
-        toggleOn.classList.add('active');
-    } else {
-        toggleOff.classList.add('active');
-        toggleOn.classList.remove('active');
+    if (toggleOff && toggleOn) {
+        if (enabled) {
+            toggleOff.classList.remove('active');
+            toggleOn.classList.add('active');
+        } else {
+            toggleOff.classList.add('active');
+            toggleOn.classList.remove('active');
+        }
     }
 
-    updateSettings();
+    if (triggerSave === true) {
+        updateSettings();
+    }
 }
 
 function updateLightSize() {
@@ -486,6 +501,127 @@ function updateHideAfter() {
     document.getElementById('hideAfterValue').textContent = hideAfter + unit;
     updateSettings();
 }
+
+// -------------------
+// UI-only setter helpers (do NOT call updateSettings)
+// These are used when rendering device defaults so we don't POST back to the server.
+// -------------------
+function setInitialDelayUI(value) {
+    if (value === undefined || value === null) return;
+    const v = parseInt(value);
+    const el = document.getElementById('initialDelay');
+    if (el) el.value = v;
+    currentSettings.initialDelay = v;
+    const unit = v === 1 ? ' second' : ' seconds';
+    const label = document.getElementById('initialDelayValue');
+    if (label) label.textContent = v + unit;
+}
+
+function setRestTimeUI(value) {
+    if (value === undefined || value === null) return;
+    const v = parseInt(value);
+    const el = document.getElementById('restTime');
+    if (el) el.value = v;
+    currentSettings.restTime = v;
+    const unit = v === 1 ? ' second' : ' seconds';
+    const label = document.getElementById('restTimeValue');
+    if (label) label.textContent = v + unit;
+}
+
+function setSwimmerIntervalUI(value) {
+    if (value === undefined || value === null) return;
+    const v = parseInt(value);
+    const el = document.getElementById('swimmerInterval');
+    if (el) el.value = v;
+    currentSettings.swimmerInterval = v;
+    const unit = v === 1 ? ' second' : ' seconds';
+    const label = document.getElementById('swimmerIntervalValue');
+    if (label) label.textContent = v + unit;
+}
+
+function setPulseWidthUI(value) {
+    if (value === undefined || value === null) return;
+    const v = parseFloat(value);
+    const el = document.getElementById('pulseWidth');
+    if (el) el.value = v;
+    currentSettings.pulseWidth = v;
+    const unit = v === 1.0 ? ' foot' : ' feet';
+    const label = document.getElementById('pulseWidthValue');
+    if (label) label.textContent = v + unit;
+}
+
+function setBrightnessUI(percent) {
+    if (percent === undefined || percent === null) return;
+    const p = Math.round(percent);
+    const el = document.getElementById('brightness');
+    if (el) el.value = p;
+    const internal = Math.round(20 + (p / 100) * (255 - 20));
+    currentSettings.brightness = internal;
+    const label = document.getElementById('brightnessValue');
+    if (label) label.textContent = p + '%';
+}
+
+function setFirstUnderwaterDistanceUI(value) {
+    if (value === undefined || value === null) return;
+    const v = parseInt(value);
+    const el = document.getElementById('firstUnderwaterDistance');
+    if (el) el.value = v;
+    currentSettings.firstUnderwaterDistance = v;
+    const unit = v === 1 ? ' foot' : ' feet';
+    const label = document.getElementById('firstUnderwaterDistanceValue');
+    if (label) label.textContent = v + unit;
+}
+
+function setUnderwaterDistanceUI(value) {
+    if (value === undefined || value === null) return;
+    const v = parseInt(value);
+    const el = document.getElementById('underwaterDistance');
+    if (el) el.value = v;
+    currentSettings.underwaterDistance = v;
+    const unit = v === 1 ? ' foot' : ' feet';
+    const label = document.getElementById('underwaterDistanceValue');
+    if (label) label.textContent = v + unit;
+}
+
+function setHideAfterUI(value) {
+    if (value === undefined || value === null) return;
+    const v = parseInt(value);
+    const el = document.getElementById('hideAfter');
+    if (el) el.value = v;
+    currentSettings.hideAfter = v;
+    const unit = v === 1 ? ' second' : ' seconds';
+    const label = document.getElementById('hideAfterValue');
+    if (label) label.textContent = v + unit;
+}
+
+function setLightSizeUI(value) {
+    if (value === undefined || value === null) return;
+    const v = parseFloat(value);
+    const el = document.getElementById('lightSize');
+    if (el) el.value = v;
+    currentSettings.lightSize = v;
+    const unit = v === 1.0 ? ' foot' : ' feet';
+    const label = document.getElementById('lightSizeValue');
+    if (label) label.textContent = v + unit;
+}
+
+function setNumSwimmersUI(value) {
+    if (value === undefined || value === null) return;
+    const v = parseInt(value);
+    const el = document.getElementById('numSwimmers');
+    if (el) el.value = v;
+    currentSettings.numSwimmers = v;
+}
+
+function setNumRoundsUI(value) {
+    if (value === undefined || value === null) return;
+    const v = parseInt(value);
+    const el = document.getElementById('numRounds');
+    if (el) el.value = v;
+    currentSettings.numRounds = v;
+}
+
+// -------------------
 
 function openColorPickerForUnderwater() {
     currentColorContext = 'underwater';
@@ -774,6 +910,8 @@ let currentRounds = [1, 1, 1, 1]; // Current round for each lane
 let completionHandled = [false, false, false, false]; // Track if completion has been handled for each lane
 let statusUpdateInterval = null;
 let currentColorContext = null; // Track which color picker context we're in
+// When true, updateSettings() will be a no-op to avoid overwriting device defaults
+let suppressSettingsWrites = false;
 
 function updateStatus() {
     const queueDisplay = document.getElementById('queueDisplay');
@@ -1564,6 +1702,12 @@ function updateSettings() {
         return;
     }
 
+    // During initial device defaults application we suppress outbound writes
+    if (suppressSettingsWrites) {
+        console.log('updateSettings suppressed (applying device defaults)');
+        return;
+    }
+
     fetch('/setSpeed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1709,8 +1853,9 @@ function updateSettings() {
         }
     }
 
-    // Send underwater settings if enabled
+    // Send underwater settings
     if (currentSettings.underwatersEnabled) {
+        console.log("Sending call to setUnderwaterSettings: enabled: true");
         fetch('/setUnderwaterSettings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1718,6 +1863,16 @@ function updateSettings() {
         }).catch(error => {
             console.log('Underwater settings update - server not available');
         });
+    } else {
+        console.log("Sending call to setUnderwaterSettings: enabled: false");
+        fetch('/setUnderwaterSettings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `enabled=false`
+        }).catch(error => {
+            console.log('Underwater settings update - server not available');
+        });
+
     }
 }
 
@@ -1762,18 +1917,19 @@ function updateAllUIFromSettings() {
         document.getElementById('sameColor').checked = true;
     }
 
-    // Update display values
-    updateNumRounds();
-    updateRestTime();
-    updateNumSwimmers();
-    updateInitialDelay();
-    updateSwimmerInterval();
-    updateSpeed();
-    updatePaceDistance();
-    updateBrightness();
-    updateFirstUnderwaterDistance();
-    updateUnderwaterDistance();
-    updateHideAfter();
+    // Update display values (use UI-only setters to avoid POSTs)
+    setNumRoundsUI(currentSettings.numRounds);
+    setRestTimeUI(currentSettings.restTime);
+    setNumSwimmersUI(currentSettings.numSwimmers);
+    setInitialDelayUI(currentSettings.initialDelay);
+    setSwimmerIntervalUI(currentSettings.swimmerInterval);
+    // updateSpeed is more complex (depends on pace input) - update pace input and then recompute visuals
+    document.getElementById('pacePer50').value = currentSettings.speed;
+    updatePaceDistance(false);
+    setBrightnessUI(Math.round((currentSettings.brightness - 20) * 100 / (255 - 20)));
+    setFirstUnderwaterDistanceUI(currentSettings.firstUnderwaterDistance);
+    setUnderwaterDistanceUI(currentSettings.underwaterDistance);
+    setHideAfterUI(currentSettings.hideAfter);
 
     // Update visual selections
     updateVisualSelection();
@@ -1850,7 +2006,7 @@ function updateSwimmerSetDisplay() {
 // Initialize queue system after DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize all DOM-dependent functions
-    updateCalculations();
+    updateCalculations(false);
     initializeBrightnessDisplay();
     updateLaneSelector();
     updateLaneNamesSection();
@@ -1876,15 +2032,16 @@ window.addEventListener('pageshow', function() {
 // Sync labels for range/number controls by calling the existing update handlers.
 function syncRangeLabels() {
     try {
-        updateInitialDelay();
-        updateRestTime();
-        updateSwimmerInterval();
-        updatePulseWidth();
-        updateFirstUnderwaterDistance();
-        updateUnderwaterDistance();
-        updateHideAfter();
-        updateLightSize();
-        updateBrightness();
+        // Use UI-only setters so we don't POST during restore
+        setInitialDelayUI(document.getElementById('initialDelay') ? document.getElementById('initialDelay').value : currentSettings.initialDelay);
+        setRestTimeUI(document.getElementById('restTime') ? document.getElementById('restTime').value : currentSettings.restTime);
+        setSwimmerIntervalUI(document.getElementById('swimmerInterval') ? document.getElementById('swimmerInterval').value : currentSettings.swimmerInterval);
+        setPulseWidthUI(document.getElementById('pulseWidth') ? document.getElementById('pulseWidth').value : currentSettings.pulseWidth);
+        setFirstUnderwaterDistanceUI(document.getElementById('firstUnderwaterDistance') ? document.getElementById('firstUnderwaterDistance').value : currentSettings.firstUnderwaterDistance);
+        setUnderwaterDistanceUI(document.getElementById('underwaterDistance') ? document.getElementById('underwaterDistance').value : currentSettings.underwaterDistance);
+        setHideAfterUI(document.getElementById('hideAfter') ? document.getElementById('hideAfter').value : currentSettings.hideAfter);
+        setLightSizeUI(document.getElementById('lightSize') ? document.getElementById('lightSize').value : currentSettings.lightSize);
+        setBrightnessUI(document.getElementById('brightness') ? document.getElementById('brightness').value : Math.round((currentSettings.brightness - 20) * 100 / (255 - 20)));
     } catch (e) {
         // Non-fatal - if elements not present just ignore
         //console.log('syncRangeLabels failed', e);
@@ -1900,22 +2057,26 @@ function rgbBytesToHex(r, g, b) {
 async function fetchDeviceSettingsAndApply() {
     if (isStandaloneMode) return;
 
-    try {
-        // Optionally fetch apiInfo (for future use / validation)
-        await fetch('/apiInfo').catch(() => {});
+    // Suppress outbound writes while we apply device-provided defaults
+    suppressSettingsWrites = true;
 
+    try {
         // Ensure we have the current lane first
+        console.log("Fetching currentLane");
         const laneRes = await fetch('/currentLane');
         if (laneRes.ok) {
             const laneJson = await laneRes.json();
+            console.log("Received currentLane");
             if (laneJson.currentLane !== undefined) {
                 currentSettings.currentLane = Number(laneJson.currentLane);
             }
         }
 
+        console.log("Fetching globalConfigSettings");
         const res = await fetch('/globalConfigSettings');
         if (!res.ok) return;
         const dev = await res.json();
+        console.log("Received globalConfigSettings, underwaters:" + dev.underwatersEnabled);
 
         // Merge device settings into currentSettings with conversions
         if (dev.stripLengthMeters !== undefined) currentSettings.stripLength = parseFloat(dev.stripLengthMeters);
@@ -1949,7 +2110,9 @@ async function fetchDeviceSettingsAndApply() {
 
         // Underwaters enabled + colors
         if (dev.underwatersEnabled !== undefined) {
-            currentSettings.underwatersEnabled = (dev.underwatersEnabled === 'true' || dev.underwatersEnabled === true);
+            console.log("Applying underwatersEnabled from device:", dev.underwatersEnabled);
+            // Use the dedicated function so DOM and labels are updated consistently
+            updateUnderwatersEnabled(false, (dev.underwatersEnabled === 'true' || dev.underwatersEnabled === true));
         }
         if (dev.underwaterColor !== undefined) {
             currentSettings.underwaterColor = dev.underwaterColor;
@@ -2002,8 +2165,12 @@ async function fetchDeviceSettingsAndApply() {
 
         // After merging, update full UI
         updateAllUIFromSettings();
+        // Re-enable outbound writes now that device defaults are applied
+        suppressSettingsWrites = false;
     } catch (e) {
         console.log('Device settings fetch failed:', e);
+        // Ensure we don't leave suppression enabled on error
+        suppressSettingsWrites = false;
     }
 }
 
