@@ -120,7 +120,7 @@ function parseTimeInput(timeStr) {
 }
 
 function updateFromPace() {
-    const paceInput = document.getElementById('pacePer50').value;
+    const paceInput = document.getElementById('paceTimeSeconds').value;
     const pace = parseTimeInput(paceInput);
     const paceDistance = currentSettings.paceDistance;
 
@@ -128,14 +128,13 @@ function updateFromPace() {
     const units = currentSettings.poolLength.includes('m') ? 'meters' : 'yards';
 
     // Let's always set pace to speed (meters per second)
+    // Compute pool distance in meters first, then divide by seconds to get m/s
+    let poolMeters = paceDistance;
     if (units === 'yards') {
-        const distanceFeet = paceDistance * 3; // yards to feet
-        const speed = distanceFeet / pace;
-        currentSettings.speed = speed * 0.3048; // Convert to meters per second
-    } else {
-        const speed = paceDistance / pace;
-        currentSettings.speed = speed;
+        poolMeters = paceDistance * 0.9144; // yards -> meters
     }
+    // Avoid divide-by-zero
+    currentSettings.speed = (pace > 0) ? (poolMeters / pace) : 0;
 }
 
 function updatePaceDistance(triggerSave = true) {
@@ -956,7 +955,7 @@ function togglePacer() {
         runningSets[currentLane] = JSON.parse(JSON.stringify(getCurrentSwimmerSet()));
         runningSettings[currentLane] = {
             paceDistance: currentSettings.paceDistance,
-            pacePer50: parseTimeInput(document.getElementById('pacePer50').value),
+            paceTimeSeconds: parseTimeInput(document.getElementById('paceTimeSeconds').value),
             restTime: currentSettings.restTime,
             numRounds: currentSettings.numRounds,
             initialDelay: currentSettings.initialDelay,
@@ -1002,7 +1001,7 @@ function initializePacerStatus() {
     }
 
     // Initialize round timing display using running settings
-    const paceSeconds = runningData.pacePer50;
+    const paceSeconds = runningData.paceTimeSeconds;
     const restSeconds = runningData.restTime;
     const totalRoundTime = paceSeconds + restSeconds;
     const totalRoundMinutes = Math.floor(totalRoundTime / 60);
@@ -1090,7 +1089,7 @@ function updatePacerStatus() {
         document.getElementById('nextEvent').textContent = `Starting in ${Math.ceil(-timeAfterInitialDelay)}s`;
 
         // Show initial round timing during delay using running settings
-        const paceSeconds = runningData.pacePer50;
+    const paceSeconds = runningData.paceTimeSeconds;
         const restSeconds = runningData.restTime;
         const totalRoundTime = paceSeconds + restSeconds;
         const totalRoundMinutes = Math.floor(totalRoundTime / 60);
@@ -1103,7 +1102,7 @@ function updatePacerStatus() {
     }
 
     // Calculate current phase and progress (after initial delay) using running settings
-    const paceSeconds = runningData.pacePer50;
+    const paceSeconds = runningData.paceTimeSeconds;
     const restSeconds = runningData.restTime;
     const totalRoundTime = paceSeconds + restSeconds;
 
@@ -1204,7 +1203,7 @@ function createSwimSet() {
     setCurrentSwimmerSet([]);
 
     // Get current pace from the main settings
-    const currentPace = parseTimeInput(document.getElementById('pacePer50').value);
+    const currentPace = parseTimeInput(document.getElementById('paceTimeSeconds').value);
 
     // Create swimmer configurations for current lane
     const newSet = [];
@@ -1236,14 +1235,14 @@ function createSwimSet() {
     setCurrentSwimmerSet(newSet);
 
     // Create swim set object with metadata
-    createdSwimSets[currentSettings.currentLane] = {
+        createdSwimSets[currentSettings.currentLane] = {
         id: Date.now(), // Simple unique ID
         lane: currentSettings.currentLane,
         laneName: currentSettings.laneNames[currentSettings.currentLane],
         swimmers: newSet,
         settings: {
             ...currentSettings,
-            pacePer50: currentPace // Explicitly include the pace value
+            paceTimeSeconds: currentPace // Explicitly include the pace value
         }, // Deep copy of current settings with pace
         summary: generateSetSummary(newSet, currentSettings)
     };
@@ -1525,8 +1524,8 @@ function loadSwimSetForExecution(swimSet) {
     Object.assign(currentSettings, swimSet.settings);
 
     // Update the DOM input fields with the swim set's settings
-    if (swimSet.settings.pacePer50) {
-        document.getElementById('pacePer50').value = swimSet.settings.pacePer50;
+    if (swimSet.settings.paceTimeSeconds !== undefined) {
+    document.getElementById('paceTimeSeconds').value = swimSet.settings.paceTimeSeconds;
     }
     if (swimSet.settings.numRounds) {
         document.getElementById('numRounds').value = swimSet.settings.numRounds;
@@ -1638,7 +1637,7 @@ function displaySwimmerSet() {
     // Update set details in swim practice nomenclature
     const setDetails = document.getElementById('setDetails');
     const paceDistance = currentSettings.paceDistance;
-    const avgPace = currentSet.length > 0 ? currentSet[0].pace : parseTimeInput(document.getElementById('pacePer50').value);
+    const avgPace = currentSet.length > 0 ? currentSet[0].pace : parseTimeInput(document.getElementById('paceTimeSeconds').value);
     const restTime = currentSettings.restTime;
     const numRounds = currentSettings.numRounds;
     const laneName = currentSettings.laneNames[currentSettings.currentLane];
@@ -1884,7 +1883,6 @@ function updateAllUIFromSettings() {
     document.getElementById('numSwimmers').value = currentSettings.numSwimmers;
     document.getElementById('initialDelay').value = currentSettings.initialDelay;
     document.getElementById('swimmerInterval').value = currentSettings.swimmerInterval;
-    document.getElementById('pacePer50').value = currentSettings.speed;
     document.getElementById('paceDistance').value = currentSettings.paceDistance;
     document.getElementById('brightness').value = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
 
@@ -1923,9 +1921,22 @@ function updateAllUIFromSettings() {
     setNumSwimmersUI(currentSettings.numSwimmers);
     setInitialDelayUI(currentSettings.initialDelay);
     setSwimmerIntervalUI(currentSettings.swimmerInterval);
-    // updateSpeed is more complex (depends on pace input) - update pace input and then recompute visuals
-    document.getElementById('pacePer50').value = currentSettings.speed;
-    updatePaceDistance(false);
+    // update speed -> show human-friendly pace (seconds per selected distance)
+    // Avoid inserting raw m/s into the pace input (it would be parsed as seconds).
+    try {
+    const paceInputEl = document.getElementById('paceTimeSeconds');
+        const paceDistance = currentSettings.paceDistance || 50;
+        const units = currentSettings.poolLength && currentSettings.poolLength.includes('m') ? 'meters' : 'yards';
+        const poolMeters = units === 'yards' ? (paceDistance * 0.9144) : paceDistance;
+        const paceSeconds = (currentSettings.speed && currentSettings.speed > 0) ? (poolMeters / currentSettings.speed) : 30;
+        if (paceInputEl) paceInputEl.value = paceSeconds.toFixed(2);
+        // Recompute internals from the displayed pace (no save)
+        updateFromPace();
+        updatePaceDistance(false);
+    } catch (e) {
+        // fall back to safe defaults if DOM not ready
+    const el = document.getElementById('paceTimeSeconds'); if (el) el.value = '30';
+    }
     setBrightnessUI(Math.round((currentSettings.brightness - 20) * 100 / (255 - 20)));
     setFirstUnderwaterDistanceUI(currentSettings.firstUnderwaterDistance);
     setUnderwaterDistanceUI(currentSettings.underwaterDistance);

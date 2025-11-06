@@ -417,7 +417,6 @@ void handleRoot() {
 }
 
 void handleGetSettings() {
-  Serial.println("Received request for /globalConfigSettings");
   // Provide an expanded JSON blob the client can consume to reflect device state
   String json = "{";
   json += "\"totalLEDs\":" + String(totalLEDs) + ",";
@@ -447,8 +446,6 @@ void handleGetSettings() {
   json += "\"surfaceColor\":\"" + surfaceHex + "\"}";
 
   server.send(200, "application/json", json);
-  Serial.print("Responded to request for /globalConfigSettings, underwatersEnabled: ");
-  Serial.println(globalConfigSettings.underwatersEnabled);
 }
 
 void handleGetCurrentLane() {
@@ -803,8 +800,6 @@ void handleSetSwimmerColors() {
 }
 
 void handleSetUnderwaterSettings() {
-  Serial.print("Received call to /setUnderwaterSettings, enabled: ");
-
   if (server.hasArg("enabled")) {
     bool enabled = server.arg("enabled") == "true";
     Serial.println(enabled);
