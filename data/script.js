@@ -1348,7 +1348,7 @@ function updateQueueDisplay() {
                 <div ${statusClass}>
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
-                            ${isCompleted ? 'Γ£ô ' : ''}${swimSet.summary}
+                            ${swimSet.summary}
                         </div>
                         <div style="display: flex; gap: 5px;">
                             ${!isActive && !isCompleted ? `<button onclick="editSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
