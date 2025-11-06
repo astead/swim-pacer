@@ -16,7 +16,8 @@ let currentSettings = {
     numRounds: 10,
     colorMode: 'individual',
     swimmerColor: '#0000ff',
-    poolLength: '25',
+    poolLength: 25,
+    poolLengthUnits: 'yards',
     stripLength: 23,  // 75 feet = 23 meters
     ledsPerMeter: 30,
     numLanes: 2,
@@ -124,13 +125,10 @@ function updateFromPace() {
     const pace = parseTimeInput(paceInput);
     const paceDistance = currentSettings.paceDistance;
 
-    // Determine units based on pool length setting
-    const units = currentSettings.poolLength.includes('m') ? 'meters' : 'yards';
-
     // Let's always set pace to speed (meters per second)
     // Compute pool distance in meters first, then divide by seconds to get m/s
     let poolMeters = paceDistance;
-    if (units === 'yards') {
+    if (currentSettings.poolLengthUnits === 'yards') {
         poolMeters = paceDistance * 0.9144; // yards -> meters
     }
     // Avoid divide-by-zero
@@ -141,29 +139,24 @@ function updatePaceDistance(triggerSave = true) {
     const paceDistance = parseInt(document.getElementById('paceDistance').value);
     currentSettings.paceDistance = paceDistance;
 
-    // Determine units based on pool length setting
-    const units = currentSettings.poolLength.includes('m') ? 'meters' : 'yards';
-
-    // Update the distance units label
-    const distanceUnitsElement = document.getElementById('distanceUnits');
-    if (distanceUnitsElement) {
-        distanceUnitsElement.textContent = units;
-    }
-
     // Recalculate speed based on current pace input and new distance
     updateFromPace();
     if (triggerSave) updateSettings();
 }
 
 function updateCalculations(triggerSave = true) {
-    const poolLength = document.getElementById('poolLength').value;
+    const poolLengthElement = document.getElementById('poolLength').value;
+    const poolLength = parseFloat(poolLengthElement.split(' ')[0]);
+    const poolLengthUnits = poolLengthElement.includes('m') ? 'meters' : 'yards';
     const stripLength = parseFloat(document.getElementById('stripLength').value);
     const ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
 
     // Update current settings
     currentSettings.poolLength = poolLength;
+    currentSettings.poolLengthUnits = poolLengthUnits;
     currentSettings.stripLength = stripLength;
     currentSettings.ledsPerMeter = ledsPerMeter;
+    document.getElementById('distanceUnits').textContent = poolLengthUnits;
 
     // Update distance units when pool length changes
     updatePaceDistance(triggerSave);
@@ -536,6 +529,18 @@ function setSwimmerIntervalUI(value) {
     const unit = v === 1 ? ' second' : ' seconds';
     const label = document.getElementById('swimmerIntervalValue');
     if (label) label.textContent = v + unit;
+}
+
+function setPoolLengthUI(length, units) {
+    if (length === undefined || length === null) return;
+    const el = document.getElementById('poolLength');
+    let lengthStr = length;
+    if (units === 'meters') {
+        lengthStr = length + 'm';
+    }
+    if (el) el.value = lengthStr;
+    currentSettings.poolLength = length;
+    currentSettings.poolLengthUnits = units;
 }
 
 function setPulseWidthUI(value) {
@@ -1276,20 +1281,28 @@ function queueSwimSet() {
         return;
     }
 
-    // Add to current lane's queue
-    swimSetQueues[currentLane].push(createdSwimSets[currentLane]);
-
-    // Clear created set for current lane
-    createdSwimSets[currentLane] = null;
-
-    // Return to configuration mode
-    returnToConfigMode();
-
-    // Update queue display
-    updateQueueDisplay();
-
-    // Show start button if this is the first set
-    updatePacerButtons();
+    // Build minimal payload and send to device queue
+    const payload = buildMinimalSwimSetPayload(createdSwimSets[currentLane]);
+    fetch('/enqueueSwimSet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(resp => {
+        if (!resp.ok) throw new Error('enqueue failed');
+        // Also keep local queue in sync for UI responsiveness
+        swimSetQueues[currentLane].push(createdSwimSets[currentLane]);
+        createdSwimSets[currentLane] = null;
+        returnToConfigMode();
+        updateQueueDisplay();
+        updatePacerButtons();
+    }).catch(err => {
+        console.log('Failed to enqueue on device, keeping local queue only');
+        swimSetQueues[currentLane].push(createdSwimSets[currentLane]);
+        createdSwimSets[currentLane] = null;
+        returnToConfigMode();
+        updateQueueDisplay();
+        updatePacerButtons();
+    });
 }
 
 function cancelSwimSet() {
@@ -1563,7 +1576,25 @@ function startPacerExecution() {
     pacerStartTimes[currentLane] = Date.now();
 
     // Send start command to ESP32
-    sendStartCommand();
+    // Send the swim set to the device and request immediate start
+    const created = createdSwimSets[currentLane] || {
+        id: Date.now(),
+        lane: currentLane,
+        swimmers: runningSets[currentLane] || [],
+        settings: runningSettings[currentLane] || currentSettings,
+        summary: ''
+    };
+    const payload = buildMinimalSwimSetPayload(created);
+    fetch('/runSwimSetNow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(() => {
+        console.log('runSwimSetNow sent');
+    }).catch(() => {
+        // fallback to old toggle when device not reachable
+        sendStartCommand();
+    });
 
     // Start status updates (timer display)
     startStatusUpdates();
@@ -1707,14 +1738,6 @@ function updateSettings() {
         return;
     }
 
-    fetch('/setSpeed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `speed=${currentSettings.speed}`
-    }).catch(error => {
-        console.log('Speed update - server not available');
-    });
-
     fetch('/setPulseWidth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1734,7 +1757,7 @@ function updateSettings() {
     fetch('/setPoolLength', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `poolLength=${currentSettings.poolLength}`
+        body: `poolLength=${currentSettings.poolLength}&poolLengthUnits=${currentSettings.poolLengthUnits}`
     }).catch(error => {
         console.log('Pool length update - server not available');
     });
@@ -1755,37 +1778,8 @@ function updateSettings() {
         console.log('Number of lanes update - server not available');
     });
 
-    fetch('/setRestTime', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `restTime=${currentSettings.restTime}`
-    }).catch(error => {
-        console.log('Rest time update - server not available');
-    });
-
-    fetch('/setPaceDistance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `paceDistance=${currentSettings.paceDistance}`
-    }).catch(error => {
-        console.log('Pace distance update - server not available');
-    });
-
-    fetch('/setInitialDelay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `initialDelay=${currentSettings.initialDelay}`
-    }).catch(error => {
-        console.log('Initial delay update - server not available');
-    });
-
-    fetch('/setSwimmerInterval', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `swimmerInterval=${currentSettings.swimmerInterval}`
-    }).catch(error => {
-        console.log('Swimmer interval update - server not available');
-    });
+    // Only send device-global settings here. Swim-set specific settings (pace, rest, rounds,
+    // swimmer interval, initial delay) are sent when a set is queued or started.
 
     fetch('/setDelayIndicators', {
         method: 'POST',
@@ -1801,22 +1795,6 @@ function updateSettings() {
         body: `numSwimmers=${currentSettings.numSwimmers}`
     }).catch(error => {
         console.log('Number of swimmers update - server not available');
-    });
-
-    fetch('/setNumRounds', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `numRounds=${currentSettings.numRounds}`
-    }).catch(error => {
-        console.log('Number of rounds update - server not available');
-    });
-
-    fetch('/setCurrentLane', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `currentLane=${currentSettings.currentLane}`
-    }).catch(error => {
-        console.log('Current lane update - server not available');
     });
 
     // Send color mode and swimmer color settings
@@ -1875,6 +1853,21 @@ function updateSettings() {
     }
 }
 
+// Build the minimal swim set payload expected by the device
+function buildMinimalSwimSetPayload(createdSet) {
+    // createdSet: { id, lane, swimmers, settings, summary }
+    const settings = createdSet.settings || {};
+    const paceSeconds = settings.paceTimeSeconds || parseTimeInput(document.getElementById('paceTimeSeconds').value);
+    return {
+        length: Number(settings.paceDistance || currentSettings.paceDistance),
+        paceSeconds: Number(paceSeconds),
+        rounds: Number(settings.numRounds || currentSettings.numRounds),
+        restSeconds: Number(settings.restTime || currentSettings.restTime),
+        type: 0,
+        repeat: 0
+    };
+}
+
 // Helper function to update all UI elements from settings
 function updateAllUIFromSettings() {
     // Update input fields
@@ -1923,11 +1916,11 @@ function updateAllUIFromSettings() {
     setSwimmerIntervalUI(currentSettings.swimmerInterval);
     // update speed -> show human-friendly pace (seconds per selected distance)
     // Avoid inserting raw m/s into the pace input (it would be parsed as seconds).
+    setPoolLengthUI(currentSettings.poolLength, currentSettings.poolLengthUnits);
     try {
     const paceInputEl = document.getElementById('paceTimeSeconds');
         const paceDistance = currentSettings.paceDistance || 50;
-        const units = currentSettings.poolLength && currentSettings.poolLength.includes('m') ? 'meters' : 'yards';
-        const poolMeters = units === 'yards' ? (paceDistance * 0.9144) : paceDistance;
+        const poolMeters = currentSettings.poolLengthUnits === 'yards' ? (paceDistance * 0.9144) : paceDistance;
         const paceSeconds = (currentSettings.speed && currentSettings.speed > 0) ? (poolMeters / currentSettings.speed) : 30;
         if (paceInputEl) paceInputEl.value = paceSeconds.toFixed(2);
         // Recompute internals from the displayed pace (no save)
@@ -2094,7 +2087,8 @@ async function fetchDeviceSettingsAndApply() {
         if (dev.ledsPerMeter !== undefined) currentSettings.ledsPerMeter = parseInt(dev.ledsPerMeter);
         if (dev.numLanes !== undefined) currentSettings.numLanes = parseInt(dev.numLanes);
         if (dev.numSwimmers !== undefined) currentSettings.numSwimmers = parseInt(dev.numSwimmers);
-        if (dev.poolLength !== undefined) currentSettings.poolLength = String(dev.poolLength) + (dev.poolUnitsYards === 'true' || dev.poolUnitsYards === true ? '' : 'm');
+        if (dev.poolLength !== undefined) currentSettings.poolLength = dev.poolLength;
+        if (dev.poolLengthUnits !== undefined) currentSettings.poolLengthUnits = dev.poolLengthUnits;
 
         // Convert firmware speed (feet/sec) to m/s for client
         if (dev.speedMetersPerSecond !== undefined) {

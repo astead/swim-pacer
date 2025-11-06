@@ -106,6 +106,33 @@ struct SwimSetSettings {
 
 SwimSetSettings swimSetSettings;
 
+// ----- Swim set queue types and storage -----
+enum SwimSetType { SWIMSET_TYPE = 0, REST_TYPE = 1, LOOP_TYPE = 2, MOVE_TYPE = 3 };
+
+struct SwimSet {
+  uint16_t length;         // distance in pool's native units (no units attached)
+  float paceSeconds;       // seconds to swim the 'length'
+  uint8_t rounds;          // number of rounds
+  uint16_t restSeconds;    // rest time between rounds
+  uint8_t type;            // SwimSetType
+  uint8_t repeat;          // repeat metadata for LOOP_TYPE
+};
+
+// Simple fixed-size in-memory queue
+const int SWIMSET_QUEUE_MAX = 12;
+SwimSet swimSetQueue[SWIMSET_QUEUE_MAX];
+int swimSetQueueHead = 0;
+int swimSetQueueTail = 0;
+int swimSetQueueCount = 0;
+
+// Forward declarations for functions used below
+float convertPoolToStripUnits(float distanceInPoolUnits);
+void recalculateValues();
+void initializeSwimmers();
+void saveSwimSetSettings();
+void saveGlobalConfigSettings();
+
+
 Preferences preferences;
 WebServer server(80);
 
@@ -123,6 +150,78 @@ int currentPosition = 0;
 int direction = 1;
 unsigned long lastUpdate = 0;
 bool needsRecalculation = true;
+
+// (applySwimSetToSettings moved below after Swimmer is defined)
+
+// ----- Swim set queue storage (moved below globals) -----
+// (previously declared earlier; moved so globals are grouped together)
+// Note: queue storage is sized by SWIMSET_QUEUE_MAX and accessed via enqueue/dequeue functions
+
+// The queue arrays are declared earlier but we define the helpers here for readability.
+bool enqueueSwimSet(const SwimSet &s) {
+  if (DEBUG_ENABLED) {
+    Serial.println("enqueueSwimSet(): received set:");
+    Serial.print("  length="); Serial.println(s.length);
+    Serial.print("  paceSeconds="); Serial.println(s.paceSeconds);
+    Serial.print("  rounds="); Serial.println(s.rounds);
+    Serial.print("  restSeconds="); Serial.println(s.restSeconds);
+    Serial.print("  type="); Serial.println(s.type);
+    Serial.print("  repeat="); Serial.println(s.repeat);
+    Serial.print("  queueCountBefore="); Serial.println(swimSetQueueCount);
+  }
+  if (swimSetQueueCount >= SWIMSET_QUEUE_MAX) {
+    if (DEBUG_ENABLED) Serial.println("enqueueSwimSet(): queue full, rejecting set");
+    return false;
+  }
+  swimSetQueue[swimSetQueueTail] = s;
+  swimSetQueueTail = (swimSetQueueTail + 1) % SWIMSET_QUEUE_MAX;
+  swimSetQueueCount++;
+  if (DEBUG_ENABLED) Serial.print("enqueueSwimSet(): queueCountAfter="); Serial.println(swimSetQueueCount);
+  return true;
+}
+
+bool dequeueSwimSet(SwimSet &out) {
+  if (swimSetQueueCount == 0) return false;
+  out = swimSetQueue[swimSetQueueHead];
+  swimSetQueueHead = (swimSetQueueHead + 1) % SWIMSET_QUEUE_MAX;
+  swimSetQueueCount--;
+  return true;
+}
+
+// Minimal JSON extractor helpers (no ArduinoJson dependency)
+float extractJsonFloat(const String &json, const char *key, float fallback) {
+  String keyStr = String("\"") + key + String("\"");
+  int idx = json.indexOf(keyStr);
+  if (idx < 0) return fallback;
+  int colon = json.indexOf(':', idx);
+  if (colon < 0) return fallback;
+  int start = colon + 1;
+  while (start < json.length() && (json.charAt(start) == ' ' || json.charAt(start) == '"')) start++;
+  int end = start;
+  while (end < json.length() && (isDigit(json.charAt(end)) || json.charAt(end) == '.' || json.charAt(end) == '-')) end++;
+  String numStr = json.substring(start, end);
+  if (numStr.length() == 0) return fallback;
+  return numStr.toFloat();
+}
+
+long extractJsonLong(const String &json, const char *key, long fallback) {
+  return (long)extractJsonFloat(json, key, (float)fallback);
+}
+
+String extractJsonString(const String &json, const char *key, const char *fallback) {
+  String keyStr = String("\"") + key + String("\"");
+  int idx = json.indexOf(keyStr);
+  if (idx < 0) return String(fallback);
+  int colon = json.indexOf(':', idx);
+  if (colon < 0) return String(fallback);
+  int start = json.indexOf('"', colon);
+  if (start < 0) return String(fallback);
+  start++;
+  int end = json.indexOf('"', start);
+  if (end < 0) return String(fallback);
+  return json.substring(start, end);
+}
+
 
 // ========== MULTI-SWIMMER VARIABLES ==========
 struct Swimmer {
@@ -161,6 +260,93 @@ CRGB swimmerColors[] = {
   CRGB::Purple,
   CRGB::Cyan
 };
+
+// Apply the swim set to current swimSetSettings and start the set on current lane
+void applySwimSetToSettings(const SwimSet &s) {
+  // Compute speed (m/s) from length (in pool units) and paceSeconds
+  // convert length to meters using current pool units
+  float lengthMeters = convertPoolToStripUnits((float)s.length);
+  if (s.paceSeconds <= 0.0f) return; // avoid divide by zero
+  float speedMPS = lengthMeters / s.paceSeconds;
+
+  swimSetSettings.speedMetersPerSecond = speedMPS;
+  swimSetSettings.swimSetDistance = s.length;
+  swimSetSettings.numRounds = s.rounds;
+  swimSetSettings.restTimeSeconds = s.restSeconds;
+  saveSwimSetSettings();
+
+  needsRecalculation = true;
+  recalculateValues();
+
+  // Debug: print swim set being applied
+  if (DEBUG_ENABLED) {
+    Serial.println("applySwimSetToSettings(): applying set:");
+    Serial.print("  length="); Serial.println(s.length);
+    Serial.print("  paceSeconds="); Serial.println(s.paceSeconds);
+    Serial.print("  rounds="); Serial.println(s.rounds);
+    Serial.print("  restSeconds="); Serial.println(s.restSeconds);
+    Serial.print("  computed speedMPS="); Serial.println(speedMPS, 4);
+    Serial.print("  currentLane="); Serial.println(currentLane);
+  }
+
+  // Initialize swimmers for the current lane to start fresh
+  for (int i = 0; i < 6; i++) {
+    //swimmers[currentLane][i].position = 0; This should continue from previous position
+    //swimmers[currentLane][i].direction = 1; This should continue from previous direction
+  swimmers[currentLane][i].hasStarted = false;  // Initialize as not started
+  swimmers[currentLane][i].lastUpdate = millis();
+
+    // Initialize round and rest tracking
+    swimmers[currentLane][i].currentRound = 1;
+    swimmers[currentLane][i].currentLap = 1;
+    swimmers[currentLane][i].lapsPerRound = ceil(swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
+  swimmers[currentLane][i].isResting = true;
+  // Start rest timer now so initialDelay is honored
+  swimmers[currentLane][i].restStartTime = millis();
+  // Total distance should start at 0 for the new set
+  swimmers[currentLane][i].totalDistance = 0.0;
+    //swimmers[currentLane][i].lapDirection = 1;  This should continue from previous direction
+
+  // Initialize underwater tracking
+  swimmers[currentLane][i].underwaterActive = globalConfigSettings.underwatersEnabled;
+    swimmers[currentLane][i].inSurfacePhase = false;
+    swimmers[currentLane][i].distanceTraveled = 0.0;
+    swimmers[currentLane][i].hideTimerStart = 0;
+
+    // Initialize debug tracking
+    swimmers[currentLane][i].debugRestingPrinted = false;
+    swimmers[currentLane][i].debugSwimmingPrinted = false;
+  }
+
+  // Debug: dump swimmer state for current lane after initialization (first 6 swimmers)
+  if (DEBUG_ENABLED) {
+    Serial.println("applySwimSetToSettings(): swimmer state after initializeSwimmers():");
+    for (int i = 0; i < 6; i++) {
+      Swimmer &sw = swimmers[currentLane][i];
+      Serial.print("  swimmer="); Serial.print(i);
+      Serial.print(" pos="); Serial.print(sw.position);
+      Serial.print(" dir="); Serial.print(sw.direction);
+      Serial.print(" hasStarted="); Serial.print(sw.hasStarted ? 1 : 0);
+      Serial.print(" currentRound="); Serial.print(sw.currentRound);
+      Serial.print(" currentLap="); Serial.print(sw.currentLap);
+      Serial.print(" lapsPerRound="); Serial.print(sw.lapsPerRound);
+      Serial.print(" isResting="); Serial.print(sw.isResting ? 1 : 0);
+      Serial.print(" restStartTime="); Serial.print(sw.restStartTime);
+      Serial.print(" totalDistance="); Serial.print(sw.totalDistance, 3);
+      Serial.print(" lapDirection="); Serial.println(sw.lapDirection);
+    }
+  }
+
+  // Start the current lane pacer
+  globalConfigSettings.laneRunning[currentLane] = true;
+  // Update global isRunning if any lane is running
+  globalConfigSettings.isRunning = false;
+  for (int i = 0; i < globalConfigSettings.numLanes; i++) {
+    if (globalConfigSettings.laneRunning[i]) { globalConfigSettings.isRunning = true; break; }
+  }
+  saveGlobalConfigSettings();
+}
+
 
 void setup() {
   pinMode(2, OUTPUT); // On many ESP32 dev boards the on-board LED is on GPIO2
@@ -373,6 +559,66 @@ void setupWebServer() {
   server.on("/setSwimmerColors", HTTP_POST, handleSetSwimmerColors);
   server.on("/setUnderwaterSettings", HTTP_POST, handleSetUnderwaterSettings);
 
+  // Swim set queue endpoints
+  server.on("/enqueueSwimSet", HTTP_POST, []() {
+    // Read raw body
+    String body = server.arg("plain");
+    SwimSet s;
+    s.length = (uint16_t)extractJsonLong(body, "length", 50);
+    s.paceSeconds = extractJsonFloat(body, "paceSeconds", swimSetSettings.speedMetersPerSecond);
+    s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
+    s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
+    s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
+    s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
+
+    bool ok = enqueueSwimSet(s);
+    server.send(ok ? 200 : 507, "text/plain", ok ? "Enqueued" : "Queue full");
+  });
+
+  server.on("/runSwimSetNow", HTTP_POST, []() {
+    String body = server.arg("plain");
+    SwimSet s;
+    s.length = (uint16_t)extractJsonLong(body, "length", 50);
+    s.paceSeconds = extractJsonFloat(body, "paceSeconds", swimSetSettings.speedMetersPerSecond);
+    s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
+    s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
+    s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
+    s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
+
+    // Apply and start immediately
+    applySwimSetToSettings(s);
+    server.send(200, "text/plain", "Started");
+  });
+
+  server.on("/getSwimQueue", HTTP_GET, []() {
+    String json = "[";
+    for (int i = 0; i < swimSetQueueCount; i++) {
+      int idx = (swimSetQueueHead + i) % SWIMSET_QUEUE_MAX;
+      SwimSet &s = swimSetQueue[idx];
+      if (i) json += ",";
+      json += "{";
+      json += String("\"length\":") + String(s.length) + ",";
+      json += String("\"paceSeconds\":") + String(s.paceSeconds, 2) + ",";
+      json += String("\"rounds\":") + String(s.rounds) + ",";
+      json += String("\"restSeconds\":") + String(s.restSeconds) + ",";
+      json += String("\"type\":") + String(s.type) + ",";
+      json += String("\"repeat\":") + String(s.repeat);
+      json += "}";
+    }
+    json += "]";
+    server.send(200, "application/json", json);
+  });
+
+  server.on("/startNextSwimSet", HTTP_POST, []() {
+    SwimSet next;
+    if (dequeueSwimSet(next)) {
+      applySwimSetToSettings(next);
+      server.send(200, "text/plain", "Started next");
+    } else {
+      server.send(404, "text/plain", "Queue empty");
+    }
+  });
+
   // Temporary debug endpoint to reset color preferences
   server.on("/resetColors", HTTP_POST, []() {
     preferences.remove("colorRed");
@@ -433,7 +679,7 @@ void handleGetSettings() {
   json += "\"numLanes\":" + String(globalConfigSettings.numLanes) + ",";
   json += "\"numSwimmers\":" + String(globalConfigSettings.numSwimmers) + ",";
   json += "\"poolLength\":" + String(globalConfigSettings.poolLength, 2) + ",";
-  json += "\"poolUnitsYards\":" + String(globalConfigSettings.poolUnitsYards ? "true" : "false") + ",";
+  json += "\"poolLengthUnits\":" + String(globalConfigSettings.poolUnitsYards ? "yards" : "meters") + ",";
   json += "\"underwatersEnabled\":" + String(globalConfigSettings.underwatersEnabled ? "true" : "false") + ",";
   json += "\"delayIndicatorsEnabled\":" + String(globalConfigSettings.delayIndicatorsEnabled ? "true" : "false") + ",";
   json += "\"isRunning\":" + String(globalConfigSettings.laneRunning[currentLane] ? "true" : "false") + ",";
@@ -570,12 +816,13 @@ void handleSetStripLength() {
 }
 
 void handleSetPoolLength() {
-  if (server.hasArg("poolLength")) {
+  if (server.hasArg("poolLength") && server.hasArg("poolLengthUnits")) {
     String poolLengthStr = server.arg("poolLength");
+    String poolLengthUnitsStr = server.arg("poolLengthUnits");
 
     // Parse the pool length and units
     // Format examples: "25", "50", "25m", "50m"
-    bool isMeters = poolLengthStr.endsWith("m");
+    bool isMeters = poolLengthUnitsStr == "meters";
     float poolLength = poolLengthStr.toFloat(); // This will parse the number part
 
     globalConfigSettings.poolLength = poolLength;
@@ -1095,29 +1342,23 @@ void drawDelayIndicators(int laneIndex) {
 }
 
 void initializeSwimmers() {
-  // Calculate how many pool lengths equal one round
-  // Both swimSetDistance and poolLength are in the same units (pool's native units)
-  int lapsPerRound = (int)ceil((float)swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
-
-  if (false && DEBUG_ENABLED) {
+  if (DEBUG_ENABLED) {
     Serial.println("\n========== INITIALIZING SWIMMERS ==========");
   }
-
-  unsigned long currentTime = millis();
 
   for (int lane = 0; lane < 4; lane++) {
     for (int i = 0; i < 6; i++) {
       swimmers[lane][i].position = 0;
       swimmers[lane][i].direction = 1;
       swimmers[lane][i].hasStarted = false;  // Initialize as not started
-      swimmers[lane][i].lastUpdate = currentTime;
+      swimmers[lane][i].lastUpdate = 0;
 
       // Initialize round and rest tracking
-      swimmers[lane][i].currentRound = 1;
-      swimmers[lane][i].currentLap = 1;
-      swimmers[lane][i].lapsPerRound = lapsPerRound;
+      swimmers[lane][i].currentRound = 0;
+      swimmers[lane][i].currentLap = 0;
+      swimmers[lane][i].lapsPerRound = 0;
       swimmers[lane][i].isResting = true;
-      swimmers[lane][i].restStartTime = currentTime;
+      swimmers[lane][i].restStartTime = 0;
       swimmers[lane][i].totalDistance = 0.0;
       swimmers[lane][i].lapDirection = 1;  // Start going away from start wall
 
