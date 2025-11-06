@@ -2090,159 +2090,165 @@ async function fetchDeviceSettingsAndApply() {
 // Each helper only updates one aspect of device state to limit POSTs
 // -----------------------------
 
-function sendPulseWidth(pulseWidth) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setPulseWidth', {
+// Default timeout for individual setting posts (ms)
+const SEND_TIMEOUT_MS = 800;
+
+// Generic form POST with timeout support. Returns a Promise that resolves/rejects
+// like fetch. If writes are suppressed or we're in standalone mode, returns a
+// resolved Promise immediately so callers can uniformly await it.
+function postForm(path, body, timeoutMs = SEND_TIMEOUT_MS) {
+    if (isStandaloneMode || suppressSettingsWrites) return Promise.resolve({ suppressed: true });
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    return fetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `pulseWidth=${encodeURIComponent(pulseWidth)}`
-    }).catch(() => {/* silent */});
+        body: body,
+        signal
+    }).finally(() => clearTimeout(timeoutId));
+}
+
+function sendPulseWidth(pulseWidth) {
+    return postForm('/setPulseWidth', `pulseWidth=${encodeURIComponent(pulseWidth)}`);
 }
 
 function sendStripLength(stripLength) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setStripLength', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `stripLength=${encodeURIComponent(stripLength)}`
-    }).catch(() => {/* silent */});
+    return postForm('/setStripLength', `stripLength=${encodeURIComponent(stripLength)}`);
 }
 
 function sendPoolLength(poolLength, poolUnits) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setPoolLength', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `poolLength=${encodeURIComponent(poolLength)}&poolLengthUnits=${encodeURIComponent(poolUnits)}`
-    }).catch(() => {/* silent */});
+    return postForm('/setPoolLength', `poolLength=${encodeURIComponent(poolLength)}&poolLengthUnits=${encodeURIComponent(poolUnits)}`);
 }
 
 function sendLedsPerMeter(ledsPerMeter) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setLedsPerMeter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `ledsPerMeter=${encodeURIComponent(ledsPerMeter)}`
-    }).catch(() => {/* silent */});
+    return postForm('/setLedsPerMeter', `ledsPerMeter=${encodeURIComponent(ledsPerMeter)}`);
 }
 
 function sendNumLanes(numLanes) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setNumLanes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `numLanes=${encodeURIComponent(numLanes)}`
-    }).catch(() => {/* silent */});
+    return postForm('/setNumLanes', `numLanes=${encodeURIComponent(numLanes)}`);
 }
 
 function sendDelayIndicators(enabled) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setDelayIndicators', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `enabled=${enabled ? 'true' : 'false'}`
-    }).catch(() => {/* silent */});
+    return postForm('/setDelayIndicators', `enabled=${enabled ? 'true' : 'false'}`);
 }
 
 function sendNumSwimmers(numSwimmers) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setNumSwimmers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `numSwimmers=${encodeURIComponent(numSwimmers)}`
-    }).catch(() => {/* silent */});
+    return postForm('/setNumSwimmers', `numSwimmers=${encodeURIComponent(numSwimmers)}`);
 }
 
 function sendColorMode(mode) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setColorMode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `colorMode=${encodeURIComponent(mode)}`
-    }).catch(() => {/* silent */});
+    return postForm('/setColorMode', `colorMode=${encodeURIComponent(mode)}`);
 }
 
 function sendSwimmerColor(hex) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setSwimmerColor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `color=${encodeURIComponent(hex)}`
-    }).catch(() => {/* silent */});
+    return postForm('/setSwimmerColor', `color=${encodeURIComponent(hex)}`);
 }
 
 function sendSwimmerColors(csvHex) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setSwimmerColors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `colors=${encodeURIComponent(csvHex)}`
-    }).catch(() => {/* silent */});
+    return postForm('/setSwimmerColors', `colors=${encodeURIComponent(csvHex)}`);
 }
 
 function sendUnderwaterSettings() {
-    if (isStandaloneMode || suppressSettingsWrites) return;
     const u = currentSettings;
     const body = `enabled=${u.underwatersEnabled ? 'true' : 'false'}&firstUnderwaterDistance=${encodeURIComponent(u.firstUnderwaterDistance)}&underwaterDistance=${encodeURIComponent(u.underwaterDistance)}&surfaceDistance=${encodeURIComponent(u.surfaceDistance)}&hideAfter=${encodeURIComponent(u.hideAfter)}&lightSize=${encodeURIComponent(u.lightSize)}&underwaterColor=${encodeURIComponent(u.underwaterColor)}&surfaceColor=${encodeURIComponent(u.surfaceColor)}`;
-    fetch('/setUnderwaterSettings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body
-    }).catch(() => {/* silent */});
+    return postForm('/setUnderwaterSettings', body);
 }
 
 function sendBrightness(percent) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
     // convert percent to internal 0-255 if caller sent percent
     const internal = Math.round(20 + (percent / 100) * (255 - 20));
-    fetch('/setBrightness', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `brightness=${encodeURIComponent(internal)}`
-    }).catch(() => {/* silent */});
+    return postForm('/setBrightness', `brightness=${encodeURIComponent(internal)}`);
 }
 
 function sendSpeed(speed) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setSpeed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `speed=${encodeURIComponent(Number(speed))}`
-    }).catch(() => {/* silent */});
+    return postForm('/setSpeed', `speed=${encodeURIComponent(Number(speed))}`);
 }
 
 function sendPaceDistance(paceDistance) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setPaceDistance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `paceDistance=${encodeURIComponent(Number(paceDistance))}`
-    }).catch(() => {/* silent */});
+    return postForm('/setPaceDistance', `paceDistance=${encodeURIComponent(Number(paceDistance))}`);
 }
 
 function sendNumRounds(numRounds) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setNumRounds', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `numRounds=${encodeURIComponent(Number(numRounds))}`
-    }).catch(() => {/* silent */});
+    return postForm('/setNumRounds', `numRounds=${encodeURIComponent(Number(numRounds))}`);
 }
 
 function sendRestTime(restSeconds) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setRestTime', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `restTime=${encodeURIComponent(Number(restSeconds))}`
-    }).catch(() => {/* silent */});
+    return postForm('/setRestTime', `restTime=${encodeURIComponent(Number(restSeconds))}`);
 }
 
 function sendSwimmerInterval(intervalSeconds) {
-    if (isStandaloneMode || suppressSettingsWrites) return;
-    fetch('/setSwimmerInterval', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `swimmerInterval=${encodeURIComponent(Number(intervalSeconds))}`
-    }).catch(() => {/* silent */});
+    return postForm('/setSwimmerInterval', `swimmerInterval=${encodeURIComponent(Number(intervalSeconds))}`);
+}
+
+// Replace the old timeout-based start with a promise-based sequence. We will
+// wait for a short period for the individual setting posts to settle, but not
+// indefinitely. Use Promise.allSettled and race it with a timeout fallback.
+async function sendStartCommand() {
+    // Collect promises from each targeted send helper
+    const promises = [];
+
+    // Geometry and LED mapping
+    promises.push(sendPoolLength(currentSettings.poolLength, currentSettings.poolLengthUnits));
+    promises.push(sendStripLength(currentSettings.stripLength));
+    promises.push(sendLedsPerMeter(currentSettings.ledsPerMeter));
+
+    // Visual settings
+    try {
+        const brightnessPercent = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
+        promises.push(sendBrightness(brightnessPercent));
+    } catch (e) {
+        // ignore if conversion fails
+    }
+    promises.push(sendPulseWidth(currentSettings.pulseWidth));
+
+    // Lane and swimmer counts
+    promises.push(sendNumLanes(currentSettings.numLanes));
+    promises.push(sendNumSwimmers(currentSettings.numSwimmers));
+    promises.push(sendNumRounds(currentSettings.numRounds));
+
+    // Pace-related
+    promises.push(sendPaceDistance(currentSettings.paceDistance));
+    promises.push(sendSpeed(currentSettings.speed));
+
+    // Rest and swimmer interval defaults
+    promises.push(sendRestTime(currentSettings.restTime));
+    promises.push(sendSwimmerInterval(currentSettings.swimmerInterval));
+
+    // Indicators and underwater config
+    promises.push(sendDelayIndicators(currentSettings.delayIndicatorsEnabled));
+    promises.push(sendUnderwaterSettings());
+
+    // Color configuration
+    if (currentSettings.colorMode === 'individual') {
+        const set = getCurrentSwimmerSet();
+        const colors = [];
+        for (let i = 0; i < currentSettings.numSwimmers; i++) {
+            if (set && set[i] && set[i].color) colors.push(set[i].color);
+            else colors.push(currentSettings.swimmerColor);
+        }
+        promises.push(sendSwimmerColors(colors.join(',')));
+    } else {
+        promises.push(sendSwimmerColor(currentSettings.swimmerColor));
+    }
+
+    // Wait for all posts to settle, but cap wait time by racing with a timeout.
+    const waitMs = 1000; // maximum time to wait for all sends
+    const allSettledPromise = Promise.allSettled(promises.map(p => p || Promise.resolve()));
+    await Promise.race([
+        allSettledPromise,
+        new Promise(resolve => setTimeout(resolve, waitMs))
+    ]);
+
+    // Finally, request the device to toggle/start. Do not block on this.
+    fetch('/toggle', { method: 'POST' })
+        .then(response => response.text())
+        .then(result => {
+            console.log('Start command issued, server response:', result);
+        })
+        .catch(err => {
+            console.log('Start command failed (standalone mode)');
+        });
 }
