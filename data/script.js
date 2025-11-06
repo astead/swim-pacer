@@ -140,7 +140,11 @@ function updatePaceDistance(triggerSave = true) {
 
     // Recalculate speed based on current pace input and new distance
     updateFromPace();
-    if (triggerSave) updateSettings();
+    if (triggerSave) {
+        // Save only the pace distance and derived speed
+        sendPaceDistance(currentSettings.paceDistance);
+        sendSpeed(currentSettings.speed);
+    }
 }
 
 function updateCalculations(triggerSave = true) {
@@ -157,8 +161,19 @@ function updateCalculations(triggerSave = true) {
     currentSettings.ledsPerMeter = ledsPerMeter;
     document.getElementById('distanceUnits').textContent = poolLengthUnits;
 
-    // Update distance units when pool length changes
-    updatePaceDistance(triggerSave);
+    // Update distance units when pool length changes.
+    // We only want to save the specific fields that changed instead of issuing
+    // a broad, multi-endpoint write which would overwrite other device state.
+    // Recompute pace-derived internals but suppress the global save here.
+    updatePaceDistance(false);
+
+    // If caller requested saving, call the targeted send helpers so the
+    // server only receives the changed values.
+    if (triggerSave) {
+        sendPoolLength(currentSettings.poolLength, currentSettings.poolLengthUnits);
+        sendStripLength(currentSettings.stripLength);
+        sendLedsPerMeter(currentSettings.ledsPerMeter);
+    }
 }
 
 function updateNumLanes() {
@@ -166,7 +181,7 @@ function updateNumLanes() {
     currentSettings.numLanes = numLanes;
     updateLaneSelector();
     updateLaneNamesSection();
-    updateSettings();
+    sendNumLanes(numLanes);
 }
 
 function updateLaneSelector() {
@@ -217,7 +232,7 @@ function updateLaneNamesSection() {
         input.onchange = function() {
             currentSettings.laneNames[i] = this.value;
             updateLaneSelector(); // Refresh the dropdown on main page
-            updateSettings(); // Save the changes
+            // Lane names are client-only UI labels; no server update necessary
         };
 
         laneDiv.appendChild(colorIndicator);
@@ -360,7 +375,7 @@ function updateBrightness() {
 
     currentSettings.brightness = internalBrightness;
     document.getElementById('brightnessValue').textContent = brightnessPercent + '%';
-    updateSettings();
+    sendBrightness(brightnessPercent);
 }
 
 function initializeBrightnessDisplay() {
@@ -377,7 +392,7 @@ function updatePulseWidth() {
     currentSettings.pulseWidth = parseFloat(pulseWidth);
     const unit = parseFloat(pulseWidth) === 1.0 ? ' foot' : ' feet';
     document.getElementById('pulseWidthValue').textContent = pulseWidth + unit;
-    updateSettings();
+    sendPulseWidth(pulseWidth);
 }
 
 function updateRestTime() {
@@ -385,7 +400,8 @@ function updateRestTime() {
     currentSettings.restTime = parseInt(restTime);
     const unit = parseInt(restTime) === 1 ? ' second' : ' seconds';
     document.getElementById('restTimeValue').textContent = restTime + unit;
-    updateSettings();
+    // Also send rest time to device so it can be used as a default for swim-sets
+    sendRestTime(currentSettings.restTime);
 }
 
 
@@ -395,7 +411,8 @@ function updateSwimmerInterval() {
     currentSettings.swimmerInterval = parseInt(swimmerInterval);
     const unit = parseInt(swimmerInterval) === 1 ? ' second' : ' seconds';
     document.getElementById('swimmerIntervalValue').textContent = swimmerInterval + unit;
-    updateSettings();
+    // Also send swimmer interval to device so it can be used as a default for swim-sets
+    sendSwimmerInterval(currentSettings.swimmerInterval);
 }
 
 function updateDelayIndicatorsEnabled() {
@@ -414,7 +431,7 @@ function updateDelayIndicatorsEnabled() {
         toggleOn.classList.remove('active');
     }
 
-    updateSettings();
+    sendDelayIndicators(enabled);
 }
 
 function updateUnderwatersEnabled(triggerSave = true, enabledArg) {
@@ -451,7 +468,7 @@ function updateUnderwatersEnabled(triggerSave = true, enabledArg) {
     }
 
     if (triggerSave === true) {
-        updateSettings();
+        sendUnderwaterSettings();
     }
 }
 
@@ -460,7 +477,7 @@ function updateLightSize() {
     currentSettings.lightSize = parseFloat(lightSize);
     const unit = parseFloat(lightSize) === 1.0 ? ' foot' : ' feet';
     document.getElementById('lightSizeValue').textContent = lightSize + unit;
-    updateSettings();
+    sendUnderwaterSettings();
 }
 
 function updateFirstUnderwaterDistance() {
@@ -468,7 +485,7 @@ function updateFirstUnderwaterDistance() {
     currentSettings.firstUnderwaterDistance = parseInt(distance);
     const unit = parseInt(distance) === 1 ? ' foot' : ' feet';
     document.getElementById('firstUnderwaterDistanceValue').textContent = distance + unit;
-    updateSettings();
+    sendUnderwaterSettings();
 }
 
 function updateUnderwaterDistance() {
@@ -476,7 +493,7 @@ function updateUnderwaterDistance() {
     currentSettings.underwaterDistance = parseInt(distance);
     const unit = parseInt(distance) === 1 ? ' foot' : ' feet';
     document.getElementById('underwaterDistanceValue').textContent = distance + unit;
-    updateSettings();
+    sendUnderwaterSettings();
 }
 
 function updateHideAfter() {
@@ -484,7 +501,7 @@ function updateHideAfter() {
     currentSettings.hideAfter = parseInt(hideAfter);
     const unit = parseInt(hideAfter) === 1 ? ' second' : ' seconds';
     document.getElementById('hideAfterValue').textContent = hideAfter + unit;
-    updateSettings();
+    sendUnderwaterSettings();
 }
 
 // -------------------
@@ -623,13 +640,13 @@ function openColorPickerForSurface() {
 function updateNumSwimmers() {
     const numSwimmers = document.getElementById('numSwimmers').value;
     currentSettings.numSwimmers = parseInt(numSwimmers);
-    updateSettings();
+    sendNumSwimmers(currentSettings.numSwimmers);
 }
 
 function updateNumRounds() {
     const numRounds = document.getElementById('numRounds').value;
     currentSettings.numRounds = parseInt(numRounds);
-    updateSettings();
+    sendNumRounds(currentSettings.numRounds);
 }
 
 function updateColorMode() {
@@ -637,7 +654,7 @@ function updateColorMode() {
     currentSettings.colorMode = colorMode;
     updateVisualSelection();
 
-    // Only send color mode change, don't call updateSettings() which would reset swimmers
+    // Only send color mode change; avoid broad writes that would reset swimmers
     if (!isStandaloneMode) {
         fetch('/setColorMode', {
             method: 'POST',
@@ -846,12 +863,12 @@ function selectColor(color) {
         // Updating underwater color
         currentSettings.underwaterColor = color;
         document.getElementById('underwaterColorIndicator').style.backgroundColor = color;
-        updateSettings();
+        sendUnderwaterSettings();
     } else if (currentColorContext === 'surface') {
         // Updating surface color
         currentSettings.surfaceColor = color;
         document.getElementById('surfaceColorIndicator').style.backgroundColor = color;
-        updateSettings();
+        sendUnderwaterSettings();
     } else {
         // Updating coach config same color setting
         currentSettings.swimmerColor = color;
@@ -897,7 +914,7 @@ let currentRounds = [1, 1, 1, 1]; // Current round for each lane
 let completionHandled = [false, false, false, false]; // Track if completion has been handled for each lane
 let statusUpdateInterval = null;
 let currentColorContext = null; // Track which color picker context we're in
-// When true, updateSettings() will be a no-op to avoid overwriting device defaults
+// When true, broad settings writes are suppressed to avoid overwriting device defaults
 let suppressSettingsWrites = false;
 
 function updateStatus() {
@@ -1601,20 +1618,65 @@ function stopPacerExecution() {
 
 // Functions to communicate with ESP32
 function sendStartCommand() {
-    // First update ESP32 with current work set settings
-    updateSettings();
+    // Send only the specific fields that matter for starting the pacer.
+    // Avoid issuing a broad, multi-endpoint write which may overwrite device state.
 
-    // Small delay to ensure settings are applied before starting
+    // Geometry and LED mapping
+    sendPoolLength(currentSettings.poolLength, currentSettings.poolLengthUnits);
+    sendStripLength(currentSettings.stripLength);
+    sendLedsPerMeter(currentSettings.ledsPerMeter);
+
+    // Visual settings
+    // sendBrightness expects a percent (0-100)
+    try {
+        const brightnessPercent = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
+        sendBrightness(brightnessPercent);
+    } catch (e) {
+        // ignore if conversion fails
+    }
+    sendPulseWidth(currentSettings.pulseWidth);
+
+    // Lane and swimmer counts
+    sendNumLanes(currentSettings.numLanes);
+    sendNumSwimmers(currentSettings.numSwimmers);
+    sendNumRounds(currentSettings.numRounds);
+
+    // Pace-related
+    sendPaceDistance(currentSettings.paceDistance);
+    sendSpeed(currentSettings.speed);
+
+    // Rest and swimmer interval defaults (help the device maintain consistent defaults)
+    sendRestTime(currentSettings.restTime);
+    sendSwimmerInterval(currentSettings.swimmerInterval);
+
+    // Indicators and underwater config
+    sendDelayIndicators(currentSettings.delayIndicatorsEnabled);
+    sendUnderwaterSettings();
+
+    // Color configuration
+    if (currentSettings.colorMode === 'individual') {
+        const set = getCurrentSwimmerSet();
+        const colors = [];
+        for (let i = 0; i < currentSettings.numSwimmers; i++) {
+            if (set && set[i] && set[i].color) colors.push(set[i].color);
+            else colors.push(currentSettings.swimmerColor);
+        }
+    sendSwimmerColors(colors.join(','));
+    } else {
+        sendSwimmerColor(currentSettings.swimmerColor);
+    }
+
+    // Finally, request the device to toggle/start. Small delay ensures prior posts are scheduled.
     setTimeout(() => {
         fetch('/toggle', { method: 'POST' })
         .then(response => response.text())
         .then(result => {
-            console.log('Start command sent:', result);
+            console.log('Start command issued, server response:', result);
         })
-        .catch(error => {
-            console.log('Running in standalone mode - start command not sent');
+        .catch(err => {
+            console.log('Start command failed (standalone mode)');
         });
-    }, 100); // 100ms delay
+    }, 100);
 }
 
 function sendStopCommand() {
@@ -1697,133 +1759,8 @@ function updateSwimmerPace(swimmerIndex, newPace) {
         currentSet[swimmerIndex].pace = parseFloat(newPace);
     }
 }
-
-function updateSettings() {
-    // Skip server communication in standalone mode
-    if (isStandaloneMode) {
-        return;
-    }
-
-    // During initial device defaults application we suppress outbound writes
-    if (suppressSettingsWrites) {
-        console.log('updateSettings suppressed (applying device defaults)');
-        return;
-    }
-
-    fetch('/setPulseWidth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `pulseWidth=${currentSettings.pulseWidth}`
-    }).catch(error => {
-        console.log('Pulse width update - server not available');
-    });
-
-    fetch('/setStripLength', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `stripLength=${currentSettings.stripLength}`
-    }).catch(error => {
-        console.log('Strip length update - server not available');
-    });
-
-    fetch('/setPoolLength', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `poolLength=${currentSettings.poolLength}&poolLengthUnits=${currentSettings.poolLengthUnits}`
-    }).catch(error => {
-        console.log('Pool length update - server not available');
-    });
-
-    fetch('/setLedsPerMeter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `ledsPerMeter=${currentSettings.ledsPerMeter}`
-    }).catch(error => {
-        console.log('LEDs per meter update - server not available');
-    });
-
-    fetch('/setNumLanes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `numLanes=${currentSettings.numLanes}`
-    }).catch(error => {
-        console.log('Number of lanes update - server not available');
-    });
-
-    // Only send device-global settings here. Swim-set specific settings (pace, rest, rounds,
-    // swimmer interval, initial delay) are sent when a set is queued or started.
-
-    fetch('/setDelayIndicators', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `enabled=${currentSettings.delayIndicatorsEnabled}`
-    }).catch(error => {
-        console.log('Delay indicators update - server not available');
-    });
-
-    fetch('/setNumSwimmers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `numSwimmers=${currentSettings.numSwimmers}`
-    }).catch(error => {
-        console.log('Number of swimmers update - server not available');
-    });
-
-    // Send color mode and swimmer color settings
-    fetch('/setColorMode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `colorMode=${currentSettings.colorMode}`
-    }).catch(error => {
-        console.log('Color mode update - server not available');
-    });
-
-    if (currentSettings.colorMode === 'same') {
-        // Send the same color for all swimmers
-        fetch('/setSwimmerColor', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `color=${encodeURIComponent(currentSettings.swimmerColor)}`
-        }).catch(error => {
-            console.log('Swimmer color update - server not available');
-        });
-    } else {
-        // Send individual swimmer colors
-        const currentSet = getCurrentSwimmerSet();
-        if (currentSet && currentSet.length > 0) {
-            const swimmerColors = currentSet.map(swimmer => swimmer.color || '#0000ff').join(',');
-            fetch('/setSwimmerColors', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `colors=${encodeURIComponent(swimmerColors)}`
-            }).catch(error => {
-                console.log('Individual swimmer colors update - server not available');
-            });
-        }
-    }
-
-    // Send underwater settings
-    if (currentSettings.underwatersEnabled) {
-        console.log("Sending call to setUnderwaterSettings: enabled: true");
-        fetch('/setUnderwaterSettings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `enabled=true&firstUnderwaterDistance=${currentSettings.firstUnderwaterDistance}&underwaterDistance=${currentSettings.underwaterDistance}&surfaceDistance=${currentSettings.surfaceDistance}&hideAfter=${currentSettings.hideAfter}&lightSize=${currentSettings.lightSize}&underwaterColor=${encodeURIComponent(currentSettings.underwaterColor)}&surfaceColor=${encodeURIComponent(currentSettings.surfaceColor)}`
-        }).catch(error => {
-            console.log('Underwater settings update - server not available');
-        });
-    } else {
-        console.log("Sending call to setUnderwaterSettings: enabled: false");
-        fetch('/setUnderwaterSettings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `enabled=false`
-        }).catch(error => {
-            console.log('Underwater settings update - server not available');
-        });
-
-    }
-}
+// Use targeted send* helpers (e.g., sendPoolLength, sendBrightness) instead of broad writes
+// so we avoid overwriting unrelated device state.
 
 // Build the minimal swim set payload expected by the device
 function buildMinimalSwimSetPayload(createdSet) {
@@ -2146,4 +2083,166 @@ async function fetchDeviceSettingsAndApply() {
         // Ensure we don't leave suppression enabled on error
         suppressSettingsWrites = false;
     }
+}
+
+// -----------------------------
+// Targeted server update helpers
+// Each helper only updates one aspect of device state to limit POSTs
+// -----------------------------
+
+function sendPulseWidth(pulseWidth) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setPulseWidth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `pulseWidth=${encodeURIComponent(pulseWidth)}`
+    }).catch(() => {/* silent */});
+}
+
+function sendStripLength(stripLength) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setStripLength', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `stripLength=${encodeURIComponent(stripLength)}`
+    }).catch(() => {/* silent */});
+}
+
+function sendPoolLength(poolLength, poolUnits) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setPoolLength', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `poolLength=${encodeURIComponent(poolLength)}&poolLengthUnits=${encodeURIComponent(poolUnits)}`
+    }).catch(() => {/* silent */});
+}
+
+function sendLedsPerMeter(ledsPerMeter) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setLedsPerMeter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `ledsPerMeter=${encodeURIComponent(ledsPerMeter)}`
+    }).catch(() => {/* silent */});
+}
+
+function sendNumLanes(numLanes) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setNumLanes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `numLanes=${encodeURIComponent(numLanes)}`
+    }).catch(() => {/* silent */});
+}
+
+function sendDelayIndicators(enabled) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setDelayIndicators', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `enabled=${enabled ? 'true' : 'false'}`
+    }).catch(() => {/* silent */});
+}
+
+function sendNumSwimmers(numSwimmers) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setNumSwimmers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `numSwimmers=${encodeURIComponent(numSwimmers)}`
+    }).catch(() => {/* silent */});
+}
+
+function sendColorMode(mode) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setColorMode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `colorMode=${encodeURIComponent(mode)}`
+    }).catch(() => {/* silent */});
+}
+
+function sendSwimmerColor(hex) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setSwimmerColor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `color=${encodeURIComponent(hex)}`
+    }).catch(() => {/* silent */});
+}
+
+function sendSwimmerColors(csvHex) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setSwimmerColors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `colors=${encodeURIComponent(csvHex)}`
+    }).catch(() => {/* silent */});
+}
+
+function sendUnderwaterSettings() {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    const u = currentSettings;
+    const body = `enabled=${u.underwatersEnabled ? 'true' : 'false'}&firstUnderwaterDistance=${encodeURIComponent(u.firstUnderwaterDistance)}&underwaterDistance=${encodeURIComponent(u.underwaterDistance)}&surfaceDistance=${encodeURIComponent(u.surfaceDistance)}&hideAfter=${encodeURIComponent(u.hideAfter)}&lightSize=${encodeURIComponent(u.lightSize)}&underwaterColor=${encodeURIComponent(u.underwaterColor)}&surfaceColor=${encodeURIComponent(u.surfaceColor)}`;
+    fetch('/setUnderwaterSettings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body
+    }).catch(() => {/* silent */});
+}
+
+function sendBrightness(percent) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    // convert percent to internal 0-255 if caller sent percent
+    const internal = Math.round(20 + (percent / 100) * (255 - 20));
+    fetch('/setBrightness', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `brightness=${encodeURIComponent(internal)}`
+    }).catch(() => {/* silent */});
+}
+
+function sendSpeed(speed) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setSpeed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `speed=${encodeURIComponent(Number(speed))}`
+    }).catch(() => {/* silent */});
+}
+
+function sendPaceDistance(paceDistance) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setPaceDistance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `paceDistance=${encodeURIComponent(Number(paceDistance))}`
+    }).catch(() => {/* silent */});
+}
+
+function sendNumRounds(numRounds) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setNumRounds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `numRounds=${encodeURIComponent(Number(numRounds))}`
+    }).catch(() => {/* silent */});
+}
+
+function sendRestTime(restSeconds) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setRestTime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `restTime=${encodeURIComponent(Number(restSeconds))}`
+    }).catch(() => {/* silent */});
+}
+
+function sendSwimmerInterval(intervalSeconds) {
+    if (isStandaloneMode || suppressSettingsWrites) return;
+    fetch('/setSwimmerInterval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `swimmerInterval=${encodeURIComponent(Number(intervalSeconds))}`
+    }).catch(() => {/* silent */});
 }
