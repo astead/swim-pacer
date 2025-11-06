@@ -9,7 +9,6 @@ let currentSettings = {
     pulseWidth: 1.0,
     restTime: 5,
     paceDistance: 50,
-    initialDelay: 2,
     swimmerInterval: 1,
     delayIndicatorsEnabled: true,
     numSwimmers: 3,
@@ -389,13 +388,7 @@ function updateRestTime() {
     updateSettings();
 }
 
-function updateInitialDelay() {
-    const initialDelay = document.getElementById('initialDelay').value;
-    currentSettings.initialDelay = parseInt(initialDelay);
-    const unit = parseInt(initialDelay) === 1 ? ' second' : ' seconds';
-    document.getElementById('initialDelayValue').textContent = initialDelay + unit;
-    updateSettings();
-}
+
 
 function updateSwimmerInterval() {
     const swimmerInterval = document.getElementById('swimmerInterval').value;
@@ -498,16 +491,6 @@ function updateHideAfter() {
 // UI-only setter helpers (do NOT call updateSettings)
 // These are used when rendering device defaults so we don't POST back to the server.
 // -------------------
-function setInitialDelayUI(value) {
-    if (value === undefined || value === null) return;
-    const v = parseInt(value);
-    const el = document.getElementById('initialDelay');
-    if (el) el.value = v;
-    currentSettings.initialDelay = v;
-    const unit = v === 1 ? ' second' : ' seconds';
-    const label = document.getElementById('initialDelayValue');
-    if (label) label.textContent = v + unit;
-}
 
 function setRestTimeUI(value) {
     if (value === undefined || value === null) return;
@@ -963,7 +946,7 @@ function togglePacer() {
             paceTimeSeconds: parseTimeInput(document.getElementById('paceTimeSeconds').value),
             restTime: currentSettings.restTime,
             numRounds: currentSettings.numRounds,
-            initialDelay: currentSettings.initialDelay,
+            swimmerInterval: currentSettings.swimmerInterval,
             numSwimmers: currentSettings.numSwimmers,
             laneName: currentSettings.laneNames[currentLane]
         };
@@ -1032,26 +1015,15 @@ function initializePacerStatus() {
     }
 
     // Show initial delay countdown using running settings
-    if (runningData.initialDelay > 0) {
-        const nextEventEl = document.getElementById('nextEvent');
-        if (nextEventEl) {
-            nextEventEl.textContent = `Starting in ${runningData.initialDelay}s`;
-        }
-
-        const currentPhaseEl = document.getElementById('currentPhase');
-        if (currentPhaseEl) {
-            currentPhaseEl.textContent = 'Initial Delay';
-        }
-    } else {
-        const nextEventEl = document.getElementById('nextEvent');
-        if (nextEventEl) {
-            nextEventEl.textContent = 'Starting now';
-        }
-
-        const currentPhaseEl = document.getElementById('currentPhase');
-        if (currentPhaseEl) {
-            currentPhaseEl.textContent = 'Swimming';
-        }
+    // Use swimmerInterval as the initial delay for the first swimmer
+    const initialDelayDisplay = runningData.swimmerInterval || 0;
+    const nextEventEl = document.getElementById('nextEvent');
+    if (nextEventEl) {
+        if (initialDelayDisplay > 0) nextEventEl.textContent = `Starting in ${initialDelayDisplay}s`; else nextEventEl.textContent = 'Starting now';
+    }
+    const currentPhaseEl = document.getElementById('currentPhase');
+    if (currentPhaseEl) {
+        currentPhaseEl.textContent = initialDelayDisplay > 0 ? 'Initial Delay' : 'Swimming';
     }
 
     const elapsedTimeEl = document.getElementById('elapsedTime');
@@ -1083,7 +1055,7 @@ function updatePacerStatus() {
         `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
     // Account for initial delay using running settings
-    const initialDelaySeconds = runningData.initialDelay;
+    const initialDelaySeconds = runningData.swimmerInterval || 0;
     const timeAfterInitialDelay = elapsedSeconds - initialDelaySeconds;
 
     // Check if we're still in the initial delay period
@@ -1146,7 +1118,7 @@ function updatePacerStatus() {
 
     // Check if ALL swimmers have completed the set
     // Calculate when the last swimmer finishes
-    const lastSwimmerStartDelay = runningData.initialDelay + ((runningData.numSwimmers - 1) * runningData.swimmerInterval);
+    const lastSwimmerStartDelay = (runningData.swimmerInterval || 0) + ((runningData.numSwimmers - 1) * runningData.swimmerInterval);
     const totalSetTimePerSwimmer = runningData.numRounds * totalRoundTime;
     const lastSwimmerFinishTime = lastSwimmerStartDelay + totalSetTimePerSwimmer;
 
@@ -1179,7 +1151,7 @@ function updatePacerStatus() {
         // Calculate how many swimmers are still active
         let activeSwimmers = 0;
         for (let i = 0; i < runningData.numSwimmers; i++) {
-            const swimmerStartTime = runningData.initialDelay + (i * runningData.swimmerInterval);
+            const swimmerStartTime = (runningData.swimmerInterval || 0) + (i * runningData.swimmerInterval);
             const swimmerFinishTime = swimmerStartTime + totalSetTimePerSwimmer;
             if (elapsedSeconds < swimmerFinishTime) {
                 activeSwimmers++;
@@ -1228,7 +1200,7 @@ function createSwimSet() {
             id: i + 1,
             color: swimmerColor, // Store hex color directly
             pace: currentPace,
-            interval: i === 0 ? currentSettings.initialDelay : currentSettings.initialDelay + (i * currentSettings.swimmerInterval), // First swimmer uses initial delay, others add swimmer intervals
+            interval: (i + 1) * currentSettings.swimmerInterval, // Use swimmerInterval for first-swimmer delay and subsequent offsets
             lane: currentSettings.currentLane // Track which lane this swimmer belongs to
         };
 
@@ -1874,7 +1846,6 @@ function updateAllUIFromSettings() {
     document.getElementById('numRounds').value = currentSettings.numRounds;
     document.getElementById('restTime').value = currentSettings.restTime;
     document.getElementById('numSwimmers').value = currentSettings.numSwimmers;
-    document.getElementById('initialDelay').value = currentSettings.initialDelay;
     document.getElementById('swimmerInterval').value = currentSettings.swimmerInterval;
     document.getElementById('paceDistance').value = currentSettings.paceDistance;
     document.getElementById('brightness').value = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
@@ -1912,7 +1883,6 @@ function updateAllUIFromSettings() {
     setNumRoundsUI(currentSettings.numRounds);
     setRestTimeUI(currentSettings.restTime);
     setNumSwimmersUI(currentSettings.numSwimmers);
-    setInitialDelayUI(currentSettings.initialDelay);
     setSwimmerIntervalUI(currentSettings.swimmerInterval);
     // update speed -> show human-friendly pace (seconds per selected distance)
     // Avoid inserting raw m/s into the pace input (it would be parsed as seconds).
@@ -2037,7 +2007,6 @@ window.addEventListener('pageshow', function() {
 function syncRangeLabels() {
     try {
         // Use UI-only setters so we don't POST during restore
-        setInitialDelayUI(document.getElementById('initialDelay') ? document.getElementById('initialDelay').value : currentSettings.initialDelay);
         setRestTimeUI(document.getElementById('restTime') ? document.getElementById('restTime').value : currentSettings.restTime);
         setSwimmerIntervalUI(document.getElementById('swimmerInterval') ? document.getElementById('swimmerInterval').value : currentSettings.swimmerInterval);
         setPulseWidthUI(document.getElementById('pulseWidth') ? document.getElementById('pulseWidth').value : currentSettings.pulseWidth);
@@ -2177,24 +2146,4 @@ async function fetchDeviceSettingsAndApply() {
         // Ensure we don't leave suppression enabled on error
         suppressSettingsWrites = false;
     }
-}
-
-// Color testing function
-function testColors() {
-    if (isStandaloneMode) {
-        alert('Color test not available in standalone mode');
-        return;
-    }
-
-    fetch('/testColors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: ''
-    }).then(response => response.text())
-    .then(data => {
-        alert('Color test completed! Check your LED strip and Serial Monitor for results.\n\nExpected:\nLED 0: RED\nLED 1: GREEN\nLED 2: BLUE\nLED 3: ORANGE');
-    }).catch(error => {
-        console.error('Color test failed:', error);
-        alert('Color test failed - check console for details');
-    });
 }

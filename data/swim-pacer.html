@@ -112,6 +112,14 @@
                     </div>
                     <input type="range" id="restTime" min="0" max="30" step="1" value="5" oninput="updateRestTime()">
                 </div>
+
+                <div class="control">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <label for="swimmerInterval">Delay between swimmers:</label>
+                        <span id="swimmerIntervalValue">4 seconds</span>
+                    </div>
+                    <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
+                </div>
             </div>
 
             <!-- Swimmer Set Display -->
@@ -125,20 +133,6 @@
         <!-- Coach Config Page -->
         <div id="coach" class="page">
             <h3>Swim Settings</h3>
-            <div class="control">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                    <label for="initialDelay">Initial Delay:</label>
-                    <span id="initialDelayValue">10 seconds</span>
-                </div>
-                <input type="range" id="initialDelay" min="0" max="30" step="1" value="10" oninput="updateInitialDelay()">
-            </div>
-            <div class="control">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                    <label for="swimmerInterval">Delay between swimmers:</label>
-                    <span id="swimmerIntervalValue">4 seconds</span>
-                </div>
-                <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
-            </div>
 
             <div class="toggle-container">
                 <h3 style="margin: 0;">Delay Indicators</h3>
@@ -294,19 +288,6 @@
                 </div>
                 <div id="laneNamesList">
                     <!-- Lane name inputs populated by JavaScript -->
-                </div>
-            </div>
-
-            <!-- Debug/Testing Section -->
-            <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee;">
-                <h4 style="color: #333; margin-bottom: 15px;">Debug & Testing</h4>
-                <div class="control">
-                    <button onclick="testColors()" style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 14px;">
-                        Test LED Colors
-                    </button>
-                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                        Tests RGB color mapping on first 4 LEDs. Check Serial Monitor for details.
-                    </div>
                 </div>
             </div>
         </div>

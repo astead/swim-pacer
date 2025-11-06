@@ -99,7 +99,6 @@ struct SwimSetSettings {
   float speedMetersPerSecond = 1.693;        // Speed in meters per second (~5.56 ft/s)
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
   int swimSetDistance = 50;                  // Distance for pace calculation (in pool's native units)
-  int initialDelaySeconds = 10;              // Initial delay before first swimmer starts
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
   int numRounds = 10;                        // Number of rounds/sets to complete
 };
@@ -301,7 +300,7 @@ void applySwimSetToSettings(const SwimSet &s) {
     swimmers[currentLane][i].currentLap = 1;
     swimmers[currentLane][i].lapsPerRound = ceil(swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
   swimmers[currentLane][i].isResting = true;
-  // Start rest timer now so initialDelay is honored
+  // Start rest timer now so swimmerInterval-based stagger will be honored
   swimmers[currentLane][i].restStartTime = millis();
   // Total distance should start at 0 for the new set
   swimmers[currentLane][i].totalDistance = 0.0;
@@ -332,6 +331,17 @@ void applySwimSetToSettings(const SwimSet &s) {
       Serial.print(" lapsPerRound="); Serial.print(sw.lapsPerRound);
       Serial.print(" isResting="); Serial.print(sw.isResting ? 1 : 0);
       Serial.print(" restStartTime="); Serial.print(sw.restStartTime);
+      // Compute the target rest duration and absolute start time so it's easy to verify stagger
+      unsigned long targetRestDuration;
+      if (sw.currentRound == 1) {
+        // First round: staggered start based on swimmer interval
+        targetRestDuration = (unsigned long)((i + 1) * (unsigned long)swimSetSettings.swimmerIntervalSeconds * 1000);
+      } else {
+        targetRestDuration = (unsigned long)(swimSetSettings.restTimeSeconds * 1000) + (unsigned long)(i * swimSetSettings.swimmerIntervalSeconds * 1000);
+      }
+      unsigned long swimmerStartTime = sw.restStartTime + targetRestDuration;
+      Serial.print(" targetRestSecs="); Serial.print((float)targetRestDuration / 1000.0, 2);
+      Serial.print(" startAtMillis="); Serial.print(swimmerStartTime);
       Serial.print(" totalDistance="); Serial.print(sw.totalDistance, 3);
       Serial.print(" lapDirection="); Serial.println(sw.lapDirection);
     }
@@ -547,7 +557,6 @@ void setupWebServer() {
   server.on("/setCurrentLane", HTTP_POST, handleSetCurrentLane);
   server.on("/setRestTime", HTTP_POST, handleSetRestTime);
   server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
-  server.on("/setInitialDelay", HTTP_POST, handleSetInitialDelay);
   server.on("/setSwimmerInterval", HTTP_POST, handleSetSwimmerInterval);
   server.on("/setDelayIndicators", HTTP_POST, handleSetDelayIndicators);
   server.on("/setNumSwimmers", HTTP_POST, handleSetNumSwimmers);
@@ -886,14 +895,6 @@ void handleSetPaceDistance() {
   server.send(200, "text/plain", "Pace distance updated");
 }
 
-void handleSetInitialDelay() {
-  if (server.hasArg("initialDelay")) {
-    int initialDelay = server.arg("initialDelay").toInt();
-    swimSetSettings.initialDelaySeconds = initialDelay;
-    saveSwimSetSettings();
-  }
-  server.send(200, "text/plain", "Initial delay updated");
-}
 
 void handleSetSwimmerInterval() {
   if (server.hasArg("swimmerInterval")) {
@@ -1101,7 +1102,6 @@ void saveSwimSetSettings() {
   preferences.putFloat("speedMPS", swimSetSettings.speedMetersPerSecond);
   preferences.putInt("restTimeSeconds", swimSetSettings.restTimeSeconds);
   preferences.putInt("swimSetDistance", swimSetSettings.swimSetDistance);
-  preferences.putInt("initialDelay", swimSetSettings.initialDelaySeconds);
   preferences.putInt("swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
   preferences.putInt("numRounds", swimSetSettings.numRounds);
 }
@@ -1133,7 +1133,6 @@ void loadSwimSetSettings() {
   swimSetSettings.speedMetersPerSecond = preferences.getFloat("speedMPS", 1.693);
   swimSetSettings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
   swimSetSettings.swimSetDistance = preferences.getInt("swimSetDistance", 50);  // Default in yards (matches pool default)
-  swimSetSettings.initialDelaySeconds = preferences.getInt("initialDelay", 10);
   swimSetSettings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
   swimSetSettings.numRounds = preferences.getInt("numRounds", 10);
 }
@@ -1279,15 +1278,13 @@ void drawDelayIndicators(int laneIndex) {
     // Calculate when this swimmer should start
     unsigned long targetRestDuration;
     if (swimmer->currentRound == 1) {
-      // First round: use initial delay + swimmer interval
-      targetRestDuration =
-        swimSetSettings.initialDelaySeconds * 1000 +
-        (i * swimSetSettings.swimmerIntervalSeconds * 1000);
+      // First round: staggered start based on swimmer interval.
+      // Use swimmerInterval as the base so first swimmer starts after swimmerInterval,
+      // second after 2*swimmerInterval, etc.
+      targetRestDuration = (unsigned long)((i + 1) * (unsigned long)swimSetSettings.swimmerIntervalSeconds * 1000);
     } else {
-      // Subsequent rounds: use rest time + swimmer interval
-      targetRestDuration =
-        swimSetSettings.restTimeSeconds * 1000 +
-        (i * swimSetSettings.swimmerIntervalSeconds * 1000);
+      // Subsequent rounds: use rest time + swimmer interval offset
+      targetRestDuration = (unsigned long)(swimSetSettings.restTimeSeconds * 1000) + (unsigned long)(i * swimSetSettings.swimmerIntervalSeconds * 1000);
     }
 
     unsigned long swimmerStartTime = swimmer->restStartTime + targetRestDuration;
@@ -1408,15 +1405,12 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     // What is our target rest duration (in milliseconds)?
     unsigned long targetRestDuration;
     if (swimmer->currentRound == 1) {
-      // First round: use initial delay + swimmer interval offset
-      targetRestDuration =
-        swimSetSettings.initialDelaySeconds * 1000 +
-        ((swimmerIndex) * swimSetSettings.swimmerIntervalSeconds * 1000);
+      // First round: staggered start using swimmerInterval as the base delay.
+      // First swimmer starts after swimmerInterval, second after 2*swimmerInterval, etc.
+      targetRestDuration = (unsigned long)((swimmerIndex + 1) * (unsigned long)swimSetSettings.swimmerIntervalSeconds * 1000);
     } else {
       // Subsequent rounds: include rest period plus swimmer interval offset
-      targetRestDuration =
-        swimSetSettings.restTimeSeconds * 1000 +
-        ((swimmerIndex) * swimSetSettings.swimmerIntervalSeconds * 1000);
+      targetRestDuration = (unsigned long)(swimSetSettings.restTimeSeconds * 1000) + (unsigned long)(swimmerIndex * swimSetSettings.swimmerIntervalSeconds * 1000);
     }
 
     // Print debug info only once when entering rest state
