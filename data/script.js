@@ -1984,6 +1984,15 @@ function deleteSwimSet(index) {
 
 // Drag & Drop handlers for reordering queue items
 function handleDragStart(evt, index) {
+    const currentLane = currentSettings.currentLane;
+    // Safeguard: do not allow dragging items that are active or completed
+    const isActive = (activeSwimSetIndex[currentLane] === index);
+    const isCompleted = !!(swimSetQueues[currentLane] && swimSetQueues[currentLane][index] && swimSetQueues[currentLane][index].completed);
+    if (isActive || isCompleted) {
+        evt.preventDefault();
+        return;
+    }
+
     _draggedQueueIndex = index;
     try { evt.dataTransfer.setData('text/plain', String(index)); } catch (e) {}
     evt.dataTransfer.effectAllowed = 'move';
@@ -1998,13 +2007,37 @@ function handleDrop(evt, targetIndex) {
     evt.preventDefault();
     const currentLane = currentSettings.currentLane;
     const from = _draggedQueueIndex;
-    const to = targetIndex;
+    let to = targetIndex;
     if (from < 0 || to < 0 || from === to) return;
+
+    // Disallow dropping a future (non-completed, non-running) item before any
+    // completed or currently-running items. Compute the last protected index
+    // (highest index of any completed or active item). Future sets must be
+    // positioned strictly after that index.
+    let lastProtectedIndex = -1;
+    for (let i = 0; i < swimSetQueues[currentLane].length; i++) {
+        const s = swimSetQueues[currentLane][i];
+        const isActive = (activeSwimSetIndex[currentLane] === i);
+        const isCompleted = !!s.completed;
+        if (isActive || isCompleted) lastProtectedIndex = Math.max(lastProtectedIndex, i);
+    }
+
+    if (lastProtectedIndex >= 0 && to <= lastProtectedIndex) {
+        // Moving a pending set before a protected set is not allowed
+        alert('Cannot move a future swim set before a completed or running set.');
+        _draggedQueueIndex = -1;
+        return;
+    }
+
+    // When removing an element that appears before the insertion point, the
+    // indices shift left by one. Adjust target index accordingly.
+    if (from < to) to = to - 1;
 
     // Reorder locally
     const item = swimSetQueues[currentLane].splice(from, 1)[0];
     swimSetQueues[currentLane].splice(to, 0, item);
-    // Clear dragged index
+
+    // Clear dragged index and refresh UI
     _draggedQueueIndex = -1;
     updateQueueDisplay();
 
