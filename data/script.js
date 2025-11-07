@@ -1709,7 +1709,7 @@ function displaySwimmerSet() {
     const numRounds = currentSettings.numRounds;
     const laneName = currentSettings.laneNames[currentSettings.currentLane];
 
-    setDetails.innerHTML = `${laneName}: ${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
+    setDetails.innerHTML = `${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
 
     const swimmerList = document.getElementById('swimmerList');
     swimmerList.innerHTML = '';
