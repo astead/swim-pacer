@@ -1435,9 +1435,23 @@ function enqueueRestFromInput() {
         seconds: seconds,
         summary: `Rest: ${formatSecondsToMmSs(seconds)}`
     };
-    swimSetQueues[currentLane].push(actionItem);
-    updateQueueDisplay();
-    updatePacerButtons();
+    // Try to enqueue on device; if it fails, keep local queue only
+    fetch('/enqueueAction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lane: currentLane, action: actionItem })
+    }).then(resp => {
+        if (!resp.ok) throw new Error('enqueueAction failed');
+        // Push local copy for UI responsiveness
+        swimSetQueues[currentLane].push(JSON.parse(JSON.stringify(actionItem)));
+        updateQueueDisplay();
+        updatePacerButtons();
+    }).catch(err => {
+        console.log('Failed to enqueue rest on device, keeping local queue only');
+        swimSetQueues[currentLane].push(actionItem);
+        updateQueueDisplay();
+        updatePacerButtons();
+    });
 }
 
 // Enqueue a move action: target is 'start' or 'far'
@@ -1450,9 +1464,21 @@ function enqueueMoveAction(target) {
         target: target,
         summary: (target === 'start') ? 'Move to starting wall' : 'Move to far wall'
     };
-    swimSetQueues[currentLane].push(actionItem);
-    updateQueueDisplay();
-    updatePacerButtons();
+    fetch('/enqueueAction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lane: currentLane, action: actionItem })
+    }).then(resp => {
+        if (!resp.ok) throw new Error('enqueueAction failed');
+        swimSetQueues[currentLane].push(JSON.parse(JSON.stringify(actionItem)));
+        updateQueueDisplay();
+        updatePacerButtons();
+    }).catch(err => {
+        console.log('Failed to enqueue move action on device, keeping local queue only');
+        swimSetQueues[currentLane].push(actionItem);
+        updateQueueDisplay();
+        updatePacerButtons();
+    });
 }
 
 function cancelSwimSet() {
