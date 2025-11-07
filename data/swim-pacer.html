@@ -78,8 +78,9 @@
                                 <button id="createSwimmersTab" class="tab small" onclick="setCreateTab('swimmers')">Swimmer Customizations</button>
                                 <button id="createSpecialTab" class="tab small" onclick="setCreateTab('special')">Special Set Options</button>
                         </div>
-                        <div style="flex:1;text-align:right;">
-                            <button id="createToggleBtn" style="border:0;background:transparent;cursor:pointer;transform:rotate(0deg);transition:transform 0.18s;" onclick="toggleSection('createArea','createToggleBtn')">▾</button>
+                        <!-- Only the small triangle button should be clickable; disable pointer events on the surrounding area -->
+                        <div style="flex:1;text-align:right; pointer-events: none;">
+                            <button id="createToggleBtn" style="border:0;background:transparent;cursor:pointer;transform:rotate(0deg);transition:transform 0.18s;pointer-events:auto;" onclick="toggleSection('createArea','createToggleBtn')">▾</button>
                         </div>
                     </div>
                 </div>
