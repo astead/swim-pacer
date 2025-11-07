@@ -185,6 +185,12 @@ button.secondary:hover {
     border-radius: 3px;
 }
 
+/* Reduce the spacing above the Swim Set header inside the create/edit card */
+#swimmerSet h3 {
+    margin-top: 4px; /* tighten the gap above the heading */
+    margin-bottom: 8px;
+}
+
 
 
 /* Toggle Switch Styles */
