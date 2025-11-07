@@ -790,6 +790,39 @@ void setupWebServer() {
     }
   });
 
+  // Reset swimmers for a given lane to starting wall (position=0, direction=1)
+  server.on("/resetLane", HTTP_POST, []() {
+    String body = server.arg("plain");
+    int lane = (int)extractJsonLong(body, "lane", currentLane);
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "text/plain", "Invalid lane");
+      return;
+    }
+
+    // Reset swimmers for this lane
+    for (int i = 0; i < 6; i++) {
+      swimmers[lane][i].position = 0;
+      swimmers[lane][i].direction = 1; // point towards far wall
+      swimmers[lane][i].hasStarted = false;
+      swimmers[lane][i].currentRound = 1;
+      swimmers[lane][i].currentLap = 1;
+      swimmers[lane][i].isResting = true;
+      swimmers[lane][i].restStartTime = millis();
+      swimmers[lane][i].totalDistance = 0.0;
+      swimmers[lane][i].underwaterActive = globalConfigSettings.underwatersEnabled;
+      swimmers[lane][i].inSurfacePhase = false;
+      swimmers[lane][i].distanceTraveled = 0.0;
+      swimmers[lane][i].hideTimerStart = 0;
+    }
+
+    // Update lane running state: do not alter laneRunning flag here - caller controls starting/stopping
+    // but clear any running copies associated with this lane so UI reloads show the reset state
+    runningSets[lane] = NULL;
+    runningSettings[lane] = NULL;
+
+    server.send(200, "text/plain", "OK");
+  });
+
   server.on("/runSwimSetNow", HTTP_POST, []() {
     String body = server.arg("plain");
     SwimSet s;

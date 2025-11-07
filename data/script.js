@@ -373,6 +373,47 @@ function updateCurrentLane() {
     } else {
         stopStatusUpdates();
     }
+
+    // Enable/disable reset positions button depending on running state
+    try {
+        const btn = document.getElementById('resetPositionsBtn');
+        if (btn) btn.disabled = !!currentSettings.isRunning;
+    } catch (e) {}
+}
+
+// Reset swimmers positions for the current lane back to the starting wall
+function resetLanePositions() {
+    const lane = currentSettings.currentLane || 0;
+    // Only allow when not running
+    if (currentSettings.isRunning) {
+        alert('Cannot reset positions while lane is running');
+        return;
+    }
+
+    // Optimistic UI: disable button while request in flight
+    const btn = document.getElementById('resetPositionsBtn');
+    if (btn) btn.disabled = true;
+
+    fetch('/resetLane', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `lane=${lane}`
+    }).then(resp => {
+        if (!resp.ok) throw new Error('reset failed');
+        // On success, reconcile queue and refresh status/UI
+        // Ask device for updated queue/state
+        setTimeout(() => {
+            reconcileQueueWithDevice();
+            fetchDeviceSettingsAndApply();
+            updateStatus();
+            updateQueueDisplay();
+        }, 200);
+    }).catch(err => {
+        console.log('resetLanePositions failed', err);
+        alert('Failed to reset lane positions');
+    }).finally(() => {
+        if (btn) btn.disabled = false;
+    });
 }
 
 function getCurrentSwimmerSet() {
