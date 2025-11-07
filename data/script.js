@@ -1689,14 +1689,13 @@ function cancelSwimSet() {
 
 function returnToConfigMode() {
     // Show config controls and hide swimmer set
-    document.getElementById('configControls').style.display = 'block';
-    document.getElementById('swimmerSet').style.display = 'none';
+    try { const cfg = document.getElementById('configControls'); if (cfg) cfg.style.display = 'block'; } catch (e) {}
+    try { const s = document.getElementById('swimmerSet'); if (s) s.style.display = 'none'; } catch (e) {}
 
-    // Switch back to config buttons
-    document.getElementById('configButtons').style.display = 'block';
-    // Keep queueButtons visible at all times so users can queue the current set
-    // document.getElementById('queueButtons').style.display = 'block';
-    document.getElementById('editButtons').style.display = 'none';
+    // Show queue button group and hide edit group
+    try { const q = document.getElementById('queueButtons'); if (q) q.style.display = 'block'; } catch (e) {}
+    try { const eb = document.getElementById('editButtons'); if (eb) eb.style.display = 'none'; } catch (e) {}
+    try { const cfgBtns = document.getElementById('configButtons'); if (cfgBtns) cfgBtns.style.display = 'block'; } catch (e) {}
 }
 
 function updateQueueDisplay() {
@@ -1824,20 +1823,29 @@ function editSwimSet(index) {
         document.getElementById('swimmerSet').style.display = 'none';
     }
 
-    // Switch to edit buttons (hide the create/config button group)
-    document.getElementById('configButtons').style.display = 'none';
-    document.getElementById('editButtons').style.display = 'block';
+    // Switch to edit buttons (hide queue button group and any config buttons)
+    try {
+        const cfg = document.getElementById('configButtons'); if (cfg) cfg.style.display = 'none';
+    } catch (e) {}
+    try {
+        const qb = document.getElementById('queueButtons'); if (qb) qb.style.display = 'none';
+    } catch (e) {}
+    try {
+        const eb = document.getElementById('editButtons'); if (eb) eb.style.display = 'block';
+    } catch (e) {}
 }
 
 function loadSwimSetIntoConfig(swimSet) {
     // Restore settings
-    Object.assign(currentSettings, swimSet.settings);
+    // Copy settings into currentSettings (shallow copy) so we can modify freely
+    Object.assign(currentSettings, JSON.parse(JSON.stringify(swimSet.settings || {})));
 
     // Set current lane
     currentSettings.currentLane = swimSet.lane;
 
     // Restore swimmer set
-    setCurrentSwimmerSet(swimSet.swimmers);
+    // Use a deep copy to avoid mutating the queued swimSet until the user saves
+    setCurrentSwimmerSet(JSON.parse(JSON.stringify(swimSet.swimmers || [])));
 
     // Update all UI elements to reflect loaded settings
     updateAllUIFromSettings();
@@ -1853,21 +1861,35 @@ function saveSwimSet() {
 
     // Update the swim set in the current lane's queue
     const currentSet = getCurrentSwimmerSet();
-    swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = {
-        ...swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]],
-        swimmers: currentSet,
-        settings: { ...currentSettings },
-        summary: generateSetSummary(currentSet, currentSettings)
-    };
 
+    // Overwrite the saved queued set with the edited values (deep copy to avoid refs)
+    const newEntry = JSON.parse(JSON.stringify(swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] || {}));
+    newEntry.swimmers = JSON.parse(JSON.stringify(currentSet));
+    newEntry.settings = JSON.parse(JSON.stringify(currentSettings));
+    newEntry.summary = generateSetSummary(newEntry.swimmers, newEntry.settings);
+
+    // Mark as not-yet-synced so reconcile logic will attempt to re-send or match
+    newEntry.synced = false;
+    // Assign a fresh clientTempId so device can correlate when it re-accepts this set
+    newEntry.clientTempId = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
+
+    // Replace the queued item in-place
+    swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = newEntry;
+
+    // Clear editing state and return to create mode
     editingSwimSetIndexes[currentLane] = -1;
+    // Clear the temporary created set so the UI shows fresh config controls
+    createdSwimSets[currentLane] = null;
     returnToConfigMode();
     updateQueueDisplay();
 }
 
 function cancelEdit() {
     const currentLane = currentSettings.currentLane;
+    // Discard edits and return to configuring a new swim set
     editingSwimSetIndexes[currentLane] = -1;
+    // Clear any created/edited temporary set so user returns to blank/new state
+    createdSwimSets[currentLane] = null;
     returnToConfigMode();
 }
 
