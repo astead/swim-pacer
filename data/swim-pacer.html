@@ -26,7 +26,7 @@
 
             <!-- Number of Swimmers (lane-specific configuration) -->
             <div class="control" style="margin: 15px 0;">
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                <div class="control-row" style="margin-bottom: 5px;">
                     <label for="numSwimmers">Number of Swimmers:</label>
                     <select id="numSwimmers" onchange="updateNumSwimmers()" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px; width: 60px;">
                         <option value="1">1</option>
@@ -40,6 +40,8 @@
                         <option value="9">9</option>
                         <option value="10">10</option>
                     </select>
+                    <!-- Reset swimmers position button: resets swimmer positions/directions to starting wall for selected lane -->
+                    <button id="resetPositionsBtn" class="compact-button push-right" onclick="resetLanePositions()" title="Reset swimmers to starting wall">Reset Position</button>
                 </div>
             </div>
 

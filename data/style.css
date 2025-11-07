@@ -247,6 +247,27 @@ button.secondary:hover {
 }
 .small-button:hover { background: #0056b3; }
 
+/* Compact button: visually similar to primary buttons but smaller than .big-button */
+.compact-button {
+    padding: 6px 8px; /* compact padding */
+    font-size: 14px;  /* slightly smaller than .big-button */
+    border-radius: 6px;
+    border: 1px solid #007bff;
+    background: #007bff;
+    color: white;
+    cursor: pointer;
+}
+.compact-button:hover { background: #0056b3; }
+
+/* Prevent compact buttons from stretching in flex containers (override width:100% rule) */
+.compact-button {
+    width: auto;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 /* Styling for action items in the queue */
 .queue-action-item {
     font-style: italic;
@@ -389,6 +410,17 @@ input:checked + .toggle-slider:before {
     align-items: center;
     gap: 8px;
     justify-self: start;
+}
+
+/* Utility: control row that aligns trailing controls to the right */
+.control-row {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    width:100%;
+}
+.control-row .push-right {
+    margin-left: auto;
 }
 
 #configControls label {
