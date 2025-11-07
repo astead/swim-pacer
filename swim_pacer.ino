@@ -1137,10 +1137,74 @@ void handleSetDelayIndicators() {
 void handleSetNumSwimmers() {
   if (server.hasArg("numSwimmers")) {
     int numSwimmers = server.arg("numSwimmers").toInt();
+    // Optional lane argument: if provided, only adjust that lane's swimmers
+    int lane = -1;
+    if (server.hasArg("lane")) lane = server.arg("lane").toInt();
+
+    // Clamp to max supported (6 swimmers per lane)
+    if (numSwimmers < 1) numSwimmers = 1;
+    if (numSwimmers > 6) numSwimmers = 6;
+
+    // Update global setting
     globalConfigSettings.numSwimmers = numSwimmers;
     saveGlobalConfigSettings();
+
+    // Adjust runtime swimmer arrays for the requested lane(s)
+    if (lane >= 0 && lane < 4) {
+      adjustNumSwimmersForLane(lane, numSwimmers);
+    } else {
+      for (int l = 0; l < globalConfigSettings.numLanes && l < 4; l++) {
+        adjustNumSwimmersForLane(l, numSwimmers);
+      }
+    }
   }
   server.send(200, "text/plain", "Number of swimmers updated");
+}
+
+// Helper: adjust the swimmers array for a single lane when swimmer count changes
+void adjustNumSwimmersForLane(int lane, int newCount) {
+  if (lane < 0 || lane >= 4) return;
+  // Ensure internal limit
+  if (newCount < 1) newCount = 1;
+  if (newCount > 6) newCount = 6;
+
+  // For any newly-added swimmers, initialize sensible defaults so they start resting at the wall
+  for (int i = 0; i < newCount; i++) {
+    // If swimmer already initialized, leave existing state intact
+    // We'll do a light-touch init for ones that appear uninitialized (currentLap == 0)
+    if (swimmers[lane][i].lapsPerRound == 0 || swimmers[lane][i].currentRound == 0) {
+      swimmers[lane][i].position = 0;
+      swimmers[lane][i].direction = 1;
+      swimmers[lane][i].hasStarted = false;
+      swimmers[lane][i].lastUpdate = millis();
+      swimmers[lane][i].currentRound = 1;
+      swimmers[lane][i].currentLap = 1;
+      swimmers[lane][i].lapsPerRound = (int)ceil((float)swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
+      swimmers[lane][i].isResting = true;
+      swimmers[lane][i].restStartTime = millis();
+      swimmers[lane][i].totalDistance = 0.0;
+      swimmers[lane][i].lapDirection = 1;
+      swimmers[lane][i].debugRestingPrinted = false;
+      swimmers[lane][i].debugSwimmingPrinted = false;
+      swimmers[lane][i].underwaterActive = globalConfigSettings.underwatersEnabled;
+      swimmers[lane][i].inSurfacePhase = false;
+      swimmers[lane][i].distanceTraveled = 0.0;
+      swimmers[lane][i].hideTimerStart = 0;
+    }
+  }
+
+  // If we reduced the count, clear any extra swimmers to a safe resting state
+  for (int i = newCount; i < 6; i++) {
+    swimmers[lane][i].isResting = true;
+    swimmers[lane][i].hasStarted = false;
+    swimmers[lane][i].currentRound = 0;
+    swimmers[lane][i].currentLap = 0;
+    swimmers[lane][i].lapsPerRound = 0;
+    swimmers[lane][i].totalDistance = 0.0;
+  }
+
+  // Recalculate per-swimmer derived values
+  updateSwimmersLapsPerRound();
 }
 
 void handleSetNumRounds() {
