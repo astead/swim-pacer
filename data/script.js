@@ -581,8 +581,10 @@ function updateUnderwaterDistance() {
 function updateHideAfter() {
     const hideAfter = document.getElementById('hideAfter').value;
     currentSettings.hideAfter = parseInt(hideAfter);
-    const unit = parseInt(hideAfter) === 1 ? ' second' : ' seconds';
-    document.getElementById('hideAfterValue').textContent = hideAfter + unit;
+    try {
+        const unitEl = document.getElementById('hideAfterUnit');
+        if (unitEl) unitEl.textContent = (parseInt(hideAfter) === 1) ? 'second' : 'seconds';
+    } catch (e) {}
     sendUnderwaterSettings();
 }
 
@@ -676,9 +678,10 @@ function setHideAfterUI(value) {
     const el = document.getElementById('hideAfter');
     if (el) el.value = v;
     currentSettings.hideAfter = v;
-    const unit = v === 1 ? ' second' : ' seconds';
-    const label = document.getElementById('hideAfterValue');
-    if (label) label.textContent = v + unit;
+    try {
+        const unitEl = document.getElementById('hideAfterUnit');
+        if (unitEl) unitEl.textContent = (v === 1) ? 'second' : 'seconds';
+    } catch (e) {}
 }
 
 function setLightSizeUI(value) {
