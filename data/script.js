@@ -1255,6 +1255,110 @@ function createSwimSet() {
     document.getElementById('queueButtons').style.display = 'block';
 }
 
+// Create or update the current lane's swimmer set from the configuration controls.
+// If resetPaces is true, any per-swimmer custom pace values are overwritten with the
+// current pace input value (useful when the user changes the swim time).
+function createOrUpdateSwimmerSetFromConfig(resetPaces = false) {
+    const currentLane = currentSettings.currentLane;
+    let currentSet = getCurrentSwimmerSet() || [];
+
+    const numSwimmers = parseInt(document.getElementById('numSwimmers').value) || currentSettings.numSwimmers;
+    const currentPace = parseTimeInput(document.getElementById('paceTimeSeconds').value);
+    const swimmerInterval = parseInt(document.getElementById('swimmerInterval').value) || currentSettings.swimmerInterval;
+
+    // Ensure currentSettings reflect inputs
+    currentSettings.numSwimmers = numSwimmers;
+    currentSettings.swimmerInterval = swimmerInterval;
+    currentSettings.numRounds = parseInt(document.getElementById('numRounds').value) || currentSettings.numRounds;
+    currentSettings.restTime = parseInt(document.getElementById('restTime').value) || currentSettings.restTime;
+
+    // If set is empty, create a fresh set using current inputs
+    if (!currentSet || currentSet.length === 0) {
+        const newSet = [];
+        for (let i = 0; i < numSwimmers; i++) {
+            let swimmerColor;
+            if (currentSettings.colorMode === 'same') {
+                swimmerColor = currentSettings.swimmerColor;
+            } else {
+                swimmerColor = colorHex[swimmerColors[i]];
+            }
+            const newSwimmer = {
+                id: i + 1,
+                color: swimmerColor,
+                pace: currentPace,
+                interval: (i + 1) * swimmerInterval,
+                lane: currentLane
+            };
+            newSet.push(newSwimmer);
+        }
+        setCurrentSwimmerSet(newSet);
+        // Also store as createdSwimSets so the rest of the UI expects a created set
+        createdSwimSets[currentLane] = {
+            id: Date.now(),
+            lane: currentLane,
+            laneName: currentSettings.laneNames[currentLane],
+            swimmers: JSON.parse(JSON.stringify(newSet)),
+            settings: { ...currentSettings, paceTimeSeconds: currentPace },
+            summary: generateSetSummary(newSet, currentSettings)
+        };
+    } else {
+        // Update existing set in-place
+        // Resize if number of swimmers changed
+        if (numSwimmers < currentSet.length) {
+            currentSet = currentSet.slice(0, numSwimmers);
+        } else if (numSwimmers > currentSet.length) {
+            for (let i = currentSet.length; i < numSwimmers; i++) {
+                let swimmerColor;
+                if (currentSettings.colorMode === 'same') {
+                    swimmerColor = currentSettings.swimmerColor;
+                } else {
+                    swimmerColor = colorHex[swimmerColors[i]];
+                }
+                currentSet.push({
+                    id: i + 1,
+                    color: swimmerColor,
+                    pace: currentPace,
+                    interval: (i + 1) * swimmerInterval,
+                    lane: currentLane
+                });
+            }
+        }
+
+        // If pace changed and we must reset per-swimmer customizations, overwrite pace
+        if (resetPaces) {
+            for (let i = 0; i < currentSet.length; i++) {
+                currentSet[i].pace = currentPace;
+            }
+        }
+
+        // Recompute intervals and ids to keep consistent
+        for (let i = 0; i < currentSet.length; i++) {
+            currentSet[i].id = i + 1;
+            currentSet[i].interval = (i + 1) * swimmerInterval;
+            currentSet[i].lane = currentLane;
+            // ensure color exists
+            if (!currentSet[i].color) {
+                currentSet[i].color = (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]];
+            }
+        }
+
+        setCurrentSwimmerSet(currentSet);
+        // Keep createdSwimSets in sync so queuing/start paths can use it
+        createdSwimSets[currentLane] = {
+            id: createdSwimSets[currentLane] ? createdSwimSets[currentLane].id : Date.now(),
+            lane: currentLane,
+            laneName: currentSettings.laneNames[currentLane],
+            swimmers: JSON.parse(JSON.stringify(currentSet)),
+            settings: { ...currentSettings, paceTimeSeconds: currentPace },
+            summary: generateSetSummary(currentSet, currentSettings)
+        };
+    }
+
+    // Refresh the swimmers UI if visible
+    updateSwimmerSetDisplay();
+}
+
+
 function generateSetSummary(swimmers, settings) {
     const paceDistance = settings.paceDistance;
     const avgPace = swimmers.length > 0 ? swimmers[0].pace : 30;
@@ -1266,6 +1370,15 @@ function generateSetSummary(swimmers, settings) {
 
 function queueSwimSet() {
     const currentLane = currentSettings.currentLane;
+
+    // Ensure we have a created set based on current inputs. If user is on the
+    // Swimmer Customizations tab but hasn't explicitly created a set, build it
+    // from the current controls so we can queue what they're seeing.
+    try {
+        if (!createdSwimSets[currentLane]) createOrUpdateSwimmerSetFromConfig(false);
+    } catch (e) {
+        console.log('Failed to auto-create set before queueing:', e);
+    }
 
     if (!createdSwimSets[currentLane]) {
         alert('No set to queue');
@@ -1280,17 +1393,16 @@ function queueSwimSet() {
         body: JSON.stringify(payload)
     }).then(resp => {
         if (!resp.ok) throw new Error('enqueue failed');
-        // Also keep local queue in sync for UI responsiveness
-        swimSetQueues[currentLane].push(createdSwimSets[currentLane]);
-        createdSwimSets[currentLane] = null;
-        returnToConfigMode();
+    // Keep local queue in sync for UI responsiveness. Push a deep copy so
+    // the UI can continue showing the current created set in the editor.
+    swimSetQueues[currentLane].push(JSON.parse(JSON.stringify(createdSwimSets[currentLane])));
+        // Do NOT call returnToConfigMode(); keep the Swimmer Customizations tab visible
         updateQueueDisplay();
         updatePacerButtons();
     }).catch(err => {
         console.log('Failed to enqueue on device, keeping local queue only');
-        swimSetQueues[currentLane].push(createdSwimSets[currentLane]);
-        createdSwimSets[currentLane] = null;
-        returnToConfigMode();
+    swimSetQueues[currentLane].push(JSON.parse(JSON.stringify(createdSwimSets[currentLane])));
+        // Keep the UI on the swimmers tab so the user can continue customizing
         updateQueueDisplay();
         updatePacerButtons();
     });
@@ -1309,7 +1421,8 @@ function returnToConfigMode() {
 
     // Switch back to config buttons
     document.getElementById('configButtons').style.display = 'block';
-    document.getElementById('queueButtons').style.display = 'none';
+    // Keep queueButtons visible at all times so users can queue the current set
+    // document.getElementById('queueButtons').style.display = 'block';
     document.getElementById('editButtons').style.display = 'none';
 }
 
@@ -1942,6 +2055,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // To ensure labels stay in sync with actual slider values (which may be restored
     // by the browser after scripts run), schedule a short re-sync.
     setTimeout(syncRangeLabels, 60);
+    // Initialize the create/edit tabs and restore last-used tab
+    try {
+        const last = localStorage.getItem('createTab') || 'swimmers';
+        setCreateTab(last, true);
+    } catch (e) {
+        // ignore if localStorage unavailable
+        setCreateTab('swimmers', true);
+    }
 });
 
 // When navigating back/forward some browsers restore form values. Use pageshow
@@ -1979,6 +2100,67 @@ function toggleSection(areaId, toggleBtnId) {
         btn.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
     }
 }
+
+// Create/Edit card tabbing
+function setCreateTab(tabName, silent) {
+    const detailsTab = document.getElementById('createDetailsTab');
+    const swimmersTab = document.getElementById('createSwimmersTab');
+    const breadcrumb = document.getElementById('createBreadcrumb');
+    const breadcrumbTab = document.getElementById('breadcrumbTab');
+
+    if (tabName === 'details') {
+        detailsTab.classList.add('active');
+        swimmersTab.classList.remove('active');
+        document.getElementById('configControls').style.display = 'block';
+        document.getElementById('swimmerSet').style.display = 'none';
+    } else {
+        detailsTab.classList.remove('active');
+        swimmersTab.classList.add('active');
+        document.getElementById('configControls').style.display = 'none';
+        document.getElementById('swimmerSet').style.display = 'block';
+        // Ensure a swimmer set exists based on current inputs so reloads that
+        // restore the swimmers tab show the swimmer list immediately.
+        try {
+            createOrUpdateSwimmerSetFromConfig(false);
+        } catch (e) {
+            // Swallow errors to avoid breaking tab switch
+            console.log('Failed to auto-create swimmer set on tab switch:', e);
+        }
+    }
+
+    try {
+        if (!silent) localStorage.setItem('createTab', tabName);
+    } catch (e) {}
+}
+
+// When the swim time input changes, update internal pace and reset per-swimmer paces
+// so that swimmer customizations are ignored and all swimmers use the new pace.
+document.addEventListener('DOMContentLoaded', function() {
+    const paceEl = document.getElementById('paceTimeSeconds');
+    if (paceEl) {
+        paceEl.addEventListener('change', function() {
+            // Update derived speed
+            updateFromPace();
+            // Rebuild the swimmer set and reset swimmer paces to the new value
+            createOrUpdateSwimmerSetFromConfig(true);
+        });
+    }
+
+    // Ensure switching to swimmers tab creates/updates the swimmer set automatically
+    const detailsTabBtn = document.getElementById('createDetailsTab');
+    const swimmersTabBtn = document.getElementById('createSwimmersTab');
+    if (swimmersTabBtn) {
+        swimmersTabBtn.addEventListener('click', function() {
+            // Auto-create/update the set from current controls without resetting paces
+            createOrUpdateSwimmerSetFromConfig(false);
+        });
+    }
+    if (detailsTabBtn) {
+        detailsTabBtn.addEventListener('click', function() {
+            // No special action needed when going back to details
+        });
+    }
+});
 
 // Convert bytes to hex color string
 function rgbBytesToHex(r, g, b) {
