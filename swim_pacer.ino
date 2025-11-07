@@ -860,6 +860,121 @@ void setupWebServer() {
     server.send(200, "application/json", json);
   });
 
+  // Reorder swim queue for a lane. Expects form-encoded: lane=<n>&order=<id1,id2,...>
+  // id values can be device ids (numeric) or clientTempId strings. Entries not matched
+  // will be appended at the end in their existing order.
+  server.on("/reorderSwimQueue", HTTP_POST, []() {
+    String body = server.arg("plain");
+    int lane = (int)extractJsonLong(body, "lane", currentLane);
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "text/plain", "Invalid lane");
+      return;
+    }
+
+    // Extract order parameter - attempt to find "order": or order= in form-encoded
+    String orderStr = "";
+    if (body.indexOf("order=") >= 0) {
+      int idx = body.indexOf("order=");
+      int start = idx + 6;
+      orderStr = body.substring(start);
+      // Trim trailing ampersand if present
+      int amp = orderStr.indexOf('&');
+      if (amp >= 0) orderStr = orderStr.substring(0, amp);
+      // URL decode approx (replace + with space and %xx hex)
+      orderStr.replace('+', ' ');
+      // Very small URL decode helper for % hex
+      String decoded = "";
+      for (int i = 0; i < orderStr.length(); i++) {
+        if (orderStr.charAt(i) == '%' && i + 2 < orderStr.length()) {
+          String hex = orderStr.substring(i+1, i+3);
+          char c = (char)strtol(hex.c_str(), NULL, 16);
+          decoded += c;
+          i += 2;
+        } else {
+          decoded += orderStr.charAt(i);
+        }
+      }
+      orderStr = decoded;
+    } else {
+      orderStr = extractJsonString(body, "order", "");
+    }
+
+    if (orderStr.length() == 0) {
+      server.send(400, "text/plain", "Missing order");
+      return;
+    }
+
+    // Parse CSV tokens
+    std::vector<String> tokens;
+    int start = 0;
+    for (int i = 0; i <= orderStr.length(); i++) {
+      if (i == orderStr.length() || orderStr.charAt(i) == ',') {
+        String tok = orderStr.substring(start, i);
+        tok.trim();
+        if (tok.length() > 0) tokens.push_back(tok);
+        start = i + 1;
+      }
+    }
+
+    // Build a temporary list of pointers to existing queue entries for this lane
+    std::vector<SwimSet> existing;
+    for (int i = 0; i < swimSetQueueCount[lane]; i++) {
+      int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
+      existing.push_back(swimSetQueue[lane][idx]);
+    }
+
+    // New ordered list
+    std::vector<SwimSet> ordered;
+
+    // Helper to match token to an existing entry by id or clientTempId
+    auto matchAndConsume = [&](const String &tok) -> bool {
+      // Try numeric device id match first
+      unsigned long long parsed = (unsigned long long)strtoull(tok.c_str(), NULL, 10);
+      for (size_t i = 0; i < existing.size(); i++) {
+        if (parsed != 0 && existing[i].id == (uint32_t)parsed) {
+          ordered.push_back(existing[i]);
+          existing.erase(existing.begin() + i);
+          return true;
+        }
+      }
+      // Try parsing as hex clientTempId
+      unsigned long long parsedHex = (unsigned long long)strtoull(tok.c_str(), NULL, 16);
+      for (size_t i = 0; i < existing.size(); i++) {
+        if (parsedHex != 0 && existing[i].clientTempId == parsedHex) {
+          ordered.push_back(existing[i]);
+          existing.erase(existing.begin() + i);
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // Match tokens in order
+    for (size_t t = 0; t < tokens.size(); t++) {
+      matchAndConsume(tokens[t]);
+    }
+
+    // Append any remaining entries not specified
+    for (size_t i = 0; i < existing.size(); i++) ordered.push_back(existing[i]);
+
+    // Write ordered back into circular buffer for the lane
+    // Reset head/tail/count and re-enqueue in order
+    swimSetQueueHead[lane] = 0;
+    swimSetQueueTail[lane] = 0;
+    swimSetQueueCount[lane] = 0;
+    for (size_t i = 0; i < ordered.size() && i < SWIMSET_QUEUE_MAX; i++) {
+      swimSetQueue[lane][swimSetQueueTail[lane]] = ordered[i];
+      swimSetQueueTail[lane] = (swimSetQueueTail[lane] + 1) % SWIMSET_QUEUE_MAX;
+      swimSetQueueCount[lane]++;
+    }
+
+    if (DEBUG_ENABLED) {
+      Serial.print("reorderSwimQueue: lane "); Serial.print(lane); Serial.print(" newCount="); Serial.println(swimSetQueueCount[lane]);
+    }
+
+    server.send(200, "text/plain", "OK");
+  });
+
   server.on("/startNextSwimSet", HTTP_POST, []() {
     // Determine lane for this request (default to currentLane)
     String body = server.arg("plain");

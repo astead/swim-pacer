@@ -998,6 +998,7 @@ let currentRounds = [1, 1, 1, 1]; // Current round for each lane
 let completionHandled = [false, false, false, false]; // Track if completion has been handled for each lane
 let statusUpdateInterval = null;
 let currentColorContext = null; // Track which color picker context we're in
+let _draggedQueueIndex = -1; // index of item being dragged within current lane
 // When true, broad settings writes are suppressed to avoid overwriting device defaults
 let suppressSettingsWrites = false;
 
@@ -1754,7 +1755,7 @@ function updateQueueDisplay() {
     if (swimSetQueues[currentLane].length === 0) {
         html += '<div style="color: #666; font-style: italic;">No sets queued for Lane ' + (currentLane + 1) + '</div>';
     } else {
-        swimSetQueues[currentLane].forEach((swimSet, index) => {
+    swimSetQueues[currentLane].forEach((swimSet, index) => {
             // Determine active set using the tracked active index for this lane.
             const isActive = (activeSwimSetIndex[currentLane] === index);
             const isCompleted = swimSet.completed;
@@ -1772,11 +1773,12 @@ function updateQueueDisplay() {
             }
 
             // If this queue entry is an action/rest item, render it specially
+            const draggable = (!isActive && !isCompleted) ? `draggable="true" ondragstart="handleDragStart(event, ${index})" ondragover="handleDragOver(event)" ondrop="handleDrop(event, ${index})"` : '';
             if (swimSet.type === 'rest' || swimSet.type === 'action') {
                 const actionSummary = swimSet.summary || (swimSet.type === 'rest' ? `Rest: ${formatSecondsToMmSs(swimSet.seconds)}` : (swimSet.summary || 'Action'));
                 const actionClass = 'style="background: #f5f5f5; border: 1px dashed #bbb; padding: 8px 10px; margin: 5px 0; border-radius: 4px;"';
                 html += `
-                    <div ${actionClass} class="queue-action-item">
+                    <div ${actionClass} class="queue-action-item" ${draggable}>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <div style="font-style: italic; color: #444;">
                                 ${actionSummary}
@@ -1791,7 +1793,7 @@ function updateQueueDisplay() {
                 statusClass = `style="background: ${backgroundColor}; border: 1px solid ${borderColor}; padding: 8px 10px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}"`;
 
                 html += `
-                    <div ${statusClass}>
+                    <div ${statusClass} ${draggable}>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
                                 ${swimSet.summary}
@@ -1978,6 +1980,46 @@ function deleteSwimSet(index) {
         updateQueueDisplay();
         updatePacerButtons();
     }
+}
+
+// Drag & Drop handlers for reordering queue items
+function handleDragStart(evt, index) {
+    _draggedQueueIndex = index;
+    try { evt.dataTransfer.setData('text/plain', String(index)); } catch (e) {}
+    evt.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragOver(evt) {
+    evt.preventDefault();
+    evt.dataTransfer.dropEffect = 'move';
+}
+
+function handleDrop(evt, targetIndex) {
+    evt.preventDefault();
+    const currentLane = currentSettings.currentLane;
+    const from = _draggedQueueIndex;
+    const to = targetIndex;
+    if (from < 0 || to < 0 || from === to) return;
+
+    // Reorder locally
+    const item = swimSetQueues[currentLane].splice(from, 1)[0];
+    swimSetQueues[currentLane].splice(to, 0, item);
+    // Clear dragged index
+    _draggedQueueIndex = -1;
+    updateQueueDisplay();
+
+    // Send new order to device: POST lane & order (comma-separated ids or clientTempIds)
+    const order = swimSetQueues[currentLane].map(s => s.id && s.id !== 0 ? String(s.id) : String(s.clientTempId || '0')).join(',');
+    fetch('/reorderSwimQueue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `lane=${currentLane}&order=${encodeURIComponent(order)}`
+    }).then(resp => {
+        if (!resp.ok) throw new Error('reorder failed');
+        // Optionally reconcile response in the future
+    }).catch(err => {
+        console.log('reorder request failed, will keep local order until reconciliation', err);
+    });
 }
 
 function startQueue() {
