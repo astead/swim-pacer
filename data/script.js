@@ -43,6 +43,7 @@ let currentSwimmerIndex = -1; // Track which swimmer is being edited
 // Swim Set Queue Management - now lane-specific
 let swimSetQueues = [[], [], [], []]; // Array of queued swim sets for each lane
 let activeSwimSets = [null, null, null, null]; // Currently running swim set for each lane
+let activeSwimSetIndex = [-1, -1, -1, -1]; // Index of the active swim set within swimSetQueues for each lane
 let editingSwimSetIndexes = [-1, -1, -1, -1]; // Index of swim set being edited for each lane (-1 if creating new)
 let createdSwimSets = [null, null, null, null]; // Temporarily holds created set before queuing for each lane
 const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan'];
@@ -1552,7 +1553,8 @@ function updateQueueDisplay() {
         html += '<div style="color: #666; font-style: italic;">No sets queued for Lane ' + (currentLane + 1) + '</div>';
     } else {
         swimSetQueues[currentLane].forEach((swimSet, index) => {
-            const isActive = activeSwimSets[currentLane] && activeSwimSets[currentLane].id === swimSet.id;
+            // Determine active set using the tracked active index for this lane.
+            const isActive = (activeSwimSetIndex[currentLane] === index);
             const isCompleted = swimSet.completed;
 
             let statusClass = '';
@@ -1750,6 +1752,9 @@ function startQueue() {
     // Start the next non-completed swim set
     activeSwimSets[currentLane] = nextSwimSet;
 
+    // Track the active set index so only that queued item shows runtime details
+    activeSwimSetIndex[currentLane] = swimSetQueues[currentLane].indexOf(nextSwimSet);
+
     // Load the active set into the pacer system
     loadSwimSetForExecution(activeSwimSets[currentLane]);
 
@@ -1774,6 +1779,7 @@ function stopQueue() {
 
     // Clear active set for current lane
     activeSwimSets[currentLane] = null;
+    activeSwimSetIndex[currentLane] = -1;
 
     // Update displays
     updateQueueDisplay();
@@ -2215,6 +2221,7 @@ function handleSetCompletion() {
 
     // Clear active set for current lane
     activeSwimSets[currentLane] = null;
+    activeSwimSetIndex[currentLane] = -1;
 
     // Reset completion flag for this lane
     completionHandled[currentLane] = false;
@@ -2437,13 +2444,7 @@ async function fetchDeviceSettingsAndApply() {
         if (dev.stripLengthMeters !== undefined) currentSettings.stripLength = parseFloat(dev.stripLengthMeters);
         if (dev.ledsPerMeter !== undefined) currentSettings.ledsPerMeter = parseInt(dev.ledsPerMeter);
         if (dev.numLanes !== undefined) currentSettings.numLanes = parseInt(dev.numLanes);
-        if (dev.numSwimmers !== undefined) {
-            currentSettings.numSwimmers = parseInt(dev.numSwimmers);
-            try {
-                // Update the UI control for number of swimmers without POSTing
-                setNumSwimmersUI(currentSettings.numSwimmers);
-            } catch (e) {}
-        }
+        if (dev.numSwimmers !== undefined) currentSettings.numSwimmers = parseInt(dev.numSwimmers);
         if (dev.poolLength !== undefined) currentSettings.poolLength = dev.poolLength;
         if (dev.poolLengthUnits !== undefined) currentSettings.poolLengthUnits = dev.poolLengthUnits;
 
@@ -2527,15 +2528,6 @@ async function fetchDeviceSettingsAndApply() {
 
         // After merging, update full UI
         updateAllUIFromSettings();
-        // Rebuild the swimmer set for the current lane so client/server agree on count
-        try {
-            createOrUpdateSwimmerSetFromConfig(false);
-            updateLaneSelector();
-            updateQueueDisplay();
-            updatePacerButtons();
-        } catch (e) {
-            console.log('Reconcile numSwimmers failed:', e);
-        }
         // Re-enable outbound writes now that device defaults are applied
         suppressSettingsWrites = false;
     } catch (e) {
