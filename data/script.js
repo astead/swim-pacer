@@ -1868,12 +1868,16 @@ function displaySwimmerSet() {
             displayColor = colorHex[swimmer.color] || swimmer.color;
         }
 
+        // Format pace value for display: use M:SS when > 60s, else plain seconds
+        const paceValueDisplay = (swimmer.pace > 60) ? formatSecondsToMmSs(swimmer.pace) : `${Math.round(swimmer.pace)}`;
+        const paceUnitLabel = (swimmer.pace > 60) ? 'min:sec' : 'sec';
+
        row.innerHTML = `
           <div class="swimmer-color" style="background-color: ${displayColor}"
               onclick="cycleSwimmerColor(${index})" title="Click to change color"></div>
           <div class="swimmer-info">Swimmer ${swimmer.id}</div>
-          <div class="swimmer-pace"> <input type="number" class="swimmer-pace-input" value="${swimmer.pace}"
-              min="20" max="300" step="0.5" onchange="updateSwimmerPace(${index}, this.value)"> <span class="pace-unit">sec</span></div>
+          <div class="swimmer-pace"> <input type="text" class="swimmer-pace-input" value="${paceValueDisplay}"
+              placeholder="30 or 1:30" onchange="updateSwimmerPace(${index}, this.value)"> <span class="pace-unit">${paceUnitLabel}</span></div>
        `;
 
         swimmerList.appendChild(row);
@@ -1898,7 +1902,11 @@ function cycleSwimmerColor(swimmerIndex) {
 function updateSwimmerPace(swimmerIndex, newPace) {
     const currentSet = getCurrentSwimmerSet();
     if (currentSet[swimmerIndex]) {
-        currentSet[swimmerIndex].pace = parseFloat(newPace);
+        // parseTimeInput supports both seconds and M:SS formats
+        const parsed = parseTimeInput(String(newPace));
+        currentSet[swimmerIndex].pace = parsed;
+        // Refresh display to update unit labels if needed
+        updateSwimmerSetDisplay();
     }
 }
 // Use targeted send* helpers (e.g., sendPoolLength, sendBrightness) instead of broad writes
