@@ -1725,12 +1725,6 @@ function updateQueueDisplay() {
 
                 html += `
                     <div ${statusClass}>
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <div style="font-size:12px; color:#28a745; margin-right:8px;">${swimSet.synced ? '✓ Synced' : ''}</div>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <div style="font-size:12px; color:#28a745; margin-right:8px;">${swimSet.synced ? '✓ Synced' : ''}</div>
-                        </div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
                                 ${swimSet.summary}
