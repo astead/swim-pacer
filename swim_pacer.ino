@@ -343,7 +343,6 @@ void applySwimSetToSettings(const SwimSet &s) {
   swimSetSettings.swimSetDistance = s.length;
   swimSetSettings.numRounds = s.rounds;
   swimSetSettings.restTimeSeconds = s.restSeconds;
-  saveSwimSetSettings();
 
   needsRecalculation = true;
   recalculateValues();
@@ -357,6 +356,26 @@ void applySwimSetToSettings(const SwimSet &s) {
     Serial.print("  restSeconds="); Serial.println(s.restSeconds);
     Serial.print("  computed speedMPS="); Serial.println(speedMPS, 4);
     Serial.print("  currentLane="); Serial.println(currentLane);
+  }
+
+  // Defensive check: ensure swimmer interval is sane (non-zero). If it's zero
+  // the computed target rest durations will be zero which results in immediate
+  // starts for all swimmers. Reset to a safe default for runtime behavior but
+  // avoid persisting an invalid zero value until we've validated all fields.
+  if (swimSetSettings.swimmerIntervalSeconds <= 0) {
+    if (DEBUG_ENABLED) {
+      Serial.print("Warning: swimmerIntervalSeconds <= 0 (value=");
+      Serial.print(swimSetSettings.swimmerIntervalSeconds);
+      Serial.println(") - resetting to default 4 seconds (will be persisted)");
+    }
+    swimSetSettings.swimmerIntervalSeconds = 4;
+  }
+
+  // Persist swim set settings (now that swimmerIntervalSeconds is validated)
+  saveSwimSetSettings();
+
+  if (DEBUG_ENABLED) {
+    Serial.print("  swimmerIntervalSeconds="); Serial.println(swimSetSettings.swimmerIntervalSeconds);
   }
 
   // Initialize swimmers for the current lane to start fresh
@@ -631,6 +650,7 @@ void setupWebServer() {
   server.on("/setRestTime", HTTP_POST, handleSetRestTime);
   server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
   server.on("/setSwimmerInterval", HTTP_POST, handleSetSwimmerInterval);
+  server.on("/getSwimmerInterval", HTTP_GET, handleGetSwimmerInterval);
   server.on("/setDelayIndicators", HTTP_POST, handleSetDelayIndicators);
   server.on("/setNumSwimmers", HTTP_POST, handleSetNumSwimmers);
   server.on("/setNumRounds", HTTP_POST, handleSetNumRounds);
@@ -815,10 +835,8 @@ void setupWebServer() {
       swimmers[lane][i].hideTimerStart = 0;
     }
 
-    // Update lane running state: do not alter laneRunning flag here - caller controls starting/stopping
-    // but clear any running copies associated with this lane so UI reloads show the reset state
-    runningSets[lane] = NULL;
-    runningSettings[lane] = NULL;
+  // Update lane running state: do not alter laneRunning flag here - caller controls starting/stopping
+  // No 'runningSets' or 'runningSettings' arrays exist in this firmware build; nothing to clear.
 
     server.send(200, "text/plain", "OK");
   });
@@ -1376,12 +1394,45 @@ void handleSetPaceDistance() {
 
 
 void handleSetSwimmerInterval() {
+  // Accept both form-encoded posts (swimmerInterval=<n>) and JSON bodies
+  String body = server.arg("plain");
+  int swimmerInterval = swimSetSettings.swimmerIntervalSeconds; // fallback to current
+
   if (server.hasArg("swimmerInterval")) {
-    int swimmerInterval = server.arg("swimmerInterval").toInt();
-    swimSetSettings.swimmerIntervalSeconds = swimmerInterval;
-    saveSwimSetSettings();
+    swimmerInterval = server.arg("swimmerInterval").toInt();
+  } else if (body.length() > 0) {
+    // Try to extract from JSON payload as a best-effort fallback
+    int parsed = (int)extractJsonLong(body, "swimmerInterval", swimmerInterval);
+    swimmerInterval = parsed;
   }
+
+  // Validate value: ignore non-positive values which often result from
+  // malformed client payloads (e.g., Number(undefined) -> NaN -> "NaN" -> toInt() == 0)
+  if (swimmerInterval <= 0) {
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetSwimmerInterval: rejected invalid swimmerInterval="); Serial.println(swimmerInterval);
+    }
+    server.send(400, "text/plain", "Invalid swimmerInterval; must be >= 1");
+    return;
+  }
+
+  // Apply and persist valid value
+  swimSetSettings.swimmerIntervalSeconds = swimmerInterval;
+  saveSwimSetSettings();
+
+  if (DEBUG_ENABLED) {
+    Serial.print("handleSetSwimmerInterval: updated swimmerInterval="); Serial.println(swimmerInterval);
+  }
+
   server.send(200, "text/plain", "Swimmer interval updated");
+}
+
+// Simple GET to return current swimmer interval (seconds)
+void handleGetSwimmerInterval() {
+  String json = "{";
+  json += "\"swimmerInterval\":" + String(swimSetSettings.swimmerIntervalSeconds);
+  json += "}";
+  server.send(200, "application/json", json);
 }
 
 void handleSetDelayIndicators() {
@@ -1601,7 +1652,10 @@ void saveSwimSetSettings() {
   preferences.putFloat("speedMPS", swimSetSettings.speedMetersPerSecond);
   preferences.putInt("restTimeSeconds", swimSetSettings.restTimeSeconds);
   preferences.putInt("swimSetDistance", swimSetSettings.swimSetDistance);
-  preferences.putInt("swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
+  // Sanitize swimmer interval before persisting to avoid storing invalid (<=0) values
+  int si = swimSetSettings.swimmerIntervalSeconds;
+  if (si <= 0) si = 4; // enforce safe default
+  preferences.putInt("swimmerInterval", si);
   preferences.putInt("numRounds", swimSetSettings.numRounds);
 }
 
