@@ -1049,10 +1049,18 @@ function initializePacerStatus() {
         roundTimingEl.textContent = `0:00 / ${totalTimeStr}`;
     }
 
-    const activeSwimmersEl = document.getElementById('activeSwimmers');
-    if (activeSwimmersEl) {
-        activeSwimmersEl.textContent = '0';
-    }
+    // Compute total set duration (when the last swimmer finishes all rounds)
+    // lastSwimmerStartDelay = initial delay + (numSwimmers-1)*swimmerInterval
+    const lastSwimmerStartDelay = (runningData.swimmerInterval || 0) + ((runningData.numSwimmers - 1) * (runningData.swimmerInterval || 0));
+    const totalSetTimePerSwimmer = runningData.numRounds * totalRoundTime;
+    const totalSetDuration = lastSwimmerStartDelay + totalSetTimePerSwimmer; // seconds
+    const totalSetMinutes = Math.floor(totalSetDuration / 60);
+    const totalSetSecondsOnly = Math.floor(totalSetDuration % 60);
+    const totalSetStr = `${totalSetMinutes}:${totalSetSecondsOnly.toString().padStart(2, '0')}`;
+    const setTotalEl = document.getElementById('setTotalTiming');
+    if (setTotalEl) setTotalEl.textContent = `0:00 / ${totalSetStr}`;
+
+    // Active swimmers/next event/current phase UI removed — skip updating them
 
     // Update set basics display using running settings
     const paceDistance = runningData.paceDistance;
@@ -1065,19 +1073,8 @@ function initializePacerStatus() {
     // Show initial delay countdown using running settings
     // Use swimmerInterval as the initial delay for the first swimmer
     const initialDelayDisplay = runningData.swimmerInterval || 0;
-    const nextEventEl = document.getElementById('nextEvent');
-    if (nextEventEl) {
-        if (initialDelayDisplay > 0) nextEventEl.textContent = `Starting in ${initialDelayDisplay}s`; else nextEventEl.textContent = 'Starting now';
-    }
-    const currentPhaseEl = document.getElementById('currentPhase');
-    if (currentPhaseEl) {
-        currentPhaseEl.textContent = initialDelayDisplay > 0 ? 'Initial Delay' : 'Swimming';
-    }
-
-    const elapsedTimeEl = document.getElementById('elapsedTime');
-    if (elapsedTimeEl) {
-        elapsedTimeEl.textContent = '00:00';
-    }
+    // nextEvent, currentPhase, and elapsedTime elements were removed from the UI.
+    // We intentionally do not update them here.
 }
 
 function startStatusUpdates() {
@@ -1099,8 +1096,7 @@ function updatePacerStatus() {
     const elapsedSeconds = Math.floor((Date.now() - pacerStartTimes[currentLane]) / 1000);
     const minutes = Math.floor(elapsedSeconds / 60);
     const seconds = elapsedSeconds % 60;
-    document.getElementById('elapsedTime').textContent =
-        `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    // Elapsed time element removed from UI; keep timing internal but do not write to DOM.
 
     // Account for initial delay using running settings
     const initialDelaySeconds = runningData.swimmerInterval || 0;
@@ -1108,21 +1104,27 @@ function updatePacerStatus() {
 
     // Check if we're still in the initial delay period
     if (timeAfterInitialDelay < 0) {
-        // Still in initial delay phase
-        document.getElementById('currentPhase').textContent = 'Initial Delay';
-        document.getElementById('activeSwimmers').textContent = '0';
-        document.getElementById('nextEvent').textContent = `Starting in ${Math.ceil(-timeAfterInitialDelay)}s`;
-
-        // Show initial round timing during delay using running settings
-    const paceSeconds = runningData.paceTimeSeconds;
+        // Still in initial delay phase — update round timing and round number only
+        const paceSeconds = runningData.paceTimeSeconds;
         const restSeconds = runningData.restTime;
         const totalRoundTime = paceSeconds + restSeconds;
         const totalRoundMinutes = Math.floor(totalRoundTime / 60);
         const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
         const totalTimeStr = `${totalRoundMinutes}:${totalRoundSecondsOnly.toString().padStart(2, '0')}`;
-        document.getElementById('roundTiming').textContent = `0:00 / ${totalTimeStr}`;
-
-        document.getElementById('currentRound').textContent = '1';
+        const roundTimingEl = document.getElementById('roundTiming');
+        if (roundTimingEl) roundTimingEl.textContent = `0:00 / ${totalTimeStr}`;
+        const currentRoundEl = document.getElementById('currentRound');
+        if (currentRoundEl) currentRoundEl.textContent = '1';
+        // Compute totalSetStr locally and update set total timing to show elapsed 0
+        const totalRoundTime_loc = paceSeconds + restSeconds;
+        const lastSwimmerStartDelay_loc = (runningData.swimmerInterval || 0) + ((runningData.numSwimmers - 1) * (runningData.swimmerInterval || 0));
+        const totalSetTimePerSwimmer_loc = runningData.numRounds * totalRoundTime_loc;
+        const totalSetDuration_loc = lastSwimmerStartDelay_loc + totalSetTimePerSwimmer_loc;
+        const totalSetMinutes_loc = Math.floor(totalSetDuration_loc / 60);
+        const totalSetSecondsOnly_loc = Math.floor(totalSetDuration_loc % 60);
+        const totalSetStr_loc = `${totalSetMinutes_loc}:${totalSetSecondsOnly_loc.toString().padStart(2, '0')}`;
+        const setTotalEl2 = document.getElementById('setTotalTiming');
+        if (setTotalEl2) setTotalEl2.textContent = `0:00 / ${totalSetStr_loc}`;
         return;
     }
 
@@ -1146,15 +1148,17 @@ function updatePacerStatus() {
 
     // Determine current phase
     if (timeInCurrentRound < paceSeconds) {
-        document.getElementById('currentPhase').textContent = 'Swimming';
-        document.getElementById('activeSwimmers').textContent = runningData.numSwimmers;
+        // Swimming phase — update roundTiming only
         const remainingSwimTime = paceSeconds - timeInCurrentRound;
-        document.getElementById('nextEvent').textContent = `Rest in ${Math.ceil(remainingSwimTime)}s`;
+        const nextEventText = `Rest in ${Math.ceil(remainingSwimTime)}s`;
+        const roundTimingEl = document.getElementById('roundTiming');
+        if (roundTimingEl) roundTimingEl.textContent = `${formatSecondsToMmSs(timeInCurrentRound)} / ${formatSecondsToMmSs(totalRoundTime)}`;
     } else {
-        document.getElementById('currentPhase').textContent = 'Rest Period';
-        document.getElementById('activeSwimmers').textContent = '0';
+        // Rest phase — update roundTiming only
         const remainingRestTime = totalRoundTime - timeInCurrentRound;
-        document.getElementById('nextEvent').textContent = `Next round in ${Math.ceil(remainingRestTime)}s`;
+        const nextEventText = `Next round in ${Math.ceil(remainingRestTime)}s`;
+        const roundTimingEl = document.getElementById('roundTiming');
+        if (roundTimingEl) roundTimingEl.textContent = `${formatSecondsToMmSs(timeInCurrentRound)} / ${formatSecondsToMmSs(totalRoundTime)}`;
     }
 
     // Update current round (after initial delay)
@@ -1162,6 +1166,20 @@ function updatePacerStatus() {
     if (calculatedRound !== currentRounds[currentLane] && calculatedRound <= runningData.numRounds) {
         currentRounds[currentLane] = calculatedRound;
         document.getElementById('currentRound').textContent = currentRounds[currentLane];
+    }
+
+    // Update set total timing: elapsed since pacerStartTimes (including initial delay) vs totalSetDuration
+    const lastSwimmerStartDelay2 = (runningData.swimmerInterval || 0) + ((runningData.numSwimmers - 1) * (runningData.swimmerInterval || 0));
+    const totalSetTimePerSwimmer2 = runningData.numRounds * totalRoundTime;
+    const totalSetDuration2 = lastSwimmerStartDelay2 + totalSetTimePerSwimmer2;
+    const totalSetMinutes2 = Math.floor(totalSetDuration2 / 60);
+    const totalSetSecondsOnly2 = Math.floor(totalSetDuration2 % 60);
+    const totalSetStr2 = `${totalSetMinutes2}:${totalSetSecondsOnly2.toString().padStart(2, '0')}`;
+    const elapsedSinceStart = elapsedSeconds; // includes initial delay
+    const setTotalEl3 = document.getElementById('setTotalTiming');
+    if (setTotalEl3) {
+        const elapsedStr = formatSecondsToMmSs(elapsedSinceStart);
+        setTotalEl3.textContent = `${elapsedStr} / ${totalSetStr2}`;
     }
 
     // Check if ALL swimmers have completed the set
@@ -1172,9 +1190,11 @@ function updatePacerStatus() {
 
     // Check if the entire set is complete (all swimmers finished)
     if (elapsedSeconds >= lastSwimmerFinishTime) {
-        document.getElementById('currentPhase').textContent = 'Set Complete!';
-        document.getElementById('nextEvent').textContent = 'All swimmers finished';
-        document.getElementById('activeSwimmers').textContent = '0';
+    // Set complete — update roundTiming and currentRound only
+    const roundTimingEl = document.getElementById('roundTiming');
+    if (roundTimingEl) roundTimingEl.textContent = `Complete`;
+    const currentRoundEl = document.getElementById('currentRound');
+    if (currentRoundEl) currentRoundEl.textContent = runningData.numRounds;
 
         // Handle queue completion (only once)
         if (activeSwimSets[currentLane] && !completionHandled[currentLane]) {
@@ -1193,19 +1213,9 @@ function updatePacerStatus() {
             `${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')}` :
             `${remainingSeconds}s`;
 
-        document.getElementById('currentPhase').textContent = 'Trailing swimmers finishing';
-        document.getElementById('nextEvent').textContent = `Complete in ${timeDisplay}`;
-
-        // Calculate how many swimmers are still active
-        let activeSwimmers = 0;
-        for (let i = 0; i < runningData.numSwimmers; i++) {
-            const swimmerStartTime = (runningData.swimmerInterval || 0) + (i * runningData.swimmerInterval);
-            const swimmerFinishTime = swimmerStartTime + totalSetTimePerSwimmer;
-            if (elapsedSeconds < swimmerFinishTime) {
-                activeSwimmers++;
-            }
-        }
-        document.getElementById('activeSwimmers').textContent = activeSwimmers;
+        // Trailing swimmers finishing — update roundTiming only
+        const roundTimingEl2 = document.getElementById('roundTiming');
+        if (roundTimingEl2) roundTimingEl2.textContent = `Complete in ${timeDisplay}`;
     }
 }
 
@@ -1729,22 +1739,17 @@ function updateQueueDisplay() {
                             <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
                                 ${swimSet.summary}
                             </div>
-                            <div style="display: flex; gap: 5px;">
+                            <div style="display: flex; gap: 5px; align-items: center;">
+                                ${isActive ? `<div style="font-weight: bold; color: #1976D2; margin-left: 8px;">Round: <span id="currentRound">1</span>/<span id="totalRounds">10</span></div>` : ''}
                                 ${!isActive && !isCompleted ? `<button onclick="editSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
                                 ${!isActive && !isCompleted ? `<button onclick="deleteSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
-                                ${isActive ? `<div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>` : ''}
                                 ${isCompleted ? `<div style="font-size: 12px; color: #28a745; font-weight: bold;">Completed</div>` : ''}
                             </div>
                         </div>
                         ${isActive ? `
-                            <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; color: #555;">
-                                <div><strong>Round:</strong> <span id="currentRound">1</span> of <span id="totalRounds">10</span></div>
-                                <div><strong>Round:</strong> <span id="roundTiming">0:00 / 0:00</span></div>
-                                <div><strong>Active Swimmers:</strong> <span id="activeSwimmers">0</span></div>
-                                <div><strong>Next Event:</strong> <span id="nextEvent">Starting...</span></div>
-                            </div>
-                            <div style="margin-top: 6px; background: #fff; border-radius: 3px; padding: 6px; font-size: 11px;">
-                                <strong>Current Phase:</strong> <span id="currentPhase">Preparing to start</span>
+                            <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr auto; gap: 10px; font-size: 12px; color: #555;">
+                                <div><strong>Round timer:</strong> <span id="roundTiming">0:00 / 0:00</span></div>
+                                <div style="text-align: right;"><strong>Set:</strong> <span id="setTotalTiming">0:00 / 0:00</span></div>
                             </div>
                         ` : ''}
                     </div>
