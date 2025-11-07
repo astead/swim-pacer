@@ -117,12 +117,13 @@ struct SwimSet {
   uint8_t repeat;          // repeat metadata for LOOP_TYPE
 };
 
-// Simple fixed-size in-memory queue
+// Simple fixed-size in-memory per-lane queues
 const int SWIMSET_QUEUE_MAX = 12;
-SwimSet swimSetQueue[SWIMSET_QUEUE_MAX];
-int swimSetQueueHead = 0;
-int swimSetQueueTail = 0;
-int swimSetQueueCount = 0;
+const int MAX_LANES_SUPPORTED = 4;
+SwimSet swimSetQueue[MAX_LANES_SUPPORTED][SWIMSET_QUEUE_MAX];
+int swimSetQueueHead[MAX_LANES_SUPPORTED] = {0,0,0,0};
+int swimSetQueueTail[MAX_LANES_SUPPORTED] = {0,0,0,0};
+int swimSetQueueCount[MAX_LANES_SUPPORTED] = {0,0,0,0};
 
 // ----- Action queue types and storage -----
 // Actions are lightweight commands (rest pause, move to wall) that should
@@ -135,10 +136,10 @@ struct ActionItem {
 };
 
 const int ACTION_QUEUE_MAX = 12;
-ActionItem actionQueue[ACTION_QUEUE_MAX];
-int actionQueueHead = 0;
-int actionQueueTail = 0;
-int actionQueueCount = 0;
+ActionItem actionQueue[MAX_LANES_SUPPORTED][ACTION_QUEUE_MAX];
+int actionQueueHead[MAX_LANES_SUPPORTED] = {0,0,0,0};
+int actionQueueTail[MAX_LANES_SUPPORTED] = {0,0,0,0};
+int actionQueueCount[MAX_LANES_SUPPORTED] = {0,0,0,0};
 // Device-assigned action ID counter (monotonic)
 uint32_t nextActionId = 0;
 
@@ -176,68 +177,79 @@ bool needsRecalculation = true;
 
 // The queue arrays are declared earlier but we define the helpers here for readability.
 bool enqueueSwimSet(const SwimSet &s) {
+  // For backward compatibility, if s.type encodes lane in an extended field it
+  // is ignored. Require callers to supply swim-set payloads per-lane via
+  // the HTTP endpoint which passes the lane separately. Here use currentLane.
+  int lane = currentLane;
   if (DEBUG_ENABLED) {
-    Serial.println("enqueueSwimSet(): received set:");
+    Serial.println("enqueueSwimSet(): received set for lane:");
+    Serial.print("  lane="); Serial.println(lane);
     Serial.print("  length="); Serial.println(s.length);
-    Serial.print("  paceSeconds="); Serial.println(s.paceSeconds);
-    Serial.print("  rounds="); Serial.println(s.rounds);
-    Serial.print("  restSeconds="); Serial.println(s.restSeconds);
-    Serial.print("  type="); Serial.println(s.type);
-    Serial.print("  repeat="); Serial.println(s.repeat);
-    Serial.print("  queueCountBefore="); Serial.println(swimSetQueueCount);
   }
-  if (swimSetQueueCount >= SWIMSET_QUEUE_MAX) {
-    if (DEBUG_ENABLED) Serial.println("enqueueSwimSet(): queue full, rejecting set");
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
+  if (swimSetQueueCount[lane] >= SWIMSET_QUEUE_MAX) {
+    if (DEBUG_ENABLED) Serial.println("enqueueSwimSet(): lane queue full, rejecting set");
     return false;
   }
-  swimSetQueue[swimSetQueueTail] = s;
-  swimSetQueueTail = (swimSetQueueTail + 1) % SWIMSET_QUEUE_MAX;
-  swimSetQueueCount++;
-  if (DEBUG_ENABLED) Serial.print("enqueueSwimSet(): queueCountAfter="); Serial.println(swimSetQueueCount);
+  swimSetQueue[lane][swimSetQueueTail[lane]] = s;
+  swimSetQueueTail[lane] = (swimSetQueueTail[lane] + 1) % SWIMSET_QUEUE_MAX;
+  swimSetQueueCount[lane]++;
+  if (DEBUG_ENABLED) {
+    Serial.print("enqueueSwimSet(): lane queueCountAfter="); Serial.println(swimSetQueueCount[lane]);
+  }
   return true;
 }
 
 // Action queue helpers
-bool enqueueAction(const ActionItem &a) {
+// Enqueue an action into the specified lane's queue
+bool enqueueAction(const ActionItem &a, int lane) {
   if (DEBUG_ENABLED) {
     Serial.println("enqueueAction(): received action:");
     Serial.print("  id="); Serial.println(a.id);
     Serial.print("  type="); Serial.println(a.type);
     Serial.print("  seconds="); Serial.println(a.seconds);
     Serial.print("  target="); Serial.println(a.target);
-    Serial.print("  actionQueueCountBefore="); Serial.println(actionQueueCount);
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) Serial.println("  lane=INVALID");
+    else Serial.print("  actionQueueCountBefore="); Serial.println(actionQueueCount[lane]);
   }
-  if (actionQueueCount >= ACTION_QUEUE_MAX) {
-    if (DEBUG_ENABLED) Serial.println("enqueueAction(): action queue full, rejecting");
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
+  if (actionQueueCount[lane] >= ACTION_QUEUE_MAX) {
+    if (DEBUG_ENABLED) Serial.println("enqueueAction(): action queue full for lane, rejecting");
     return false;
   }
-  // Copy locally and assign canonical id if caller did not provide one
+  // Copy locally and assign canonical id when caller did not provide one
   ActionItem local = a;
   if (local.id == 0) {
     nextActionId++;
     if (nextActionId == 0) nextActionId = 1; // avoid reserving zero
     local.id = nextActionId;
   }
-  actionQueue[actionQueueTail] = local;
-  actionQueueTail = (actionQueueTail + 1) % ACTION_QUEUE_MAX;
-  actionQueueCount++;
-  if (DEBUG_ENABLED) Serial.print("enqueueAction(): actionQueueCountAfter="); Serial.println(actionQueueCount);
+  actionQueue[lane][actionQueueTail[lane]] = local;
+  actionQueueTail[lane] = (actionQueueTail[lane] + 1) % ACTION_QUEUE_MAX;
+  actionQueueCount[lane]++;
+  if (DEBUG_ENABLED) {
+    Serial.print("enqueueAction(): actionQueueCountAfter="); Serial.println(actionQueueCount[lane]);
+  }
   return true;
 }
 
-bool dequeueAction(ActionItem &out) {
-  if (actionQueueCount == 0) return false;
-  out = actionQueue[actionQueueHead];
-  actionQueueHead = (actionQueueHead + 1) % ACTION_QUEUE_MAX;
-  actionQueueCount--;
+// Dequeue an action from the specified lane's queue
+bool dequeueAction(ActionItem &out, int lane) {
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
+  if (actionQueueCount[lane] == 0) return false;
+  out = actionQueue[lane][actionQueueHead[lane]];
+  actionQueueHead[lane] = (actionQueueHead[lane] + 1) % ACTION_QUEUE_MAX;
+  actionQueueCount[lane]--;
   return true;
 }
 
 bool dequeueSwimSet(SwimSet &out) {
-  if (swimSetQueueCount == 0) return false;
-  out = swimSetQueue[swimSetQueueHead];
-  swimSetQueueHead = (swimSetQueueHead + 1) % SWIMSET_QUEUE_MAX;
-  swimSetQueueCount--;
+  int lane = currentLane;
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
+  if (swimSetQueueCount[lane] == 0) return false;
+  out = swimSetQueue[lane][swimSetQueueHead[lane]];
+  swimSetQueueHead[lane] = (swimSetQueueHead[lane] + 1) % SWIMSET_QUEUE_MAX;
+  swimSetQueueCount[lane]--;
   return true;
 }
 
@@ -634,7 +646,15 @@ void setupWebServer() {
     s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
     s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
 
+    int lane = (int)extractJsonLong(body, "lane", currentLane);
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "text/plain", "Invalid lane");
+      return;
+    }
+    int oldLane = currentLane;
+    currentLane = lane;
     bool ok = enqueueSwimSet(s);
+    currentLane = oldLane;
     server.send(ok ? 200 : 507, "text/plain", ok ? "Enqueued" : "Queue full");
   });
 
@@ -654,10 +674,11 @@ void setupWebServer() {
   });
 
   server.on("/getSwimQueue", HTTP_GET, []() {
+    int lane = currentLane;
     String json = "[";
-    for (int i = 0; i < swimSetQueueCount; i++) {
-      int idx = (swimSetQueueHead + i) % SWIMSET_QUEUE_MAX;
-      SwimSet &s = swimSetQueue[idx];
+    for (int i = 0; i < swimSetQueueCount[lane]; i++) {
+      int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
+      SwimSet &s = swimSetQueue[lane][idx];
       if (i) json += ",";
       json += "{";
       json += String("\"length\":") + String(s.length) + ",";
@@ -673,26 +694,25 @@ void setupWebServer() {
   });
 
   server.on("/startNextSwimSet", HTTP_POST, []() {
-    // Before starting the next swim set, check if there are any pending
-    // action items (rest or move) that should be executed first. Actions are
-    // lightweight and will be handled locally here.
+    // Determine lane for this request (default to currentLane)
+    String body = server.arg("plain");
+    int lane = (body.length() > 0) ? (int)extractJsonLong(body, "lane", currentLane) : currentLane;
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "text/plain", "Invalid lane");
+      return;
+    }
+
+    // First, process any queued action for this lane
     ActionItem a;
-    if (dequeueAction(a)) {
-      if (DEBUG_ENABLED) Serial.println("startNextSwimSet: processing action first");
-      // Handle REST_TYPE: set device rest time temporarily and respond
+    if (dequeueAction(a, lane)) {
+      if (DEBUG_ENABLED) Serial.println("startNextSwimSet: processing action first for lane");
       if (a.type == REST_TYPE) {
-        // Apply rest seconds to swimSetSettings so pacer honors it on next starts
         swimSetSettings.restTimeSeconds = a.seconds;
         saveSwimSetSettings();
-        // Respond with action acknowledged
         server.send(200, "text/plain", "Action (rest) acknowledged");
         return;
       } else if (a.type == MOVE_TYPE) {
-        // MOVE_TYPE: reposition swimmers to start or far wall for current lane
-        // For simplicity, only affect the currentLane swimmers' positions
-        int lane = currentLane;
         if (a.target == 0) {
-          // Move to starting wall (position 0)
           for (int i = 0; i < 6; i++) {
             swimmers[lane][i].position = 0;
             swimmers[lane][i].isResting = true;
@@ -701,7 +721,6 @@ void setupWebServer() {
             swimmers[lane][i].totalDistance = 0.0;
           }
         } else {
-          // Move to far wall (position = last LED)
           float poolLengthInStripUnits = convertPoolToStripUnits(globalConfigSettings.poolLength);
           int farPos = floor((poolLengthInStripUnits * globalConfigSettings.ledsPerMeter)-1);
           for (int i = 0; i < 6; i++) {
@@ -717,31 +736,30 @@ void setupWebServer() {
       }
     }
 
+    // If no action, start the next swim set for this lane
     SwimSet next;
+    int oldLane = currentLane;
+    currentLane = lane;
     if (dequeueSwimSet(next)) {
       applySwimSetToSettings(next);
       server.send(200, "text/plain", "Started next");
     } else {
       server.send(404, "text/plain", "Queue empty");
     }
+    currentLane = oldLane;
   });
 
   // Endpoint to accept lightweight action items (rest, move)
   server.on("/enqueueAction", HTTP_POST, []() {
     String body = server.arg("plain");
-    // Minimal parsing: expect JSON like { "lane":0, "action": { "id":..., "type":"rest", "seconds":30 } }
     int lane = (int)extractJsonLong(body, "lane", currentLane);
-    String actionType = extractJsonString(body, "action", "");
-    // Extract nested fields by searching for the substring "action"
-    // For simplicity reuse extractJsonString to look for keys inside body
-    String typeStr = extractJsonString(body, "type", "");
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "text/plain", "Invalid lane");
+      return;
+    }
     // Build ActionItem
     ActionItem a;
-    a.id = (uint32_t)extractJsonLong(body, "id", (long)millis());
-    // Detect known textual types
-    String t = extractJsonString(body, "action", "");
-    // Try to locate type inside the nested action object: look for "type":"rest" or "type":"action"
-    // Fallback: inspect the 'type' key at top-level
+    a.id = (uint32_t)extractJsonLong(body, "id", 0);
     String nestedType = extractJsonString(body, "type", "");
     if (nestedType.length() > 0) {
       if (nestedType == "rest") {
@@ -754,12 +772,10 @@ void setupWebServer() {
         a.target = (targetStr == "far") ? 1 : 0;
         a.seconds = 0;
       } else {
-        // Unknown - reject
         server.send(400, "text/plain", "Unknown action type");
         return;
       }
     } else {
-      // No nested type, attempt to parse 'action' object by searching for 'rest'/'move' keywords
       if (body.indexOf("\"rest\"") >= 0) {
         a.type = REST_TYPE;
         a.seconds = (uint16_t)extractJsonLong(body, "seconds", 30);
@@ -774,16 +790,14 @@ void setupWebServer() {
       }
     }
 
-    bool ok = enqueueAction(a);
+    bool ok = enqueueAction(a, lane);
     if (ok) {
-      // Return a small JSON payload with canonical id and current queue count
+      int lastIdx = (actionQueueTail[lane] - 1 + ACTION_QUEUE_MAX) % ACTION_QUEUE_MAX;
+      uint32_t storedId = actionQueue[lane][lastIdx].id;
       String json = "{";
       json += "\"ok\":true,";
-      json += "\"id\":" + String(a.id) + ","; // note: a.id may be 0 if caller provided id; device assigned in enqueueAction
-      // We tried to assign canonical id into the stored item, but we need to retrieve it from the queue
-      int lastIdx = (actionQueueTail - 1 + ACTION_QUEUE_MAX) % ACTION_QUEUE_MAX;
-      uint32_t storedId = actionQueue[lastIdx].id;
-      json += "\"queueCount\":" + String(actionQueueCount);
+      json += "\"id\":" + String(storedId) + ",";
+      json += "\"queueCount\":" + String(actionQueueCount[lane]);
       json += "}";
       server.send(200, "application/json", json);
     } else {
