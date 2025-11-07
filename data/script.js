@@ -2437,7 +2437,13 @@ async function fetchDeviceSettingsAndApply() {
         if (dev.stripLengthMeters !== undefined) currentSettings.stripLength = parseFloat(dev.stripLengthMeters);
         if (dev.ledsPerMeter !== undefined) currentSettings.ledsPerMeter = parseInt(dev.ledsPerMeter);
         if (dev.numLanes !== undefined) currentSettings.numLanes = parseInt(dev.numLanes);
-        if (dev.numSwimmers !== undefined) currentSettings.numSwimmers = parseInt(dev.numSwimmers);
+        if (dev.numSwimmers !== undefined) {
+            currentSettings.numSwimmers = parseInt(dev.numSwimmers);
+            try {
+                // Update the UI control for number of swimmers without POSTing
+                setNumSwimmersUI(currentSettings.numSwimmers);
+            } catch (e) {}
+        }
         if (dev.poolLength !== undefined) currentSettings.poolLength = dev.poolLength;
         if (dev.poolLengthUnits !== undefined) currentSettings.poolLengthUnits = dev.poolLengthUnits;
 
@@ -2521,6 +2527,15 @@ async function fetchDeviceSettingsAndApply() {
 
         // After merging, update full UI
         updateAllUIFromSettings();
+        // Rebuild the swimmer set for the current lane so client/server agree on count
+        try {
+            createOrUpdateSwimmerSetFromConfig(false);
+            updateLaneSelector();
+            updateQueueDisplay();
+            updatePacerButtons();
+        } catch (e) {
+            console.log('Reconcile numSwimmers failed:', e);
+        }
         // Re-enable outbound writes now that device defaults are applied
         suppressSettingsWrites = false;
     } catch (e) {
