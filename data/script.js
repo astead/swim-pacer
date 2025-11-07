@@ -1401,6 +1401,9 @@ function queueSwimSet() {
     // can enqueue into the correct per-lane queue.
     const payload = buildMinimalSwimSetPayload(createdSwimSets[currentLane]);
     payload.lane = currentLane;
+    // Create a compact clientTempId (64-bit hex string) for deterministic reconciliation
+    const clientTempId = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
+    payload.clientTempId = clientTempId;
 
     fetch('/enqueueSwimSet', {
         method: 'POST',
@@ -1408,14 +1411,17 @@ function queueSwimSet() {
         body: JSON.stringify(payload)
     }).then(async resp => {
         if (!resp.ok) throw new Error('enqueue failed');
-        // Try to read JSON response which may include a canonical id.
-        let json = null;
-        try { json = await resp.json(); } catch (e) { /* ignore */ }
-        const canonicalId = (json && json.id) ? json.id : createdSwimSets[currentLane].id;
+    // Try to read JSON response which may include a canonical id and echoed clientTempId.
+    let json = null;
+    try { json = await resp.json(); } catch (e) { /* ignore */ }
+    const canonicalId = (json && json.id) ? json.id : createdSwimSets[currentLane].id;
+    const echoedClientTemp = (json && json.clientTempId) ? String(json.clientTempId) : clientTempId;
         // Keep local queue in sync for UI responsiveness. Push a deep copy so
         // the UI can continue showing the current created set in the editor.
         const queued = JSON.parse(JSON.stringify(createdSwimSets[currentLane]));
         queued.id = canonicalId;
+    queued.clientTempId = echoedClientTemp;
+    queued.synced = true;
         swimSetQueues[currentLane].push(queued);
         // Do NOT call returnToConfigMode(); keep the Swimmer Customizations tab visible
         updateQueueDisplay();
@@ -1423,6 +1429,8 @@ function queueSwimSet() {
     }).catch(err => {
         console.log('Failed to enqueue on device, keeping local queue only');
         const localQueued = JSON.parse(JSON.stringify(createdSwimSets[currentLane]));
+        // Keep clientTempId so we can reconcile later
+        localQueued.clientTempId = clientTempId;
         // Mark as not yet synced
         localQueued.synced = false;
         swimSetQueues[currentLane].push(localQueued);
@@ -2135,21 +2143,41 @@ async function reconcileQueueWithDevice() {
         if (!res.ok) return;
         const deviceQueue = await res.json();
 
-        // Build a lightweight canonical signature for device entries
-        const deviceSignatures = deviceQueue.map(d => {
-            return `${Number(d.paceSeconds).toFixed(0)}|${d.restSeconds}|${d.rounds}|${Number(d.length).toFixed(0)}`;
-        });
+        // Build quick lookup structures for device entries: by clientTempId and by signature
+        const deviceByClientTemp = new Map();
+        const deviceSignatures = [];
+        for (let i = 0; i < deviceQueue.length; i++) {
+            const d = deviceQueue[i];
+            if (d.clientTempId !== undefined && d.clientTempId !== null && String(d.clientTempId) !== '0' && String(d.clientTempId) !== '') {
+                deviceByClientTemp.set(String(d.clientTempId), d);
+            }
+            const sig = `${Number(d.paceSeconds).toFixed(0)}|${d.restSeconds}|${d.rounds}|${Number(d.length).toFixed(0)}`;
+            deviceSignatures.push(sig);
+        }
 
-        // Iterate local queue and mark swim sets as synced when their signature appears
+        // Iterate local queue and mark swim sets as synced when their clientTempId or signature appears
         for (let i = 0; i < swimSetQueues[lane].length; i++) {
             const local = swimSetQueues[lane][i];
             // Only reconcile swim-sets (not action/rest items)
             if (local.type === 'rest' || local.type === 'action') continue;
+
+            // Prefer direct clientTempId match when available
+            if (local.clientTempId) {
+                const d = deviceByClientTemp.get(String(local.clientTempId));
+                if (d) {
+                    local.synced = true;
+                    if (d.id !== undefined) local.id = d.id;
+                    continue; // matched
+                }
+            }
+
+            // Fallback to signature heuristic
             const sig = `${Math.round(local.settings.paceTimeSeconds)}|${local.settings.restTime}|${local.settings.numRounds}|${Number(local.settings.paceDistance).toFixed(0)}`;
             const idx = deviceSignatures.indexOf(sig);
             if (idx !== -1) {
-                // Mark as synced and, if device returns an id (not currently), capture it
+                const d = deviceQueue[idx];
                 local.synced = true;
+                if (d.id !== undefined) local.id = d.id;
             }
         }
         updateQueueDisplay();

@@ -115,6 +115,8 @@ struct SwimSet {
   uint16_t restSeconds;    // rest time between rounds
   uint8_t type;            // SwimSetType
   uint8_t repeat;          // repeat metadata for LOOP_TYPE
+  uint32_t id;             // device-assigned canonical id (0 = not assigned)
+  unsigned long long clientTempId; // client-supplied temporary id for reconciliation (0 = none)
 };
 
 // Simple fixed-size in-memory per-lane queues
@@ -142,6 +144,8 @@ int actionQueueTail[MAX_LANES_SUPPORTED] = {0,0,0,0};
 int actionQueueCount[MAX_LANES_SUPPORTED] = {0,0,0,0};
 // Device-assigned action ID counter (monotonic)
 uint32_t nextActionId = 0;
+// Device-assigned swimset ID counter (monotonic)
+uint32_t nextSwimSetId = 0;
 
 // Forward declarations for functions used below
 float convertPoolToStripUnits(float distanceInPoolUnits);
@@ -645,6 +649,26 @@ void setupWebServer() {
     s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
     s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
     s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
+    s.id = 0;
+    s.clientTempId = 0ULL;
+
+    // Optional clientTempId support: client may send a numeric clientTempId or a hex string
+    String clientTempStr = extractJsonString(body, "clientTempId", "");
+    if (clientTempStr.length() > 0) {
+      // Try parse as hex if it starts with 0x or contains letters, else parse as decimal
+      unsigned long long parsed = 0ULL;
+      bool parsedOk = false;
+      if (clientTempStr.startsWith("0x") || clientTempStr.indexOf('a') >= 0 || clientTempStr.indexOf('b') >= 0 || clientTempStr.indexOf('c') >= 0 || clientTempStr.indexOf('d') >= 0 || clientTempStr.indexOf('e') >= 0 || clientTempStr.indexOf('f') >= 0 || clientTempStr.indexOf('A') >= 0) {
+        // Hex parsing
+        parsed = (unsigned long long)strtoull(clientTempStr.c_str(), NULL, 16);
+        parsedOk = true;
+      } else {
+        // Decimal parsing
+        parsed = (unsigned long long)strtoull(clientTempStr.c_str(), NULL, 10);
+        parsedOk = true;
+      }
+      if (parsedOk) s.clientTempId = parsed;
+    }
 
     int lane = (int)extractJsonLong(body, "lane", currentLane);
     if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
@@ -653,9 +677,26 @@ void setupWebServer() {
     }
     int oldLane = currentLane;
     currentLane = lane;
+    // Assign a device canonical id on enqueue (non-zero)
+    if (s.id == 0) {
+      nextSwimSetId++;
+      if (nextSwimSetId == 0) nextSwimSetId = 1;
+      s.id = nextSwimSetId;
+    }
     bool ok = enqueueSwimSet(s);
     currentLane = oldLane;
-    server.send(ok ? 200 : 507, "text/plain", ok ? "Enqueued" : "Queue full");
+    if (ok) {
+      int qCount = swimSetQueueCount[lane];
+      String json = "{";
+      json += "\"ok\":true,";
+  json += "\"id\":" + String(s.id) + ",";
+  json += "\"clientTempId\":\"" + String((unsigned long long)s.clientTempId) + "\",";
+      json += "\"queueCount\":" + String(qCount);
+      json += "}";
+      server.send(200, "application/json", json);
+    } else {
+      server.send(507, "text/plain", "Queue full");
+    }
   });
 
   server.on("/runSwimSetNow", HTTP_POST, []() {
@@ -681,6 +722,8 @@ void setupWebServer() {
       SwimSet &s = swimSetQueue[lane][idx];
       if (i) json += ",";
       json += "{";
+  json += String("\"id\":") + String(s.id) + ",";
+  json += String("\"clientTempId\":\"") + String((unsigned long long)s.clientTempId) + String("\",");
       json += String("\"length\":") + String(s.length) + ",";
       json += String("\"paceSeconds\":") + String(s.paceSeconds, 2) + ",";
       json += String("\"rounds\":") + String(s.rounds) + ",";
