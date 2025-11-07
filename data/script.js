@@ -119,6 +119,15 @@ function parseTimeInput(timeStr) {
     return isNaN(seconds) ? 30 : seconds; // Default to 30 if invalid
 }
 
+// Format seconds as M:SS (no decimal places). Rounds to nearest second.
+function formatSecondsToMmSs(seconds) {
+    if (seconds === undefined || seconds === null || isNaN(seconds)) return '0:00';
+    const s = Math.round(Number(seconds));
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
 function updateFromPace() {
     const paceInput = document.getElementById('paceTimeSeconds').value;
     const pace = parseTimeInput(paceInput);
@@ -1365,7 +1374,10 @@ function generateSetSummary(swimmers, settings) {
     const restTime = settings.restTime;
     const numRounds = settings.numRounds;
 
-    return `${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
+    // Display pace as M:SS when > 60s, otherwise show seconds without decimals
+    const avgPaceDisplay = (avgPace > 60) ? formatSecondsToMmSs(avgPace) : `${Math.round(avgPace)}s`;
+
+    return `${numRounds} x ${paceDistance}'s on the ${avgPaceDisplay} with ${restTime} sec rest`;
 }
 
 function queueSwimSet() {
@@ -1655,7 +1667,8 @@ function loadSwimSetForExecution(swimSet) {
 
     // Update the DOM input fields with the swim set's settings
     if (swimSet.settings.paceTimeSeconds !== undefined) {
-    document.getElementById('paceTimeSeconds').value = swimSet.settings.paceTimeSeconds;
+        const el = document.getElementById('paceTimeSeconds');
+        if (el) el.value = formatSecondsToMmSs(swimSet.settings.paceTimeSeconds);
     }
     if (swimSet.settings.numRounds) {
         document.getElementById('numRounds').value = swimSet.settings.numRounds;
@@ -1835,7 +1848,8 @@ function displaySwimmerSet() {
     const numRounds = currentSettings.numRounds;
     const laneName = currentSettings.laneNames[currentSettings.currentLane];
 
-    setDetails.innerHTML = `${numRounds} x ${paceDistance}'s on the ${avgPace} with ${restTime} sec rest`;
+    const avgPaceDisplay = (avgPace > 60) ? formatSecondsToMmSs(avgPace) : `${Math.round(avgPace)}s`;
+    setDetails.innerHTML = `${numRounds} x ${paceDistance}'s on the ${avgPaceDisplay} with ${restTime} sec rest`;
 
     const swimmerList = document.getElementById('swimmerList');
     swimmerList.innerHTML = '';
@@ -1953,17 +1967,17 @@ function updateAllUIFromSettings() {
     // Avoid inserting raw m/s into the pace input (it would be parsed as seconds).
     setPoolLengthUI(currentSettings.poolLength, currentSettings.poolLengthUnits);
     try {
-    const paceInputEl = document.getElementById('paceTimeSeconds');
+        const paceInputEl = document.getElementById('paceTimeSeconds');
         const paceDistance = currentSettings.paceDistance || 50;
         const poolMeters = currentSettings.poolLengthUnits === 'yards' ? (paceDistance * 0.9144) : paceDistance;
         const paceSeconds = (currentSettings.speed && currentSettings.speed > 0) ? (poolMeters / currentSettings.speed) : 30;
-        if (paceInputEl) paceInputEl.value = paceSeconds.toFixed(2);
+        if (paceInputEl) paceInputEl.value = formatSecondsToMmSs(paceSeconds);
         // Recompute internals from the displayed pace (no save)
         updateFromPace();
         updatePaceDistance(false);
     } catch (e) {
         // fall back to safe defaults if DOM not ready
-    const el = document.getElementById('paceTimeSeconds'); if (el) el.value = '30';
+        const el = document.getElementById('paceTimeSeconds'); if (el) el.value = '0:30';
     }
     setBrightnessUI(Math.round((currentSettings.brightness - 20) * 100 / (255 - 20)));
     setFirstUnderwaterDistanceUI(currentSettings.firstUnderwaterDistance);
