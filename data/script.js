@@ -1728,13 +1728,13 @@ function displaySwimmerSet() {
             displayColor = colorHex[swimmer.color] || swimmer.color;
         }
 
-        row.innerHTML = `
-            <div class="swimmer-color" style="background-color: ${displayColor}"
-                 onclick="cycleSwimmerColor(${index})" title="Click to change color"></div>
-            <div class="swimmer-info">Swimmer ${swimmer.id}</div>
-            <div>Pace: <input type="number" class="swimmer-pace-input" value="${swimmer.pace}"
-                 min="20" max="300" step="0.5" onchange="updateSwimmerPace(${index}, this.value)"> sec</div>
-        `;
+       row.innerHTML = `
+          <div class="swimmer-color" style="background-color: ${displayColor}"
+              onclick="cycleSwimmerColor(${index})" title="Click to change color"></div>
+          <div class="swimmer-info">Swimmer ${swimmer.id}</div>
+          <div class="swimmer-pace"> <input type="number" class="swimmer-pace-input" value="${swimmer.pace}"
+              min="20" max="300" step="0.5" onchange="updateSwimmerPace(${index}, this.value)"> <span class="pace-unit">sec</span></div>
+       `;
 
         swimmerList.appendChild(row);
     });
