@@ -1397,23 +1397,32 @@ function queueSwimSet() {
         return;
     }
 
-    // Build minimal payload and send to device queue
+    // Build minimal payload and send to device queue. Include lane so device
+    // can enqueue into the correct per-lane queue.
     const payload = buildMinimalSwimSetPayload(createdSwimSets[currentLane]);
+    payload.lane = currentLane;
+
     fetch('/enqueueSwimSet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
-    }).then(resp => {
+    }).then(async resp => {
         if (!resp.ok) throw new Error('enqueue failed');
-    // Keep local queue in sync for UI responsiveness. Push a deep copy so
-    // the UI can continue showing the current created set in the editor.
-    swimSetQueues[currentLane].push(JSON.parse(JSON.stringify(createdSwimSets[currentLane])));
+        // Try to read JSON response which may include a canonical id.
+        let json = null;
+        try { json = await resp.json(); } catch (e) { /* ignore */ }
+        const canonicalId = (json && json.id) ? json.id : createdSwimSets[currentLane].id;
+        // Keep local queue in sync for UI responsiveness. Push a deep copy so
+        // the UI can continue showing the current created set in the editor.
+        const queued = JSON.parse(JSON.stringify(createdSwimSets[currentLane]));
+        queued.id = canonicalId;
+        swimSetQueues[currentLane].push(queued);
         // Do NOT call returnToConfigMode(); keep the Swimmer Customizations tab visible
         updateQueueDisplay();
         updatePacerButtons();
     }).catch(err => {
         console.log('Failed to enqueue on device, keeping local queue only');
-    swimSetQueues[currentLane].push(JSON.parse(JSON.stringify(createdSwimSets[currentLane])));
+        swimSetQueues[currentLane].push(JSON.parse(JSON.stringify(createdSwimSets[currentLane])));
         // Keep the UI on the swimmers tab so the user can continue customizing
         updateQueueDisplay();
         updatePacerButtons();
@@ -1430,20 +1439,26 @@ function enqueueRestFromInput() {
     }
     const currentLane = currentSettings.currentLane;
     const actionItem = {
-        id: Date.now(),
+        id: Date.now(), // temporary optimistic id
         type: 'rest',
         seconds: seconds,
         summary: `Rest: ${formatSecondsToMmSs(seconds)}`
     };
-    // Try to enqueue on device; if it fails, keep local queue only
+
+    // Try to enqueue on device; if it fails, keep local queue only.
+    // On success, reconcile the device-returned canonical id into our UI queue.
     fetch('/enqueueAction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lane: currentLane, action: actionItem })
-    }).then(resp => {
+    }).then(async resp => {
         if (!resp.ok) throw new Error('enqueueAction failed');
-        // Push local copy for UI responsiveness
-        swimSetQueues[currentLane].push(JSON.parse(JSON.stringify(actionItem)));
+        let json = null;
+        try { json = await resp.json(); } catch (e) { /* ignore */ }
+        const canonicalId = (json && json.id) ? json.id : actionItem.id;
+        const queued = JSON.parse(JSON.stringify(actionItem));
+        queued.id = canonicalId;
+        swimSetQueues[currentLane].push(queued);
         updateQueueDisplay();
         updatePacerButtons();
     }).catch(err => {
@@ -1458,7 +1473,7 @@ function enqueueRestFromInput() {
 function enqueueMoveAction(target) {
     const currentLane = currentSettings.currentLane;
     const actionItem = {
-        id: Date.now(),
+        id: Date.now(), // temporary optimistic id
         type: 'action',
         action: 'move',
         target: target,
@@ -1470,7 +1485,12 @@ function enqueueMoveAction(target) {
         body: JSON.stringify({ lane: currentLane, action: actionItem })
     }).then(resp => {
         if (!resp.ok) throw new Error('enqueueAction failed');
-        swimSetQueues[currentLane].push(JSON.parse(JSON.stringify(actionItem)));
+        return resp.json().catch(() => null);
+    }).then(json => {
+        const canonicalId = (json && json.id) ? json.id : actionItem.id;
+        const queued = JSON.parse(JSON.stringify(actionItem));
+        queued.id = canonicalId;
+        swimSetQueues[currentLane].push(queued);
         updateQueueDisplay();
         updatePacerButtons();
     }).catch(err => {
@@ -1794,6 +1814,8 @@ function startPacerExecution() {
         summary: ''
     };
     const payload = buildMinimalSwimSetPayload(created);
+    // Include lane so device starts the set for the correct lane
+    payload.lane = created.lane || currentLane;
     fetch('/runSwimSetNow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
