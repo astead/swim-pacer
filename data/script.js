@@ -29,7 +29,7 @@ let currentSettings = {
     firstUnderwaterDistance: 20,
     underwaterDistance: 20,
     surfaceDistance: 2,
-    hideAfter: 3,
+    hideAfter: 1,
     underwaterColor: '#0000ff',
     surfaceColor: '#00ff00'
 };

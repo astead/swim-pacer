@@ -90,7 +90,7 @@ struct GlobalConfigSettings {
   float underwaterDistanceFeet = 3.0;        // Subsequent underwater distance in feet
   float surfaceDistanceFeet = 2.0;           // Surface phase distance in feet
   float lightPulseSizeFeet = 1.0;            // Size of underwater light pulse in feet
-  float hideAfterSeconds = 3.0;              // Hide underwater light after surface phase (seconds)
+  float hideAfterSeconds = 1.0;              // Hide underwater light after surface phase (seconds)
 };
 
 GlobalConfigSettings globalConfigSettings;
