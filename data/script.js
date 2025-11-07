@@ -1858,30 +1858,56 @@ function saveSwimSet() {
     const currentLane = currentSettings.currentLane;
 
     if (editingSwimSetIndexes[currentLane] === -1) return;
-
     // Update the swim set in the current lane's queue
     const currentSet = getCurrentSwimmerSet();
 
-    // Overwrite the saved queued set with the edited values (deep copy to avoid refs)
-    const newEntry = JSON.parse(JSON.stringify(swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] || {}));
+    // Prepare local copy of the queued entry
+    const existing = swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] || {};
+    const newEntry = JSON.parse(JSON.stringify(existing));
     newEntry.swimmers = JSON.parse(JSON.stringify(currentSet));
     newEntry.settings = JSON.parse(JSON.stringify(currentSettings));
     newEntry.summary = generateSetSummary(newEntry.swimmers, newEntry.settings);
 
-    // Mark as not-yet-synced so reconcile logic will attempt to re-send or match
-    newEntry.synced = false;
-    // Assign a fresh clientTempId so device can correlate when it re-accepts this set
-    newEntry.clientTempId = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
+    // Prepare payload for update endpoint
+    const payload = buildMinimalSwimSetPayload(newEntry);
+    payload.lane = currentLane;
 
-    // Replace the queued item in-place
-    swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = newEntry;
+    if (existing.id && existing.id !== 0) payload.matchId = existing.id;
+    else if (existing.clientTempId) payload.matchClientTempId = String(existing.clientTempId);
 
-    // Clear editing state and return to create mode
-    editingSwimSetIndexes[currentLane] = -1;
-    // Clear the temporary created set so the UI shows fresh config controls
-    createdSwimSets[currentLane] = null;
-    returnToConfigMode();
-    updateQueueDisplay();
+    // Generate a new clientTempId to set on the server for correlation
+    const newClientTemp = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
+    payload.clientTempId = newClientTemp;
+
+    // Try to update on the device; if network fails, apply local-only change
+    fetch('/updateSwimSet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(async resp => {
+        if (!resp.ok) throw new Error('update failed');
+        const json = await resp.json().catch(() => null);
+        // Merge server-assigned values back into our local entry
+        if (json && json.id) newEntry.id = json.id;
+        if (json && json.clientTempId) newEntry.clientTempId = String(json.clientTempId);
+        newEntry.synced = true;
+        swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = newEntry;
+
+        // Clear editing state and return to create mode
+        editingSwimSetIndexes[currentLane] = -1;
+        createdSwimSets[currentLane] = null;
+        returnToConfigMode();
+        updateQueueDisplay();
+    }).catch(err => {
+        // Device not reachable or update failed — keep local change and mark unsynced
+        newEntry.synced = false;
+        newEntry.clientTempId = newClientTemp;
+        swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = newEntry;
+        editingSwimSetIndexes[currentLane] = -1;
+        createdSwimSets[currentLane] = null;
+        returnToConfigMode();
+        updateQueueDisplay();
+    });
 }
 
 function cancelEdit() {

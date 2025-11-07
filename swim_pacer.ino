@@ -702,6 +702,94 @@ void setupWebServer() {
     }
   });
 
+  // Update an existing swim set in-place by device id or clientTempId
+  // Body may include matchId (device id) or matchClientTempId (string) to locate
+  // the queued entry. The fields length, paceSeconds, rounds, restSeconds, type, repeat
+  // will be used to replace the entry. Optionally provide clientTempId to update the
+  // stored clientTempId for future reconciliation.
+  server.on("/updateSwimSet", HTTP_POST, []() {
+    String body = server.arg("plain");
+    SwimSet s;
+    s.length = (uint16_t)extractJsonLong(body, "length", 50);
+    s.paceSeconds = extractJsonFloat(body, "paceSeconds", swimSetSettings.speedMetersPerSecond);
+    s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
+    s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
+    s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
+    s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
+
+    // Matching identifiers
+    long matchId = extractJsonLong(body, "matchId", 0);
+    String matchClientTemp = extractJsonString(body, "matchClientTempId", "");
+
+    // Optional new clientTempId to set on the updated entry
+    String newClientTemp = extractJsonString(body, "clientTempId", "");
+
+    int lane = (int)extractJsonLong(body, "lane", currentLane);
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "text/plain", "Invalid lane");
+      return;
+    }
+
+    bool found = false;
+    // iterate queue for this lane
+    for (int i = 0; i < swimSetQueueCount[lane]; i++) {
+      int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
+      SwimSet &entry = swimSetQueue[lane][idx];
+      // match by device id if provided
+      if (matchId != 0 && entry.id == (uint32_t)matchId) {
+        // Replace fields
+        entry.length = s.length;
+        entry.paceSeconds = s.paceSeconds;
+        entry.rounds = s.rounds;
+        entry.restSeconds = s.restSeconds;
+        entry.type = s.type;
+        entry.repeat = s.repeat;
+        if (newClientTemp.length() > 0) {
+          unsigned long long parsed = (unsigned long long)strtoull(newClientTemp.c_str(), NULL, 16);
+          if (parsed != 0) entry.clientTempId = parsed;
+        }
+        found = true;
+        // Respond with canonical id and echoed clientTempId
+        String json = "{";
+        json += "\"ok\":true,";
+        json += "\"id\":" + String(entry.id) + ",";
+        json += "\"clientTempId\":\"" + String((unsigned long long)entry.clientTempId) + "\"";
+        json += "}";
+        server.send(200, "application/json", json);
+        break;
+      }
+
+      // match by clientTempId (hex/decimal string)
+      if (matchClientTemp.length() > 0) {
+        unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
+        if (parsed != 0 && entry.clientTempId == parsed) {
+          entry.length = s.length;
+          entry.paceSeconds = s.paceSeconds;
+          entry.rounds = s.rounds;
+          entry.restSeconds = s.restSeconds;
+          entry.type = s.type;
+          entry.repeat = s.repeat;
+          if (newClientTemp.length() > 0) {
+            unsigned long long parsedNew = (unsigned long long)strtoull(newClientTemp.c_str(), NULL, 16);
+            if (parsedNew != 0) entry.clientTempId = parsedNew;
+          }
+          found = true;
+          String json = "{";
+          json += "\"ok\":true,";
+          json += "\"id\":" + String(entry.id) + ",";
+          json += "\"clientTempId\":\"" + String((unsigned long long)entry.clientTempId) + "\"";
+          json += "}";
+          server.send(200, "application/json", json);
+          break;
+        }
+      }
+    }
+
+    if (!found) {
+      server.send(404, "text/plain", "Not found");
+    }
+  });
+
   server.on("/runSwimSetNow", HTTP_POST, []() {
     String body = server.arg("plain");
     SwimSet s;
