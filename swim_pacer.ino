@@ -139,6 +139,8 @@ ActionItem actionQueue[ACTION_QUEUE_MAX];
 int actionQueueHead = 0;
 int actionQueueTail = 0;
 int actionQueueCount = 0;
+// Device-assigned action ID counter (monotonic)
+uint32_t nextActionId = 0;
 
 // Forward declarations for functions used below
 float convertPoolToStripUnits(float distanceInPoolUnits);
@@ -209,7 +211,14 @@ bool enqueueAction(const ActionItem &a) {
     if (DEBUG_ENABLED) Serial.println("enqueueAction(): action queue full, rejecting");
     return false;
   }
-  actionQueue[actionQueueTail] = a;
+  // Copy locally and assign canonical id if caller did not provide one
+  ActionItem local = a;
+  if (local.id == 0) {
+    nextActionId++;
+    if (nextActionId == 0) nextActionId = 1; // avoid reserving zero
+    local.id = nextActionId;
+  }
+  actionQueue[actionQueueTail] = local;
   actionQueueTail = (actionQueueTail + 1) % ACTION_QUEUE_MAX;
   actionQueueCount++;
   if (DEBUG_ENABLED) Serial.print("enqueueAction(): actionQueueCountAfter="); Serial.println(actionQueueCount);
@@ -766,7 +775,20 @@ void setupWebServer() {
     }
 
     bool ok = enqueueAction(a);
-    server.send(ok ? 200 : 507, "text/plain", ok ? "Enqueued action" : "Action queue full");
+    if (ok) {
+      // Return a small JSON payload with canonical id and current queue count
+      String json = "{";
+      json += "\"ok\":true,";
+      json += "\"id\":" + String(a.id) + ","; // note: a.id may be 0 if caller provided id; device assigned in enqueueAction
+      // We tried to assign canonical id into the stored item, but we need to retrieve it from the queue
+      int lastIdx = (actionQueueTail - 1 + ACTION_QUEUE_MAX) % ACTION_QUEUE_MAX;
+      uint32_t storedId = actionQueue[lastIdx].id;
+      json += "\"queueCount\":" + String(actionQueueCount);
+      json += "}";
+      server.send(200, "application/json", json);
+    } else {
+      server.send(507, "text/plain", "Action queue full");
+    }
   });
 
   // Temporary debug endpoint to reset color preferences
