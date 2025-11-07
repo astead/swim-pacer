@@ -1527,12 +1527,17 @@ function editSwimSet(index) {
     // Load swim set data into configuration
     loadSwimSetIntoConfig(swimSet);
 
-    // Show swimmer set for editing
-    displaySwimmerSet();
-    document.getElementById('configControls').style.display = 'none';
-    document.getElementById('swimmerSet').style.display = 'block';
+    // Switch to the Swim Set Details tab and show the configuration controls
+    // so the user edits the set details (not the swimmer-customizations view).
+    try {
+        setCreateTab('details');
+    } catch (e) {
+        // Fallback: ensure config controls are visible
+        document.getElementById('configControls').style.display = 'block';
+        document.getElementById('swimmerSet').style.display = 'none';
+    }
 
-    // Switch to edit buttons
+    // Switch to edit buttons (hide the create/config button group)
     document.getElementById('configButtons').style.display = 'none';
     document.getElementById('editButtons').style.display = 'block';
 }
