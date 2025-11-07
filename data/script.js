@@ -1466,6 +1466,14 @@ function cancelEdit() {
     returnToConfigMode();
 }
 
+// When editing/creating a set, return to the basic details view without
+// discarding the created set. This gives a clear 'back' action instead of
+// an ambiguous Cancel which might be interpreted as discard.
+function backToSetDetails() {
+    // Show config controls and hide the swimmer customization display
+    returnToConfigMode();
+}
+
 function deleteSwimSet(index) {
     const currentLane = currentSettings.currentLane;
 
