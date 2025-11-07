@@ -124,6 +124,22 @@ int swimSetQueueHead = 0;
 int swimSetQueueTail = 0;
 int swimSetQueueCount = 0;
 
+// ----- Action queue types and storage -----
+// Actions are lightweight commands (rest pause, move to wall) that should
+// be executed in-order with swim sets. Keep per-lane action queues small.
+struct ActionItem {
+  uint32_t id;
+  uint8_t type; // REST_TYPE or MOVE_TYPE
+  uint16_t seconds; // for REST_TYPE
+  uint8_t target; // for MOVE_TYPE: 0=start, 1=far
+};
+
+const int ACTION_QUEUE_MAX = 12;
+ActionItem actionQueue[ACTION_QUEUE_MAX];
+int actionQueueHead = 0;
+int actionQueueTail = 0;
+int actionQueueCount = 0;
+
 // Forward declarations for functions used below
 float convertPoolToStripUnits(float distanceInPoolUnits);
 void recalculateValues();
@@ -176,6 +192,35 @@ bool enqueueSwimSet(const SwimSet &s) {
   swimSetQueueTail = (swimSetQueueTail + 1) % SWIMSET_QUEUE_MAX;
   swimSetQueueCount++;
   if (DEBUG_ENABLED) Serial.print("enqueueSwimSet(): queueCountAfter="); Serial.println(swimSetQueueCount);
+  return true;
+}
+
+// Action queue helpers
+bool enqueueAction(const ActionItem &a) {
+  if (DEBUG_ENABLED) {
+    Serial.println("enqueueAction(): received action:");
+    Serial.print("  id="); Serial.println(a.id);
+    Serial.print("  type="); Serial.println(a.type);
+    Serial.print("  seconds="); Serial.println(a.seconds);
+    Serial.print("  target="); Serial.println(a.target);
+    Serial.print("  actionQueueCountBefore="); Serial.println(actionQueueCount);
+  }
+  if (actionQueueCount >= ACTION_QUEUE_MAX) {
+    if (DEBUG_ENABLED) Serial.println("enqueueAction(): action queue full, rejecting");
+    return false;
+  }
+  actionQueue[actionQueueTail] = a;
+  actionQueueTail = (actionQueueTail + 1) % ACTION_QUEUE_MAX;
+  actionQueueCount++;
+  if (DEBUG_ENABLED) Serial.print("enqueueAction(): actionQueueCountAfter="); Serial.println(actionQueueCount);
+  return true;
+}
+
+bool dequeueAction(ActionItem &out) {
+  if (actionQueueCount == 0) return false;
+  out = actionQueue[actionQueueHead];
+  actionQueueHead = (actionQueueHead + 1) % ACTION_QUEUE_MAX;
+  actionQueueCount--;
   return true;
 }
 
@@ -619,6 +664,50 @@ void setupWebServer() {
   });
 
   server.on("/startNextSwimSet", HTTP_POST, []() {
+    // Before starting the next swim set, check if there are any pending
+    // action items (rest or move) that should be executed first. Actions are
+    // lightweight and will be handled locally here.
+    ActionItem a;
+    if (dequeueAction(a)) {
+      if (DEBUG_ENABLED) Serial.println("startNextSwimSet: processing action first");
+      // Handle REST_TYPE: set device rest time temporarily and respond
+      if (a.type == REST_TYPE) {
+        // Apply rest seconds to swimSetSettings so pacer honors it on next starts
+        swimSetSettings.restTimeSeconds = a.seconds;
+        saveSwimSetSettings();
+        // Respond with action acknowledged
+        server.send(200, "text/plain", "Action (rest) acknowledged");
+        return;
+      } else if (a.type == MOVE_TYPE) {
+        // MOVE_TYPE: reposition swimmers to start or far wall for current lane
+        // For simplicity, only affect the currentLane swimmers' positions
+        int lane = currentLane;
+        if (a.target == 0) {
+          // Move to starting wall (position 0)
+          for (int i = 0; i < 6; i++) {
+            swimmers[lane][i].position = 0;
+            swimmers[lane][i].isResting = true;
+            swimmers[lane][i].restStartTime = millis();
+            swimmers[lane][i].currentLap = 1;
+            swimmers[lane][i].totalDistance = 0.0;
+          }
+        } else {
+          // Move to far wall (position = last LED)
+          float poolLengthInStripUnits = convertPoolToStripUnits(globalConfigSettings.poolLength);
+          int farPos = floor((poolLengthInStripUnits * globalConfigSettings.ledsPerMeter)-1);
+          for (int i = 0; i < 6; i++) {
+            swimmers[lane][i].position = farPos;
+            swimmers[lane][i].isResting = true;
+            swimmers[lane][i].restStartTime = millis();
+            swimmers[lane][i].currentLap = 1;
+            swimmers[lane][i].totalDistance = 0.0;
+          }
+        }
+        server.send(200, "text/plain", "Action (move) acknowledged");
+        return;
+      }
+    }
+
     SwimSet next;
     if (dequeueSwimSet(next)) {
       applySwimSetToSettings(next);
@@ -626,6 +715,58 @@ void setupWebServer() {
     } else {
       server.send(404, "text/plain", "Queue empty");
     }
+  });
+
+  // Endpoint to accept lightweight action items (rest, move)
+  server.on("/enqueueAction", HTTP_POST, []() {
+    String body = server.arg("plain");
+    // Minimal parsing: expect JSON like { "lane":0, "action": { "id":..., "type":"rest", "seconds":30 } }
+    int lane = (int)extractJsonLong(body, "lane", currentLane);
+    String actionType = extractJsonString(body, "action", "");
+    // Extract nested fields by searching for the substring "action"
+    // For simplicity reuse extractJsonString to look for keys inside body
+    String typeStr = extractJsonString(body, "type", "");
+    // Build ActionItem
+    ActionItem a;
+    a.id = (uint32_t)extractJsonLong(body, "id", (long)millis());
+    // Detect known textual types
+    String t = extractJsonString(body, "action", "");
+    // Try to locate type inside the nested action object: look for "type":"rest" or "type":"action"
+    // Fallback: inspect the 'type' key at top-level
+    String nestedType = extractJsonString(body, "type", "");
+    if (nestedType.length() > 0) {
+      if (nestedType == "rest") {
+        a.type = REST_TYPE;
+        a.seconds = (uint16_t)extractJsonLong(body, "seconds", 30);
+        a.target = 0;
+      } else if (nestedType == "action" || nestedType == "move") {
+        a.type = MOVE_TYPE;
+        String targetStr = extractJsonString(body, "target", "start");
+        a.target = (targetStr == "far") ? 1 : 0;
+        a.seconds = 0;
+      } else {
+        // Unknown - reject
+        server.send(400, "text/plain", "Unknown action type");
+        return;
+      }
+    } else {
+      // No nested type, attempt to parse 'action' object by searching for 'rest'/'move' keywords
+      if (body.indexOf("\"rest\"") >= 0) {
+        a.type = REST_TYPE;
+        a.seconds = (uint16_t)extractJsonLong(body, "seconds", 30);
+        a.target = 0;
+      } else if (body.indexOf("\"move\"") >= 0 || body.indexOf("\"action\"") >= 0) {
+        a.type = MOVE_TYPE;
+        a.target = (body.indexOf("\"far\"") >= 0) ? 1 : 0;
+        a.seconds = 0;
+      } else {
+        server.send(400, "text/plain", "Unknown action payload");
+        return;
+      }
+    }
+
+    bool ok = enqueueAction(a);
+    server.send(ok ? 200 : 507, "text/plain", ok ? "Enqueued action" : "Action queue full");
   });
 
   // Temporary debug endpoint to reset color preferences
