@@ -218,6 +218,28 @@ button.secondary:hover {
     line-height: 1.2;
 }
 
+/* Small tab styling for Create/Edit card */
+.tab.small {
+    padding: 6px 8px;
+    font-size: 13px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #333;
+    cursor: pointer;
+}
+.tab.small.active {
+    background: #e9f5ff;
+    border-color: #bfe6ff;
+    color: #007bff;
+    font-weight: 600;
+}
+.create-tabs { align-items: center; }
+.create-tabs .tab.small:focus { outline: none; box-shadow: none; }
+
+/* breadcrumb */
+/* breadcrumb removed - no styles needed */
+
 
 
 /* Toggle Switch Styles */
