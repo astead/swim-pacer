@@ -853,6 +853,7 @@ void setupWebServer() {
     s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
 
     // Apply and start immediately
+    Serial.println("runSwimSetNow: calling applySwimSetToSettings()");
     applySwimSetToSettings(s);
     server.send(200, "text/plain", "Started");
   });
@@ -1042,6 +1043,7 @@ void setupWebServer() {
     int oldLane = currentLane;
     currentLane = lane;
     if (dequeueSwimSet(next)) {
+      Serial.println("startNextSwimSet: calling applySwimSetToSettings()");
       applySwimSetToSettings(next);
       server.send(200, "text/plain", "Started next");
     } else {
@@ -2051,6 +2053,10 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       Serial.print(swimmer->currentLap);
       Serial.print("/");
       Serial.print(swimmer->lapsPerRound);
+      Serial.print(", direction: ");
+      Serial.print(swimmer->lapDirection == 1 ? "away from start" : "towards start");
+      Serial.print(", position: ");
+      Serial.print(swimmer->position);
       Serial.print(", Distance: 0.0");
       Serial.println(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
       swimmer->debugSwimmingPrinted = true;
@@ -2078,18 +2084,24 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
 
     // Check if swimmer has completed one pool length based on actual distance
     // Calculate 1-based lap number (lap 1 = 0 to poolLength, lap 2 = poolLength to 2*poolLength, etc.)
-    int calculatedLap = (int)floor(swimmer->totalDistance / globalConfigSettings.poolLength) + 1;
+    int calculatedLap = (int)ceil(swimmer->totalDistance / globalConfigSettings.poolLength);
 
     // distance for current length/lap
     float distanceForCurrentLength = swimmer->totalDistance - ((calculatedLap - 1) * globalConfigSettings.poolLength);
 
     if (calculatedLap > swimmer->currentLap) {
-      float overshoot = swimmer->totalDistance - (calculatedLap * globalConfigSettings.poolLength);
+      float overshoot = swimmer->totalDistance - (swimmer->currentLap * globalConfigSettings.poolLength);
 
       if (DEBUG_ENABLED) {
         Serial.println("  *** WALL TURN ***");
-        Serial.print("    Completed lap ");
+        Serial.print("    calculatedLap based on distance: ");
+        Serial.print(calculatedLap);
+        Serial.print(", Current lap: ");
         Serial.print(swimmer->currentLap);
+        Serial.print(", Total distance: ");
+        Serial.print(swimmer->totalDistance);
+        Serial.print(", Distance for current length: ");
+        Serial.print(distanceForCurrentLength);
         Serial.print(", overshoot: ");
         Serial.print(overshoot);
         Serial.println(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
@@ -2266,7 +2278,7 @@ void printPeriodicStatus() {
           Serial.print(s->lapsPerRound);
 
           // Calculate distance in current lap (1-based lap calculation)
-          int currentLapNum = (int)floor(s->totalDistance / globalConfigSettings.poolLength) + 1;
+          int currentLapNum = (int)ceil(s->totalDistance / globalConfigSettings.poolLength);
           float distanceInCurrentLap = s->totalDistance - ((currentLapNum - 1) * globalConfigSettings.poolLength);
 
           Serial.print(" Dist:");
