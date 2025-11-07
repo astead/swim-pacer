@@ -1420,6 +1420,41 @@ function queueSwimSet() {
     });
 }
 
+// Enqueue a rest action from the special input box
+function enqueueRestFromInput() {
+    const v = document.getElementById('specialRestInput').value;
+    const seconds = parseTimeInput(String(v));
+    if (!seconds || seconds <= 0) {
+        alert('Please enter a valid rest time (e.g., 30 or 0:30)');
+        return;
+    }
+    const currentLane = currentSettings.currentLane;
+    const actionItem = {
+        id: Date.now(),
+        type: 'rest',
+        seconds: seconds,
+        summary: `Rest: ${formatSecondsToMmSs(seconds)}`
+    };
+    swimSetQueues[currentLane].push(actionItem);
+    updateQueueDisplay();
+    updatePacerButtons();
+}
+
+// Enqueue a move action: target is 'start' or 'far'
+function enqueueMoveAction(target) {
+    const currentLane = currentSettings.currentLane;
+    const actionItem = {
+        id: Date.now(),
+        type: 'action',
+        action: 'move',
+        target: target,
+        summary: (target === 'start') ? 'Move to starting wall' : 'Move to far wall'
+    };
+    swimSetQueues[currentLane].push(actionItem);
+    updateQueueDisplay();
+    updatePacerButtons();
+}
+
 function cancelSwimSet() {
     const currentLane = currentSettings.currentLane;
     createdSwimSets[currentLane] = null;
@@ -1469,34 +1504,52 @@ function updateQueueDisplay() {
                 borderColor = '#28a745';
             }
 
-            statusClass = `style="background: ${backgroundColor}; border: 1px solid ${borderColor}; padding: 8px 10px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}"`;
-
-            html += `
-                <div ${statusClass}>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
-                            ${swimSet.summary}
-                        </div>
-                        <div style="display: flex; gap: 5px;">
-                            ${!isActive && !isCompleted ? `<button onclick="editSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
-                            ${!isActive && !isCompleted ? `<button onclick="deleteSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
-                            ${isActive ? `<div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>` : ''}
-                            ${isCompleted ? `<div style="font-size: 12px; color: #28a745; font-weight: bold;">Completed</div>` : ''}
+            // If this queue entry is an action/rest item, render it specially
+            if (swimSet.type === 'rest' || swimSet.type === 'action') {
+                const actionSummary = swimSet.summary || (swimSet.type === 'rest' ? `Rest: ${formatSecondsToMmSs(swimSet.seconds)}` : (swimSet.summary || 'Action'));
+                const actionClass = 'style="background: #f5f5f5; border: 1px dashed #bbb; padding: 8px 10px; margin: 5px 0; border-radius: 4px;"';
+                html += `
+                    <div ${actionClass} class="queue-action-item">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="font-style: italic; color: #444;">
+                                ${actionSummary}
+                            </div>
+                            <div style="display:flex; gap:6px;">
+                                <button onclick="deleteSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>
+                            </div>
                         </div>
                     </div>
-                    ${isActive ? `
-                        <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; color: #555;">
-                            <div><strong>Round:</strong> <span id="currentRound">1</span> of <span id="totalRounds">10</span></div>
-                            <div><strong>Round:</strong> <span id="roundTiming">0:00 / 0:00</span></div>
-                            <div><strong>Active Swimmers:</strong> <span id="activeSwimmers">0</span></div>
-                            <div><strong>Next Event:</strong> <span id="nextEvent">Starting...</span></div>
+                `;
+            } else {
+                statusClass = `style="background: ${backgroundColor}; border: 1px solid ${borderColor}; padding: 8px 10px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}"`;
+
+                html += `
+                    <div ${statusClass}>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
+                                ${swimSet.summary}
+                            </div>
+                            <div style="display: flex; gap: 5px;">
+                                ${!isActive && !isCompleted ? `<button onclick="editSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
+                                ${!isActive && !isCompleted ? `<button onclick="deleteSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
+                                ${isActive ? `<div style="font-weight: bold; color: #1976D2;">Total: <span id="elapsedTime">00:00</span></div>` : ''}
+                                ${isCompleted ? `<div style="font-size: 12px; color: #28a745; font-weight: bold;">Completed</div>` : ''}
+                            </div>
                         </div>
-                        <div style="margin-top: 6px; background: #fff; border-radius: 3px; padding: 6px; font-size: 11px;">
-                            <strong>Current Phase:</strong> <span id="currentPhase">Preparing to start</span>
-                        </div>
-                    ` : ''}
-                </div>
-            `;
+                        ${isActive ? `
+                            <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; color: #555;">
+                                <div><strong>Round:</strong> <span id="currentRound">1</span> of <span id="totalRounds">10</span></div>
+                                <div><strong>Round:</strong> <span id="roundTiming">0:00 / 0:00</span></div>
+                                <div><strong>Active Swimmers:</strong> <span id="activeSwimmers">0</span></div>
+                                <div><strong>Next Event:</strong> <span id="nextEvent">Starting...</span></div>
+                            </div>
+                            <div style="margin-top: 6px; background: #fff; border-radius: 3px; padding: 6px; font-size: 11px;">
+                                <strong>Current Phase:</strong> <span id="currentPhase">Preparing to start</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
         });
     }
 
@@ -2134,24 +2187,48 @@ function setCreateTab(tabName, silent) {
     const swimmersTab = document.getElementById('createSwimmersTab');
     const breadcrumb = document.getElementById('createBreadcrumb');
     const breadcrumbTab = document.getElementById('breadcrumbTab');
+    const specialTab = document.getElementById('createSpecialTab');
+
+    // Hide all specialized areas first
+    const specialArea = document.getElementById('specialOptions');
 
     if (tabName === 'details') {
         detailsTab.classList.add('active');
         swimmersTab.classList.remove('active');
+        if (specialTab) specialTab.classList.remove('active');
         document.getElementById('configControls').style.display = 'block';
         document.getElementById('swimmerSet').style.display = 'none';
+        if (specialArea) specialArea.style.display = 'none';
+        // Ensure Queue button visible
+        const queueBtn = document.getElementById('queueBtn'); if (queueBtn) queueBtn.style.display = 'inline-block';
     } else {
-        detailsTab.classList.remove('active');
-        swimmersTab.classList.add('active');
-        document.getElementById('configControls').style.display = 'none';
-        document.getElementById('swimmerSet').style.display = 'block';
-        // Ensure a swimmer set exists based on current inputs so reloads that
-        // restore the swimmers tab show the swimmer list immediately.
-        try {
-            createOrUpdateSwimmerSetFromConfig(false);
-        } catch (e) {
-            // Swallow errors to avoid breaking tab switch
-            console.log('Failed to auto-create swimmer set on tab switch:', e);
+        // Default to swimmers tab unless explicit 'special' requested
+        if (tabName === 'special') {
+            // Activate special tab
+            detailsTab.classList.remove('active');
+            swimmersTab.classList.remove('active');
+            if (specialTab) specialTab.classList.add('active');
+            document.getElementById('configControls').style.display = 'none';
+            document.getElementById('swimmerSet').style.display = 'none';
+            if (specialArea) specialArea.style.display = 'block';
+            // Hide queue button when in special options
+            const queueBtn = document.getElementById('queueBtn'); if (queueBtn) queueBtn.style.display = 'none';
+        } else {
+            detailsTab.classList.remove('active');
+            swimmersTab.classList.add('active');
+            if (specialTab) specialTab.classList.remove('active');
+            document.getElementById('configControls').style.display = 'none';
+            document.getElementById('swimmerSet').style.display = 'block';
+            if (specialArea) specialArea.style.display = 'none';
+            const queueBtn = document.getElementById('queueBtn'); if (queueBtn) queueBtn.style.display = 'inline-block';
+            // Ensure a swimmer set exists based on current inputs so reloads that
+            // restore the swimmers tab show the swimmer list immediately.
+            try {
+                createOrUpdateSwimmerSetFromConfig(false);
+            } catch (e) {
+                // Swallow errors to avoid breaking tab switch
+                console.log('Failed to auto-create swimmer set on tab switch:', e);
+            }
         }
     }
 
@@ -2176,6 +2253,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Ensure switching to swimmers tab creates/updates the swimmer set automatically
     const detailsTabBtn = document.getElementById('createDetailsTab');
     const swimmersTabBtn = document.getElementById('createSwimmersTab');
+    const specialTabBtn = document.getElementById('createSpecialTab');
     if (swimmersTabBtn) {
         swimmersTabBtn.addEventListener('click', function() {
             // Auto-create/update the set from current controls without resetting paces
@@ -2185,6 +2263,11 @@ document.addEventListener('DOMContentLoaded', function() {
     if (detailsTabBtn) {
         detailsTabBtn.addEventListener('click', function() {
             // No special action needed when going back to details
+        });
+    }
+    if (specialTabBtn) {
+        specialTabBtn.addEventListener('click', function() {
+            // Nothing special to precompute for special options
         });
     }
 });
