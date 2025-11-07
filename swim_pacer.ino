@@ -319,6 +319,7 @@ struct Swimmer {
   bool inSurfacePhase;         // Has switched to surface color
   float distanceTraveled;      // Distance traveled in current underwater phase
   unsigned long hideTimerStart;   // When hide timer started (after surface distance completed)
+  bool finished;               // Has swimmer completed all rounds
 };
 
 Swimmer swimmers[4][6]; // Support up to 6 swimmers per lane, for up to 4 lanes
@@ -1935,6 +1936,9 @@ void initializeSwimmers() {
       swimmers[lane][i].debugRestingPrinted = false;
       swimmers[lane][i].debugSwimmingPrinted = false;
 
+  // Initialize finished flag
+  swimmers[lane][i].finished = false;
+
       // Set colors based on mode
       updateSwimmerColors();
     }
@@ -1961,6 +1965,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     return;
   }
   Swimmer* swimmer = &swimmers[laneIndex][swimmerIndex];
+  // If swimmer has already completed all rounds, do nothing
+  if (swimmer->finished) return;
   unsigned long currentTime = millis();
 
   // Check if swimmer is resting
@@ -2119,6 +2125,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             Serial.print(swimmerIndex);
             Serial.println(" finished!");
           }
+          // Mark swimmer as finished so we stop further updates
+          swimmer->finished = true;
         }
 
         // Place LED at the wall based on direction
