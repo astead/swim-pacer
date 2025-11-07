@@ -194,11 +194,11 @@
 
             <div id="underwatersControls" class="underwater-controls" style="display: none;">
                 <div class="control">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                        <label for="lightSize">Light pulse size:</label>
-                        <span id="lightSizeValue">1.0 foot</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <label for="lightSize" style="margin:0; white-space:nowrap;">Light pulse size:</label>
+                        <input type="number" id="lightSize" min="0.1" max="10" step="0.1" value="1.0" onchange="updateLightSize()" class="compact-input" style="width:80px;">
+                        <span id="lightSizeUnit">foot</span>
                     </div>
-                    <input type="range" id="lightSize" min="0.5" max="5" step="0.5" value="1.0" oninput="updateLightSize()">
                 </div>
 
                 <div class="control">
@@ -254,11 +254,11 @@
             </div>
 
             <div class="control">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                    <label for="pulseWidth">Light pulse size:</label>
-                    <span id="pulseWidthValue">1.0 foot</span>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <label for="pulseWidth" style="margin:0; white-space:nowrap;">Light pulse size:</label>
+                    <input type="number" id="pulseWidth" min="0.1" max="10" step="0.1" value="1.0" onchange="updatePulseWidth()" class="compact-input" style="width:80px;">
+                    <span id="pulseWidthUnit">foot</span>
                 </div>
-                <input type="range" id="pulseWidth" min="0.5" max="5" step="0.5" value="1.0" oninput="updatePulseWidth()">
             </div>
 
             <div class="control">

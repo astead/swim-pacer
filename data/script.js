@@ -459,8 +459,12 @@ function initializeBrightnessDisplay() {
 function updatePulseWidth() {
     const pulseWidth = document.getElementById('pulseWidth').value;
     currentSettings.pulseWidth = parseFloat(pulseWidth);
-    const unit = parseFloat(pulseWidth) === 1.0 ? ' foot' : ' feet';
-    document.getElementById('pulseWidthValue').textContent = pulseWidth + unit;
+    // UI now shows the numeric input directly; send updated value to device
+    // Update unit label (singular vs plural)
+    try {
+        const unitEl = document.getElementById('pulseWidthUnit');
+        if (unitEl) unitEl.textContent = (parseFloat(pulseWidth) === 1.0) ? 'foot' : 'feet';
+    } catch (e) {}
     sendPulseWidth(pulseWidth);
 }
 
@@ -550,8 +554,11 @@ function updateUnderwatersEnabled(triggerSave = true, enabledArg) {
 function updateLightSize() {
     const lightSize = document.getElementById('lightSize').value;
     currentSettings.lightSize = parseFloat(lightSize);
-    const unit = parseFloat(lightSize) === 1.0 ? ' foot' : ' feet';
-    document.getElementById('lightSizeValue').textContent = lightSize + unit;
+    // Numeric input shows value; send updated underwater settings to device
+    try {
+        const unitEl = document.getElementById('lightSizeUnit');
+        if (unitEl) unitEl.textContent = (parseFloat(lightSize) === 1.0) ? 'foot' : 'feet';
+    } catch (e) {}
     sendUnderwaterSettings();
 }
 
@@ -624,9 +631,10 @@ function setPulseWidthUI(value) {
     const el = document.getElementById('pulseWidth');
     if (el) el.value = v;
     currentSettings.pulseWidth = v;
-    const unit = v === 1.0 ? ' foot' : ' feet';
-    const label = document.getElementById('pulseWidthValue');
-    if (label) label.textContent = v + unit;
+    try {
+        const unitEl = document.getElementById('pulseWidthUnit');
+        if (unitEl) unitEl.textContent = (v === 1.0) ? 'foot' : 'feet';
+    } catch (e) {}
 }
 
 function setBrightnessUI(percent) {
@@ -679,9 +687,10 @@ function setLightSizeUI(value) {
     const el = document.getElementById('lightSize');
     if (el) el.value = v;
     currentSettings.lightSize = v;
-    const unit = v === 1.0 ? ' foot' : ' feet';
-    const label = document.getElementById('lightSizeValue');
-    if (label) label.textContent = v + unit;
+    try {
+        const unitEl = document.getElementById('lightSizeUnit');
+        if (unitEl) unitEl.textContent = (v === 1.0) ? 'foot' : 'feet';
+    } catch (e) {}
 }
 
 function setNumSwimmersUI(value) {
