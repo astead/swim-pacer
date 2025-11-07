@@ -75,7 +75,8 @@
                     <div style="display:flex; align-items:center; justify-content:center; gap:12px; width:100%">
                         <div class="create-tabs" style="display:flex; gap:6px;">
                             <button id="createDetailsTab" class="tab small active" onclick="setCreateTab('details')">Swim Set Details</button>
-                            <button id="createSwimmersTab" class="tab small" onclick="setCreateTab('swimmers')">Swimmer Customizations</button>
+                                <button id="createSwimmersTab" class="tab small" onclick="setCreateTab('swimmers')">Swimmer Customizations</button>
+                                <button id="createSpecialTab" class="tab small" onclick="setCreateTab('special')">Special Set Options</button>
                         </div>
                         <div style="flex:1;text-align:right;">
                             <button id="createToggleBtn" style="border:0;background:transparent;cursor:pointer;transform:rotate(0deg);transition:transform 0.18s;" onclick="toggleSection('createArea','createToggleBtn')">▾</button>
@@ -127,9 +128,23 @@
                         </div>
                     </div>
 
+                    <!-- Special Set Options -->
+                    <div id="specialOptions" style="display:none; margin-top:8px;">
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <div style="display:flex; gap:6px; align-items:center;">
+                                <input type="text" id="specialRestInput" placeholder="0:30 or 30" class="compact-input" style="width:90px;">
+                                <span style="font-size:12px;color:#666;margin-right:6px;">min:sec</span>
+                                <button class="small-button" onclick="enqueueRestFromInput()">Add rest</button>
+                            </div>
+                        </div>
+                        <div class="special-action-row" style="margin-top:8px;">
+                            <button class="small-button" onclick="enqueueMoveAction('start')">Move to starting wall</button>
+                            <button class="small-button" onclick="enqueueMoveAction('far')">Move to far wall</button>
+                        </div>
+                    </div>
+
                     <!-- Swimmer Set Display -->
                     <div id="swimmerSet" style="display: none; margin-top:8px;">
-                        <h3>Swim Set</h3>
                         <div id="setDetails" style="font-size: 16px; font-weight: bold; margin: 10px 0; padding: 10px; background: #f0f8ff; border-radius: 5px;"></div>
                         <div id="swimmerList"></div>
                     </div>

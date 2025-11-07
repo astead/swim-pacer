@@ -234,8 +234,35 @@ button.secondary:hover {
     color: #007bff;
     font-weight: 600;
 }
+
+/* Small button variant used in special options */
+.small-button {
+    padding: 6px 8px;
+    font-size: 13px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: #007bff;
+    color: white;
+    cursor: pointer;
+}
+.small-button:hover { background: #0056b3; }
+
+/* Styling for action items in the queue */
+.queue-action-item {
+    font-style: italic;
+    background: #f5f5f5;
+    border: 1px dashed #bbb;
+    color: #444;
+}
+.queue-action-icon {
+    width: 18px; height: 18px; display:inline-block; margin-right:6px; vertical-align:middle;
+}
 .create-tabs { align-items: center; }
 .create-tabs .tab.small:focus { outline: none; box-shadow: none; }
+
+/* Equal-width buttons for special action row */
+.special-action-row { display:flex; gap:8px; }
+.special-action-row .small-button { flex: 1; }
 
 /* breadcrumb */
 /* breadcrumb removed - no styles needed */
