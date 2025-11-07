@@ -934,15 +934,19 @@ function updateStatus() {
     const queueTitle = queueDisplay.querySelector('h4');
     const toggleBtnElement = document.getElementById('toggleBtn');
 
-    if (queueDisplay && queueTitle) {
-        if (currentSettings.isRunning) {
-            // Running: green border and title
+    if (queueDisplay) {
+        // Prefer the per-lane running state so the border reflects the lane's actual status.
+        const lane = currentSettings.currentLane || 0;
+        const isLaneRunning = (laneRunning && laneRunning[lane]) ? true : false;
+        const running = isLaneRunning || currentSettings.isRunning;
+        if (running) {
+            // Running: green border
             queueDisplay.style.borderLeft = '4px solid #28a745';
-            queueTitle.style.color = '#28a745';
+            if (queueTitle) queueTitle.style.color = '#28a745';
         } else {
-            // Stopped: red border and title
+            // Stopped: red border
             queueDisplay.style.borderLeft = '4px solid #dc3545';
-            queueTitle.style.color = '#dc3545';
+            if (queueTitle) queueTitle.style.color = '#dc3545';
         }
     }
 
