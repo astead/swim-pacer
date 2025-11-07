@@ -76,7 +76,8 @@ struct GlobalConfigSettings {
   int numLanes = 1;                          // Number of LED strips/lanes connected
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   bool delayIndicatorsEnabled = true;        // Whether to show delay countdown indicators
-  int numSwimmers = 1;                       // Number of swimmers (light pulses)
+  int numSwimmers = 1;                       // Number of swimmers (light pulses) - legacy global fallback
+  int numSwimmersPerLane[4] = {1,1,1,1};    // Per-lane swimmer counts (preferred)
   uint8_t colorRed = 0;                      // RGB color values - default to blue
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
@@ -601,6 +602,8 @@ void setupWebServer() {
   // Handle getting current globalConfigSettings (for dynamic updates)
   server.on("/globalConfigSettings", HTTP_GET, handleGetSettings);
   server.on("/currentLane", HTTP_GET, handleGetCurrentLane);
+  // Debug: quick endpoint that returns just the per-lane swimmer counts
+  server.on("/getNumSwimmersPerLane", HTTP_GET, handleGetNumSwimmersPerLane);
 
   // API Units and persistence notes:
   // - Speed: stored and returned as meters per second (m/s). Client should POST /setSpeed with m/s.
@@ -906,9 +909,18 @@ void handleGetSettings() {
   json += "\"colorBlue\":" + String(globalConfigSettings.colorBlue) + ",";
   json += "\"brightness\":" + String(globalConfigSettings.brightness) + ","; // 0-255
   json += "\"numLanes\":" + String(globalConfigSettings.numLanes) + ",";
+  // Expose legacy global numSwimmers (fallback) only once and the per-lane counts below
   json += "\"numSwimmers\":" + String(globalConfigSettings.numSwimmers) + ",";
+  // Build array for per-lane swimmer counts
+  json += "\"numSwimmersPerLane\": [";
+  for (int li = 0; li < 4; li++) {
+    json += String(globalConfigSettings.numSwimmersPerLane[li]);
+    if (li < 3) json += ",";
+  }
+  json += "],";
   json += "\"poolLength\":" + String(globalConfigSettings.poolLength, 2) + ",";
-  json += "\"poolLengthUnits\":" + String(globalConfigSettings.poolUnitsYards ? "yards" : "meters") + ",";
+  // poolLengthUnits should be a JSON string
+  json += "\"poolLengthUnits\":\"" + String(globalConfigSettings.poolUnitsYards ? "yards" : "meters") + "\",";
   json += "\"underwatersEnabled\":" + String(globalConfigSettings.underwatersEnabled ? "true" : "false") + ",";
   json += "\"delayIndicatorsEnabled\":" + String(globalConfigSettings.delayIndicatorsEnabled ? "true" : "false") + ",";
   json += "\"isRunning\":" + String(globalConfigSettings.laneRunning[currentLane] ? "true" : "false") + ",";
@@ -920,6 +932,17 @@ void handleGetSettings() {
   json += "\"underwaterColor\":\"" + underwaterHex + "\",";
   json += "\"surfaceColor\":\"" + surfaceHex + "\"}";
 
+  server.send(200, "application/json", json);
+}
+
+// Simple debug handler that returns the per-lane swimmer counts as a JSON array
+void handleGetNumSwimmersPerLane() {
+  String json = "[";
+  for (int li = 0; li < 4; li++) {
+    json += String(globalConfigSettings.numSwimmersPerLane[li]);
+    if (li < 3) json += ",";
+  }
+  json += "]";
   server.send(200, "application/json", json);
 }
 
@@ -1137,7 +1160,22 @@ void handleSetDelayIndicators() {
 void handleSetNumSwimmers() {
   if (server.hasArg("numSwimmers")) {
     int numSwimmers = server.arg("numSwimmers").toInt();
-    globalConfigSettings.numSwimmers = numSwimmers;
+    int lane = -1;
+    if (server.hasArg("lane")) {
+      lane = server.arg("lane").toInt();
+      if (lane < 0 || lane >= 4) lane = -1;
+    }
+
+    if (lane >= 0) {
+      globalConfigSettings.numSwimmersPerLane[lane] = numSwimmers;
+      // Keep legacy global value in sync with lane 0 for backward compatibility
+      globalConfigSettings.numSwimmers = globalConfigSettings.numSwimmersPerLane[0];
+    } else {
+      // Update global fallback and also apply to all lanes if desired
+      globalConfigSettings.numSwimmers = numSwimmers;
+      for (int li = 0; li < 4; li++) globalConfigSettings.numSwimmersPerLane[li] = numSwimmers;
+    }
+
     saveGlobalConfigSettings();
   }
   server.send(200, "text/plain", "Number of swimmers updated");
@@ -1308,6 +1346,11 @@ void saveGlobalConfigSettings() {
   preferences.putInt("ledsPerMeter", globalConfigSettings.ledsPerMeter);
   preferences.putFloat("pulseWidthFeet", globalConfigSettings.pulseWidthFeet);
   preferences.putInt("numSwimmers", globalConfigSettings.numSwimmers);
+  // Persist per-lane counts for backward compatibility and per-lane support
+  for (int li = 0; li < 4; li++) {
+    String key = String("numSwimmersLane") + String(li);
+    preferences.putInt(key.c_str(), globalConfigSettings.numSwimmersPerLane[li]);
+  }
   preferences.putUChar("colorRed", globalConfigSettings.colorRed);
   preferences.putUChar("colorGreen", globalConfigSettings.colorGreen);
   preferences.putUChar("colorBlue", globalConfigSettings.colorBlue);
@@ -1338,7 +1381,13 @@ void loadGlobalConfigSettings() {
   globalConfigSettings.ledsPerMeter = preferences.getInt("ledsPerMeter", 30);
   globalConfigSettings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
   // Keep preference fallbacks consistent with struct defaults
+  // Load legacy global fallback
   globalConfigSettings.numSwimmers = preferences.getInt("numSwimmers", 1);
+  // Load per-lane counts if present; otherwise use global fallback
+  for (int li = 0; li < 4; li++) {
+    String key = String("numSwimmersLane") + String(li);
+    globalConfigSettings.numSwimmersPerLane[li] = preferences.getInt(key.c_str(), globalConfigSettings.numSwimmers);
+  }
   globalConfigSettings.colorRed = preferences.getUChar("colorRed", 0);      // Default to blue
   globalConfigSettings.colorGreen = preferences.getUChar("colorGreen", 0);
   globalConfigSettings.colorBlue = preferences.getUChar("colorBlue", 255);
@@ -1444,7 +1493,11 @@ void updateLEDEffect() {
       // Only animate if this lane is running
       if (globalConfigSettings.laneRunning[lane]) {
         // Update and draw each active swimmer for this lane FIRST (higher priority)
-        for (int i = 0; i < globalConfigSettings.numSwimmers; i++) {
+        // Use per-lane swimmer count (clamped to 6)
+        int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[lane];
+        if (laneSwimmerCount < 1) laneSwimmerCount = 1;
+        if (laneSwimmerCount > 6) laneSwimmerCount = 6;
+        for (int i = 0; i < laneSwimmerCount; i++) {
           updateSwimmer(i, lane);
           drawSwimmerPulse(i, lane);
 
@@ -1487,7 +1540,10 @@ void drawDelayIndicators(int laneIndex) {
   int nextSwimmerIndex = -1;
   float shortestRemainingDelay = 999999.0;
 
-  for (int i = 0; i < globalConfigSettings.numSwimmers; i++) {
+  int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[laneIndex];
+  if (laneSwimmerCount < 1) laneSwimmerCount = 1;
+  if (laneSwimmerCount > 6) laneSwimmerCount = 6;
+  for (int i = 0; i < laneSwimmerCount; i++) {
     Swimmer* swimmer = &swimmers[laneIndex][i];
 
     // Only consider swimmers who are resting
@@ -1564,7 +1620,7 @@ void initializeSwimmers() {
   }
 
   for (int lane = 0; lane < 4; lane++) {
-    for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 6; i++) {
       swimmers[lane][i].position = 0;
       swimmers[lane][i].direction = 1;
       swimmers[lane][i].hasStarted = false;  // Initialize as not started
@@ -1889,7 +1945,10 @@ void printPeriodicStatus() {
       Serial.print("Lane ");
       Serial.print(lane);
       Serial.println(":");
-      for (int i = 0; i < globalConfigSettings.numSwimmers; i++) {
+      int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[lane];
+      if (laneSwimmerCount < 1) laneSwimmerCount = 1;
+      if (laneSwimmerCount > 6) laneSwimmerCount = 6;
+      for (int i = 0; i < laneSwimmerCount; i++) {
         Swimmer* s = &swimmers[lane][i];
         Serial.print("  Swimmer ");
         Serial.print(i);

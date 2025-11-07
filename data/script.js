@@ -12,6 +12,7 @@ let currentSettings = {
     swimmerInterval: 1,
     delayIndicatorsEnabled: true,
     numSwimmers: 3,
+    numSwimmersPerLane: [3,3,3,3],
     numRounds: 10,
     colorMode: 'individual',
     swimmerColor: '#0000ff',
@@ -344,6 +345,13 @@ function updateCurrentLane() {
     // Update the status display for the new lane
     updateStatus();
 
+    // Update the numSwimmers selector to reflect per-lane count if available
+    try {
+        currentSettings.numSwimmersPerLane = currentSettings.numSwimmersPerLane || [currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers];
+        const laneCount = currentSettings.numSwimmersPerLane[newLane] || currentSettings.numSwimmers;
+        setNumSwimmersUI(laneCount);
+    } catch (e) {}
+
     // Update queue display for the new lane
     updateQueueDisplay();
     updatePacerButtons();
@@ -626,6 +634,10 @@ function setNumSwimmersUI(value) {
     const v = parseInt(value);
     const el = document.getElementById('numSwimmers');
     if (el) el.value = v;
+    // Update per-lane value and mirror to currentSettings for backwards compatibility
+    const lane = currentSettings.currentLane || 0;
+    currentSettings.numSwimmersPerLane = currentSettings.numSwimmersPerLane || [currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers];
+    currentSettings.numSwimmersPerLane[lane] = v;
     currentSettings.numSwimmers = v;
 }
 
@@ -650,9 +662,12 @@ function openColorPickerForSurface() {
 }
 
 function updateNumSwimmers() {
-    const numSwimmers = document.getElementById('numSwimmers').value;
-    currentSettings.numSwimmers = parseInt(numSwimmers);
-    sendNumSwimmers(currentSettings.numSwimmers);
+    const numSwimmers = parseInt(document.getElementById('numSwimmers').value);
+    const lane = currentSettings.currentLane || 0;
+    currentSettings.numSwimmersPerLane = currentSettings.numSwimmersPerLane || [currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers];
+    currentSettings.numSwimmersPerLane[lane] = numSwimmers;
+    currentSettings.numSwimmers = numSwimmers;
+    sendNumSwimmers(numSwimmers, lane);
 }
 
 function updateNumRounds() {
@@ -1370,6 +1385,122 @@ function createOrUpdateSwimmerSetFromConfig(resetPaces = false) {
 
     // Refresh the swimmers UI if visible
     updateSwimmerSetDisplay();
+}
+
+// Migrate local swimmer sets to match a device-reported number of swimmers.
+// This updates currentSettings.numSwimmers and resizes per-lane sets (created and saved)
+// to avoid UI/firmware mismatch where the device is running with a different count.
+function migrateSwimmerCountsToDevice(deviceNumSwimmers) {
+    if (!deviceNumSwimmers || deviceNumSwimmers < 1) return;
+    // If already equal, nothing to do
+    if (currentSettings.numSwimmers === deviceNumSwimmers) return;
+
+    const oldNum = currentSettings.numSwimmers;
+    // Update global and per-lane records
+    currentSettings.numSwimmers = deviceNumSwimmers;
+    currentSettings.numSwimmersPerLane = [deviceNumSwimmers, deviceNumSwimmers, deviceNumSwimmers, deviceNumSwimmers];
+
+    // Resize any stored swimmerSets and createdSwimSets for each lane
+    for (let lane = 0; lane < swimmerSets.length; lane++) {
+        // Resize swimmerSets[lane]
+        let set = swimmerSets[lane] || [];
+        if (deviceNumSwimmers < set.length) {
+            set = set.slice(0, deviceNumSwimmers);
+        } else if (deviceNumSwimmers > set.length) {
+            for (let i = set.length; i < deviceNumSwimmers; i++) {
+                set.push({ id: i + 1, color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]], pace: (parseTimeInput(document.getElementById('paceTimeSeconds').value) || 30), interval: (i + 1) * currentSettings.swimmerInterval, lane: lane });
+            }
+        }
+        swimmerSets[lane] = set;
+
+        // Resize createdSwimSets if present
+        const created = createdSwimSets[lane];
+        if (created && created.swimmers) {
+            let cs = created.swimmers;
+            if (deviceNumSwimmers < cs.length) cs = cs.slice(0, deviceNumSwimmers);
+            else if (deviceNumSwimmers > cs.length) {
+                for (let i = cs.length; i < deviceNumSwimmers; i++) {
+                    cs.push({ id: i + 1, color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]], pace: created.settings ? (created.settings.paceTimeSeconds || parseTimeInput(document.getElementById('paceTimeSeconds').value)) : parseTimeInput(document.getElementById('paceTimeSeconds').value), interval: (i + 1) * (created.settings ? created.settings.swimmerInterval || currentSettings.swimmerInterval : currentSettings.swimmerInterval), lane: lane });
+                }
+            }
+            created.swimmers = cs;
+            created.settings = created.settings || {};
+            created.settings.numSwimmers = deviceNumSwimmers;
+            created.summary = generateSetSummary(created.swimmers, created.settings || currentSettings);
+            createdSwimSets[lane] = created;
+        }
+
+        // If there's an active running set for this lane, mark it for placement update
+        if (activeSwimSets[lane]) {
+            // If the count changed, flag to recompute runtime UI for that lane
+            activeSwimSets[lane].needsPlacement = true;
+            // Trim or expand internal runningSettings if present
+            if (runningSets[lane]) {
+                let rs = runningSets[lane];
+                if (deviceNumSwimmers < rs.length) rs = rs.slice(0, deviceNumSwimmers);
+                else if (deviceNumSwimmers > rs.length) {
+                    for (let i = rs.length; i < deviceNumSwimmers; i++) {
+                        rs.push({ id: i + 1, color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]], pace: rs[0] ? rs[0].pace : parseTimeInput(document.getElementById('paceTimeSeconds').value), interval: (i + 1) * currentSettings.swimmerInterval, lane: lane });
+                    }
+                }
+                runningSets[lane] = rs;
+            }
+        }
+    }
+
+    // Update UI inputs where appropriate
+    try {
+        document.getElementById('numSwimmers').value = deviceNumSwimmers;
+        setNumSwimmersUI(deviceNumSwimmers);
+    } catch (e) {}
+}
+
+// Resize data for a single lane to match device-reported swimmer count
+function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
+    if (lane < 0 || lane >= swimmerSets.length) return;
+    if (!deviceNumSwimmers || deviceNumSwimmers < 1) return;
+
+    // Record per-lane count in settings
+    currentSettings.numSwimmersPerLane = currentSettings.numSwimmersPerLane || [currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers];
+    currentSettings.numSwimmersPerLane[lane] = deviceNumSwimmers;
+
+    // Resize swimmerSets[lane]
+    let set = swimmerSets[lane] || [];
+    if (deviceNumSwimmers < set.length) {
+        set = set.slice(0, deviceNumSwimmers);
+    } else if (deviceNumSwimmers > set.length) {
+        for (let i = set.length; i < deviceNumSwimmers; i++) {
+            set.push({ id: i + 1, color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]], pace: (parseTimeInput(document.getElementById('paceTimeSeconds').value) || 30), interval: (i + 1) * currentSettings.swimmerInterval, lane: lane });
+        }
+    }
+    swimmerSets[lane] = set;
+
+    // Resize createdSwimSets if present
+    const created = createdSwimSets[lane];
+    if (created && created.swimmers) {
+        let cs = created.swimmers;
+        if (deviceNumSwimmers < cs.length) cs = cs.slice(0, deviceNumSwimmers);
+        else if (deviceNumSwimmers > cs.length) {
+            for (let i = cs.length; i < deviceNumSwimmers; i++) {
+                cs.push({ id: i + 1, color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]], pace: created.settings ? (created.settings.paceTimeSeconds || parseTimeInput(document.getElementById('paceTimeSeconds').value)) : parseTimeInput(document.getElementById('paceTimeSeconds').value), interval: (i + 1) * (created.settings ? created.settings.swimmerInterval || currentSettings.swimmerInterval : currentSettings.swimmerInterval), lane: lane });
+            }
+        }
+        created.swimmers = cs;
+        created.settings = created.settings || {};
+        created.settings.numSwimmers = deviceNumSwimmers;
+        created.summary = generateSetSummary(created.swimmers, created.settings || currentSettings);
+        createdSwimSets[lane] = created;
+    }
+
+    // If this is the currently selected lane, update UI controls
+    if (currentSettings.currentLane === lane) {
+        try {
+            document.getElementById('numSwimmers').value = deviceNumSwimmers;
+            setNumSwimmersUI(deviceNumSwimmers);
+            displaySwimmerSet();
+            updateQueueDisplay();
+        } catch (e) {}
+    }
 }
 
 
@@ -2441,14 +2572,30 @@ async function fetchDeviceSettingsAndApply() {
         console.log("Fetching globalConfigSettings");
         const res = await fetch('/globalConfigSettings');
         if (!res.ok) return;
-        const dev = await res.json();
-        console.log("Received globalConfigSettings, underwaters:" + dev.underwatersEnabled);
+    const dev = await res.json();
+    console.log("Received globalConfigSettings, underwaters:" + dev.underwatersEnabled);
+    console.log('DEBUG: device reports numSwimmersPerLane =', dev.numSwimmersPerLane, ' numSwimmers (legacy) =', dev.numSwimmers);
 
         // Merge device settings into currentSettings with conversions
         if (dev.stripLengthMeters !== undefined) currentSettings.stripLength = parseFloat(dev.stripLengthMeters);
         if (dev.ledsPerMeter !== undefined) currentSettings.ledsPerMeter = parseInt(dev.ledsPerMeter);
         if (dev.numLanes !== undefined) currentSettings.numLanes = parseInt(dev.numLanes);
-        if (dev.numSwimmers !== undefined) currentSettings.numSwimmers = parseInt(dev.numSwimmers);
+        if (dev.numSwimmersPerLane !== undefined && Array.isArray(dev.numSwimmersPerLane)) {
+            // Prefer per-lane counts
+            try {
+                for (let li = 0; li < dev.numSwimmersPerLane.length && li < 4; li++) {
+                    const n = parseInt(dev.numSwimmersPerLane[li]) || currentSettings.numSwimmers;
+                    // Apply per-lane value by resizing swimmerSets for each lane
+                    migrateSwimmerCountsToDeviceForLane(li, n);
+                }
+            } catch (e) {
+                // fallback to global value
+            }
+        } else if (dev.numSwimmers !== undefined) {
+            // Adopt device-reported global swimmer count and migrate per-lane sets to match
+            const deviceNum = parseInt(dev.numSwimmers);
+            migrateSwimmerCountsToDevice(deviceNum);
+        }
         if (dev.poolLength !== undefined) currentSettings.poolLength = dev.poolLength;
         if (dev.poolLengthUnits !== undefined) currentSettings.poolLengthUnits = dev.poolLengthUnits;
 
@@ -2592,7 +2739,11 @@ function sendDelayIndicators(enabled) {
 }
 
 function sendNumSwimmers(numSwimmers) {
-    return postForm('/setNumSwimmers', `numSwimmers=${encodeURIComponent(numSwimmers)}`);
+    // Default: no lane (apply to all). If a lane is provided as second arg, include it.
+    const lane = (arguments.length > 1 && typeof arguments[1] === 'number') ? arguments[1] : null;
+    let body = `numSwimmers=${encodeURIComponent(numSwimmers)}`;
+    if (lane !== null) body += `&lane=${encodeURIComponent(lane)}`;
+    return postForm('/setNumSwimmers', body);
 }
 
 function sendColorMode(mode) {
