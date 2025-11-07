@@ -1422,7 +1422,10 @@ function queueSwimSet() {
         updatePacerButtons();
     }).catch(err => {
         console.log('Failed to enqueue on device, keeping local queue only');
-        swimSetQueues[currentLane].push(JSON.parse(JSON.stringify(createdSwimSets[currentLane])));
+        const localQueued = JSON.parse(JSON.stringify(createdSwimSets[currentLane]));
+        // Mark as not yet synced
+        localQueued.synced = false;
+        swimSetQueues[currentLane].push(localQueued);
         // Keep the UI on the swimmers tab so the user can continue customizing
         updateQueueDisplay();
         updatePacerButtons();
@@ -1458,11 +1461,14 @@ function enqueueRestFromInput() {
         const canonicalId = (json && json.id) ? json.id : actionItem.id;
         const queued = JSON.parse(JSON.stringify(actionItem));
         queued.id = canonicalId;
+        queued.synced = true;
         swimSetQueues[currentLane].push(queued);
         updateQueueDisplay();
         updatePacerButtons();
+        setTimeout(reconcileQueueWithDevice, 200);
     }).catch(err => {
         console.log('Failed to enqueue rest on device, keeping local queue only');
+        actionItem.synced = false;
         swimSetQueues[currentLane].push(actionItem);
         updateQueueDisplay();
         updatePacerButtons();
@@ -1490,11 +1496,14 @@ function enqueueMoveAction(target) {
         const canonicalId = (json && json.id) ? json.id : actionItem.id;
         const queued = JSON.parse(JSON.stringify(actionItem));
         queued.id = canonicalId;
+        queued.synced = true;
         swimSetQueues[currentLane].push(queued);
         updateQueueDisplay();
         updatePacerButtons();
+        setTimeout(reconcileQueueWithDevice, 200);
     }).catch(err => {
         console.log('Failed to enqueue move action on device, keeping local queue only');
+        actionItem.synced = false;
         swimSetQueues[currentLane].push(actionItem);
         updateQueueDisplay();
         updatePacerButtons();
@@ -1571,6 +1580,12 @@ function updateQueueDisplay() {
 
                 html += `
                     <div ${statusClass}>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="font-size:12px; color:#28a745; margin-right:8px;">${swimSet.synced ? '✓ Synced' : ''}</div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="font-size:12px; color:#28a745; margin-right:8px;">${swimSet.synced ? '✓ Synced' : ''}</div>
+                        </div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
                                 ${swimSet.summary}
@@ -2110,6 +2125,42 @@ function initializeQueueSystem() {
     }
 }
 
+// Reconcile local queue entries with device queue for the current lane.
+// Matches items by summary and key numeric fields to detect items accepted by the device.
+async function reconcileQueueWithDevice() {
+    if (isStandaloneMode) return;
+    const lane = currentSettings.currentLane;
+    try {
+        const res = await fetch('/getSwimQueue');
+        if (!res.ok) return;
+        const deviceQueue = await res.json();
+
+        // Build a lightweight canonical signature for device entries
+        const deviceSignatures = deviceQueue.map(d => {
+            return `${Number(d.paceSeconds).toFixed(0)}|${d.restSeconds}|${d.rounds}|${Number(d.length).toFixed(0)}`;
+        });
+
+        // Iterate local queue and mark swim sets as synced when their signature appears
+        for (let i = 0; i < swimSetQueues[lane].length; i++) {
+            const local = swimSetQueues[lane][i];
+            // Only reconcile swim-sets (not action/rest items)
+            if (local.type === 'rest' || local.type === 'action') continue;
+            const sig = `${Math.round(local.settings.paceTimeSeconds)}|${local.settings.restTime}|${local.settings.numRounds}|${Number(local.settings.paceDistance).toFixed(0)}`;
+            const idx = deviceSignatures.indexOf(sig);
+            if (idx !== -1) {
+                // Mark as synced and, if device returns an id (not currently), capture it
+                local.synced = true;
+            }
+        }
+        updateQueueDisplay();
+    } catch (e) {
+        // ignore network errors
+    }
+}
+
+// Periodic reconciliation timer id
+let reconcileIntervalId = null;
+
 // Completion handling options - change this to experiment with different behaviors
 const COMPLETION_MODE = 'MARK_COMPLETE'; // Options: 'REMOVE_SET', 'MARK_COMPLETE'
 
@@ -2179,6 +2230,10 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeQueueSystem();
     // Attempt to fetch device settings from ESP32 and merge into UI defaults
     fetchDeviceSettingsAndApply();
+    // Reconcile with device queue shortly after load
+    setTimeout(reconcileQueueWithDevice, 300);
+    // Start periodic reconciliation every 10s
+    reconcileIntervalId = setInterval(reconcileQueueWithDevice, 10000);
     // Some browsers restore form control values after load (preserve user inputs).
     // To ensure labels stay in sync with actual slider values (which may be restored
     // by the browser after scripts run), schedule a short re-sync.
