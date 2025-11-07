@@ -164,6 +164,8 @@ function updatePaceDistance(triggerSave = true) {
         sendPaceDistance(currentSettings.paceDistance);
         sendSpeed(currentSettings.speed);
     }
+    // Update swimmer set so UI and created set reflect the new pace distance immediately
+    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 function updateCalculations(triggerSave = true) {
@@ -429,6 +431,8 @@ function updateRestTime() {
     if (rlabel) rlabel.textContent = restTime + unit;
     // Also send rest time to device so it can be used as a default for swim-sets
     sendRestTime(currentSettings.restTime);
+    // Rebuild swimmer set so UI reflects the new rest time immediately
+    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 
@@ -441,6 +445,8 @@ function updateSwimmerInterval() {
     if (silabel) silabel.textContent = swimmerInterval + unit;
     // Also send swimmer interval to device so it can be used as a default for swim-sets
     sendSwimmerInterval(currentSettings.swimmerInterval);
+    // Rebuild swimmer set so UI reflects the new swimmer interval immediately
+    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 function updateDelayIndicatorsEnabled() {
@@ -682,6 +688,8 @@ function updateNumRounds() {
     const numRounds = document.getElementById('numRounds').value;
     currentSettings.numRounds = parseInt(numRounds);
     sendNumRounds(currentSettings.numRounds);
+    // Rebuild current swimmer set so UI and created set reflect the new rounds immediately
+    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 function updateColorMode() {
