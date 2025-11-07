@@ -130,6 +130,14 @@ function formatSecondsToMmSs(seconds) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+// Compact formatting: if <= 60 seconds, show as 'Ns' (e.g., '30s'); if >60, show as M:SS (e.g., '1:30')
+function formatCompactTime(seconds) {
+    if (seconds === undefined || seconds === null || isNaN(seconds)) return '0s';
+    const s = Math.round(Number(seconds));
+    if (s > 60) return formatSecondsToMmSs(s);
+    return `${s}s`;
+}
+
 function updateFromPace() {
     const paceInput = document.getElementById('paceTimeSeconds').value;
     const pace = parseTimeInput(paceInput);
@@ -1520,10 +1528,11 @@ function generateSetSummary(swimmers, settings) {
     const restTime = settings.restTime;
     const numRounds = settings.numRounds;
 
-    // Display pace as M:SS when > 60s, otherwise show seconds without decimals
-    const avgPaceDisplay = (avgPace > 60) ? formatSecondsToMmSs(avgPace) : `${Math.round(avgPace)}s`;
+    // Display pace/rest using compact formatting: 'Ns' for <=60s, 'M:SS' for >60s
+    const avgPaceDisplay = formatCompactTime(avgPace);
+    const restDisplay = formatCompactTime(restTime);
 
-    return `${numRounds} x ${paceDistance}'s on the ${avgPaceDisplay} with ${restTime} sec rest`;
+    return `${numRounds} x ${paceDistance}'s on the ${avgPaceDisplay} with ${restDisplay} rest`;
 }
 
 function queueSwimSet() {
