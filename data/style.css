@@ -275,3 +275,61 @@ input:checked + .toggle-slider:before {
 .underwater-controls .control:first-child {
     margin-top: 0;
 }
+
+/* Config controls: use a two-column grid per row so the label column is fixed
+   (120px) and the input column lines up across rows. The inner wrapper is
+   display:contents so its children (label/input/span) participate directly
+   in the grid. The overall form is centered via max-width + margin. */
+
+#configControls {
+    /* responsive centered width for the form */
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+/* Two-column grid: label in column 1, controls in column 2. Remove any
+   extra reserved columns so there isn't an empty left gutter. */
+#configControls .control {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    column-gap: 12px;
+    row-gap: 8px;
+    align-items: center;
+}
+
+/* Inner wrapper lives in column 2 and is a horizontal flex row so the input
+   and trailing unit text stay together. */
+#configControls .control > div {
+    display: flex;
+    grid-column: 2 / 3;
+    align-items: center;
+    gap: 8px;
+    justify-self: start;
+}
+
+#configControls label {
+    margin: 0;
+    padding-right: 6px;
+    text-align: right;
+}
+
+/* Compact input used in the create/edit swim set card */
+.compact-input {
+    width: 60px;
+    padding: 6px 6px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+    margin: 0; /* normalize any browser default margins */
+    display: block;
+}
+
+/* Center the create/edit swim set card contents so the form and buttons
+   sit in the middle of the card for a balanced look. */
+#createArea.underwater-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}

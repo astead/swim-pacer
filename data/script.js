@@ -399,7 +399,8 @@ function updateRestTime() {
     const restTime = document.getElementById('restTime').value;
     currentSettings.restTime = parseInt(restTime);
     const unit = parseInt(restTime) === 1 ? ' second' : ' seconds';
-    document.getElementById('restTimeValue').textContent = restTime + unit;
+    const rlabel = document.getElementById('restTimeValue');
+    if (rlabel) rlabel.textContent = restTime + unit;
     // Also send rest time to device so it can be used as a default for swim-sets
     sendRestTime(currentSettings.restTime);
 }
@@ -410,7 +411,8 @@ function updateSwimmerInterval() {
     const swimmerInterval = document.getElementById('swimmerInterval').value;
     currentSettings.swimmerInterval = parseInt(swimmerInterval);
     const unit = parseInt(swimmerInterval) === 1 ? ' second' : ' seconds';
-    document.getElementById('swimmerIntervalValue').textContent = swimmerInterval + unit;
+    const silabel = document.getElementById('swimmerIntervalValue');
+    if (silabel) silabel.textContent = swimmerInterval + unit;
     // Also send swimmer interval to device so it can be used as a default for swim-sets
     sendSwimmerInterval(currentSettings.swimmerInterval);
 }
@@ -1955,6 +1957,18 @@ function syncRangeLabels() {
     } catch (e) {
         // Non-fatal - if elements not present just ignore
         //console.log('syncRangeLabels failed', e);
+    }
+}
+
+// Generic collapsible section toggler used by HTML headers.
+function toggleSection(areaId, toggleBtnId) {
+    const area = document.getElementById(areaId);
+    const btn = document.getElementById(toggleBtnId);
+    if (!area) return;
+    const isHidden = area.style.display === 'none';
+    area.style.display = isHidden ? 'block' : 'none';
+    if (btn) {
+        btn.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
     }
 }
 

@@ -43,90 +43,108 @@
                 </div>
             </div>
 
-            <!-- Detailed Status (shown when running) -->
-            <!-- Swim Set Queue Display -->
-            <div id="queueDisplay" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #dc3545;">
-                <h4 style="margin: 0 0 10px 0; color: #dc3545;">Swim Set Queue</h4>
-                <div id="queueList" style="font-size: 14px;">
-                    <div style="color: #666; font-style: italic;">No sets queued</div>
+            <!-- Collapsible: Queue area -->
+            <div style="margin: 10px 0;">
+                <div class="toggle-container" style="padding:0;">
+                    <h3 style="margin: 0; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="toggleSection('queueArea','queueToggleBtn')">
+                        <span style="font-weight:700;color:#333;">Swim Set Queue</span>
+                        <span id="queueToggleBtn" style="transform:rotate(0deg);transition:transform 0.18s;">▾</span>
+                    </h3>
+                </div>
+                <div id="queueArea" class="underwater-controls" style="display:block;margin-top:8px;padding:10px;">
+                    <div id="queueDisplay" style="background: #f8f9fa; padding: 12px; border-radius: 8px; border-left: 4px solid #dc3545;">
+                        <div id="queueList" style="font-size: 14px;">
+                            <div style="color: #666; font-style: italic;">No sets queued</div>
+                        </div>
+                    </div>
+
+                    <div id="detailedStatus" style="display: none; margin-top:8px;"></div>
+
+                    <div class="control" style="margin-top:8px;">
+                        <div class="button-group" id="pacerButtons" style="display: none;">
+                            <button class="big-button" onclick="startQueue()" id="startBtn">Start Queue</button>
+                            <button class="big-button" onclick="stopQueue()" id="stopBtn" style="display: none; background: #dc3545;">Stop</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Active Set Status - now integrated into queue display -->
-            <div id="detailedStatus" style="display: none;"></div>
+            <!-- Collapsible: Create/Edit Set area -->
+            <div style="margin: 10px 0;">
+                <div class="toggle-container" style="padding:0;">
+                    <h3 style="margin: 0; display:flex; justify-content:center; align-items:center; gap:8px; cursor:pointer;" onclick="toggleSection('createArea','createToggleBtn')">
+                        <span style="font-weight:700;color:#333;">Create / Edit Set</span>
+                        <span id="createToggleBtn" style="transform:rotate(0deg);transition:transform 0.18s;">▾</span>
+                    </h3>
+                </div>
+                <div id="createArea" class="underwater-controls" style="margin-top:8px;padding:10px;">
 
-            <div class="control">
-                <div class="button-group" id="pacerButtons" style="display: none;">
-                    <button class="big-button" onclick="startQueue()" id="startBtn">Start Queue</button>
-                    <button class="big-button" onclick="stopQueue()" id="stopBtn" style="display: none; background: #dc3545;">Stop</button>
-                </div>
-                <div class="button-group" id="configButtons">
-                    <button class="big-button" onclick="createSwimSet()" id="createSetBtn">Create Set</button>
-                </div>
-                <div class="button-group" id="queueButtons" style="display: none;">
-                    <button class="big-button" onclick="queueSwimSet()" id="queueBtn">Queue Set</button>
-                    <button class="big-button" onclick="cancelSwimSet()" id="cancelBtn" style="background: #dc3545;">Cancel</button>
-                </div>
-                <div class="button-group" id="editButtons" style="display: none;">
-                    <button class="big-button" onclick="saveSwimSet()" id="saveBtn">Save Changes</button>
-                    <button class="big-button" onclick="cancelEdit()" id="cancelEditBtn" style="background: #dc3545;">Cancel</button>
-                </div>
-            </div>
+                    <!-- Configuration Controls -->
+                    <div id="configControls">
+                        <div class="control">
+                            <label for="numRounds">Rounds:</label>
+                            <div>
+                                <input type="number" id="numRounds" min="1" max="20" step="1" value="10" oninput="updateNumRounds()" class="compact-input">
+                                <span></span>
+                            </div>
+                        </div>
 
-            <!-- Configuration Controls -->
-            <div id="configControls">
-                <div class="control">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <label for="numRounds">Rounds:</label>
-                        <input type="number" id="numRounds" min="1" max="20" step="1" value="10" oninput="updateNumRounds()" style="width: 60px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        <div class="control">
+                            <label for="paceDistance">Distance:</label>
+                            <div>
+                                <input type="number" id="paceDistance" min="5" max="1000" step="5" value="50" onchange="updatePaceDistance()" class="compact-input">
+                                <span id="distanceUnits">yards</span>
+                            </div>
+                        </div>
+
+                        <div class="control">
+                            <label for="paceTimeSeconds">Swim time:</label>
+                            <div>
+                                <input type="text" id="paceTimeSeconds" value="30" oninput="updateFromPace()" class="compact-input" placeholder="30 or 1:30">
+                                <span>min:sec</span>
+                            </div>
+                        </div>
+
+                        <div class="control">
+                            <label for="restTime">Rest Time:</label>
+                            <div>
+                                <input type="number" id="restTime" min="0" max="300" step="1" value="5" oninput="updateRestTime()" class="compact-input">
+                                <span>seconds</span>
+                            </div>
+                        </div>
+
+                        <div class="control">
+                            <label for="swimmerInterval">Delay between swimmers:</label>
+                            <div>
+                                <input type="number" id="swimmerInterval" min="0" max="300" step="1" value="4" oninput="updateSwimmerInterval()" class="compact-input">
+                                <span>seconds</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Swimmer Set Display -->
+                    <div id="swimmerSet" style="display: none; margin-top:8px;">
+                        <h3>Swim Set</h3>
+                        <div id="setDetails" style="font-size: 16px; font-weight: bold; margin: 10px 0; padding: 10px; background: #f0f8ff; border-radius: 5px;"></div>
+                        <div id="swimmerList"></div>
+                    </div>
+
+                    <div class="control" style="margin-top:10px;">
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <div class="button-group" id="configButtons">
+                                <button class="big-button" onclick="createSwimSet()" id="createSetBtn">Create Set</button>
+                            </div>
+                            <div class="button-group" id="queueButtons" style="display: none;">
+                                <button class="big-button" onclick="queueSwimSet()" id="queueBtn">Queue Set</button>
+                                <button class="big-button" onclick="cancelSwimSet()" id="cancelBtn" style="background: #dc3545;">Cancel</button>
+                            </div>
+                            <div class="button-group" id="editButtons" style="display: none;">
+                                <button class="big-button" onclick="saveSwimSet()" id="saveBtn">Save Changes</button>
+                                <button class="big-button" onclick="cancelEdit()" id="cancelEditBtn" style="background: #dc3545;">Cancel</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
-
-                <div class="control">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <label for="paceDistance">Distance:</label>
-                        <select id="paceDistance" onchange="updatePaceDistance()" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
-                            <option value="25">25</option>
-                            <option value="50" selected>50</option>
-                            <option value="75">75</option>
-                            <option value="100">100</option>
-                            <option value="200">200</option>
-                            <option value="500">500</option>
-                        </select>
-                        <span id="distanceUnits">yards</span>
-                    </div>
-                </div>
-
-                <div class="control">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <label for="paceTimeSeconds">Swim time:</label>
-                        <input type="text" id="paceTimeSeconds" value="30" oninput="updateFromPace()" style="width: 80px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;" placeholder="30 or 1:30">
-                        <span>min:sec</span>
-                    </div>
-                </div>
-
-                <div class="control">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                        <label for="restTime">Rest Time:</label>
-                        <span id="restTimeValue">5 seconds</span>
-                    </div>
-                    <input type="range" id="restTime" min="0" max="30" step="1" value="5" oninput="updateRestTime()">
-                </div>
-
-                <div class="control">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                        <label for="swimmerInterval">Delay between swimmers:</label>
-                        <span id="swimmerIntervalValue">4 seconds</span>
-                    </div>
-                    <input type="range" id="swimmerInterval" min="1" max="20" step="1" value="4" oninput="updateSwimmerInterval()">
-                </div>
-            </div>
-
-            <!-- Swimmer Set Display -->
-            <div id="swimmerSet" style="display: none;">
-                <h3>Swim Set</h3>
-                <div id="setDetails" style="font-size: 16px; font-weight: bold; margin: 10px 0; padding: 10px; background: #f0f8ff; border-radius: 5px;"></div>
-                <div id="swimmerList"></div>
             </div>
         </div>
 
