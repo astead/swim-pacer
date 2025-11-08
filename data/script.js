@@ -1804,6 +1804,11 @@ function updateQueueDisplay() {
             } else {
                 statusClass = `style="background: ${backgroundColor}; border: 1px solid ${borderColor}; padding: 8px 10px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}"`;
 
+                // Get the correct round values for display
+                const displayCurrentRound = isActive ? currentRounds[currentLane] : 1;
+                const displayTotalRounds = (swimSet.settings && swimSet.settings.numRounds) || 
+                                          (isActive && runningSettings[currentLane] ? runningSettings[currentLane].numRounds : 10);
+
                 html += `
                     <div ${statusClass} ${draggable}>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1811,7 +1816,7 @@ function updateQueueDisplay() {
                                 ${swimSet.summary}
                             </div>
                             <div style="display: flex; gap: 5px; align-items: center;">
-                                ${isActive ? `<div style="font-weight: bold; color: #1976D2; margin-left: 8px;">Round: <span id="currentRound">1</span>/<span id="totalRounds">10</span></div>` : ''}
+                                ${isActive ? `<div style="font-weight: bold; color: #1976D2; margin-left: 8px;">Round: <span id="currentRound">${displayCurrentRound}</span>/<span id="totalRounds">${displayTotalRounds}</span></div>` : ''}
                                 ${!isActive && !isCompleted ? `<button onclick="editSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
                                 ${!isActive && !isCompleted ? `<button onclick="deleteSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
                                 ${isCompleted ? `<div style="font-size: 12px; color: #28a745; font-weight: bold;">Completed</div>` : ''}
@@ -2169,6 +2174,12 @@ function startPacerExecution() {
         settings: runningSettings[currentLane] || currentSettings,
         summary: ''
     };
+
+    // If we have a created swim set with specific rounds, update runningSettings
+    if (created && created.settings && created.settings.numRounds !== undefined) {
+        runningSettings[currentLane].numRounds = created.settings.numRounds;
+    }
+
     const payload = buildMinimalSwimSetPayload(created);
     // Include lane so device starts the set for the correct lane
     payload.lane = created.lane || currentLane;
