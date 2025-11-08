@@ -1637,8 +1637,9 @@ void saveGlobalConfigSettings() {
   preferences.putFloat("pulseWidthFeet", globalConfigSettings.pulseWidthFeet);
   preferences.putInt("numSwimmers", globalConfigSettings.numSwimmers);
   // Persist per-lane counts for backward compatibility and per-lane support
+  // Persist per-lane counts (key shortened to "swimLaneX" to fit 15-char NVS limit)
   for (int li = 0; li < 4; li++) {
-    String key = String("numSwimmersLane") + String(li);
+    String key = String("swimLane") + String(li);
     preferences.putInt(key.c_str(), globalConfigSettings.numSwimmersPerLane[li]);
   }
   preferences.putUChar("colorRed", globalConfigSettings.colorRed);
@@ -1647,7 +1648,9 @@ void saveGlobalConfigSettings() {
   preferences.putUChar("brightness", globalConfigSettings.brightness);
   preferences.putBool("isRunning", globalConfigSettings.isRunning);
   preferences.putBool("sameColorMode", globalConfigSettings.sameColorMode);
-  preferences.putBool("underwatersEnabled", globalConfigSettings.underwatersEnabled);
+
+  // Save underwatersEnabled (key shortened to "underwaterEn" to fit 15-char NVS limit)
+  preferences.putBool("underwaterEn", globalConfigSettings.underwatersEnabled);
 }
 
 void saveSwimSetSettings() {
@@ -1676,9 +1679,9 @@ void loadGlobalConfigSettings() {
   // Keep preference fallbacks consistent with struct defaults
   // Load legacy global fallback
   globalConfigSettings.numSwimmers = preferences.getInt("numSwimmers", 1);
-  // Load per-lane counts if present; otherwise use global fallback
+  // Load per-lane counts if present (key changed to "swimLaneX" to fit 15-char NVS limit)
   for (int li = 0; li < 4; li++) {
-    String key = String("numSwimmersLane") + String(li);
+    String key = String("swimLane") + String(li);
     globalConfigSettings.numSwimmersPerLane[li] = preferences.getInt(key.c_str(), globalConfigSettings.numSwimmers);
   }
   globalConfigSettings.colorRed = preferences.getUChar("colorRed", 0);      // Default to blue
@@ -1687,7 +1690,9 @@ void loadGlobalConfigSettings() {
   globalConfigSettings.brightness = preferences.getUChar("brightness", 196);
   globalConfigSettings.isRunning = preferences.getBool("isRunning", false);  // Default: stopped
   globalConfigSettings.sameColorMode = preferences.getBool("sameColorMode", false); // Default: individual colors
-  globalConfigSettings.underwatersEnabled = preferences.getBool("underwatersEnabled", false);
+
+  // Load underwatersEnabled (key changed to "underwaterEn" to fit 15-char NVS limit)
+  globalConfigSettings.underwatersEnabled = preferences.getBool("underwaterEn", false);
 }
 
 void loadSwimSetSettings() {
@@ -2251,49 +2256,58 @@ void printPeriodicStatus() {
 
   lastDebugPrint = currentTime;
 
-  Serial.println("\n========== STATUS UPDATE ==========");
+  bool isSomethingRunning = false;
   for (int lane = 0; lane < globalConfigSettings.numLanes; lane++) {
     if (globalConfigSettings.laneRunning[lane]) {
-      Serial.print("Lane ");
-      Serial.print(lane);
-      Serial.println(":");
-      int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[lane];
-      if (laneSwimmerCount < 1) laneSwimmerCount = 1;
-      if (laneSwimmerCount > 6) laneSwimmerCount = 6;
-      for (int i = 0; i < laneSwimmerCount; i++) {
-        Swimmer* s = &swimmers[lane][i];
-        Serial.print("  Swimmer ");
-        Serial.print(i);
-        Serial.print(": ");
-        if (s->isResting) {
-          Serial.print("RESTING (");
-          Serial.print((currentTime - s->restStartTime) / 1000.0);
-          Serial.print("s)");
-        } else {
-          Serial.print("Swimming - R");
-          Serial.print(s->currentRound);
-          Serial.print("/");
-          Serial.print(swimSetSettings.numRounds);
-          Serial.print(" L");
-          Serial.print(s->currentLap);
-          Serial.print("/");
-          Serial.print(s->lapsPerRound);
-
-          // Calculate distance in current lap (1-based lap calculation)
-          int currentLapNum = (int)ceil(s->totalDistance / globalConfigSettings.poolLength);
-          float distanceInCurrentLap = s->totalDistance - ((currentLapNum - 1) * globalConfigSettings.poolLength);
-
-          Serial.print(" Dist:");
-          Serial.print(distanceInCurrentLap, 1);
-          Serial.print(globalConfigSettings.poolUnitsYards ? "yd" : "m");
-          Serial.print(" Pos:");
-          Serial.print(s->position);
-        }
-        Serial.println();
-      }
+      isSomethingRunning = true;
+      break;
     }
   }
-  Serial.println("===================================\n");
+  if (isSomethingRunning) {
+    Serial.println("\n========== STATUS UPDATE ==========");
+    for (int lane = 0; lane < globalConfigSettings.numLanes; lane++) {
+      if (globalConfigSettings.laneRunning[lane]) {
+        Serial.print("Lane ");
+        Serial.print(lane);
+        Serial.println(":");
+        int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[lane];
+        if (laneSwimmerCount < 1) laneSwimmerCount = 1;
+        if (laneSwimmerCount > 6) laneSwimmerCount = 6;
+        for (int i = 0; i < laneSwimmerCount; i++) {
+          Swimmer* s = &swimmers[lane][i];
+          Serial.print("  Swimmer ");
+          Serial.print(i);
+          Serial.print(": ");
+          if (s->isResting) {
+            Serial.print("RESTING (");
+            Serial.print((currentTime - s->restStartTime) / 1000.0);
+            Serial.print("s)");
+          } else {
+            Serial.print("Swimming - R");
+            Serial.print(s->currentRound);
+            Serial.print("/");
+            Serial.print(swimSetSettings.numRounds);
+            Serial.print(" L");
+            Serial.print(s->currentLap);
+            Serial.print("/");
+            Serial.print(s->lapsPerRound);
+
+            // Calculate distance in current lap (1-based lap calculation)
+            int currentLapNum = (int)ceil(s->totalDistance / globalConfigSettings.poolLength);
+            float distanceInCurrentLap = s->totalDistance - ((currentLapNum - 1) * globalConfigSettings.poolLength);
+
+            Serial.print(" Dist:");
+            Serial.print(distanceInCurrentLap, 1);
+            Serial.print(globalConfigSettings.poolUnitsYards ? "yd" : "m");
+            Serial.print(" Pos:");
+            Serial.print(s->position);
+          }
+          Serial.println();
+        }
+      }
+    }
+    Serial.println("===================================\n");
+  }
 }
 
 void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
