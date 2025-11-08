@@ -391,6 +391,7 @@ void applySwimSetToSettings(const SwimSet &s) {
     swimmers[currentLane][i].currentLap = 1;
     swimmers[currentLane][i].lapsPerRound = ceil(swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
   swimmers[currentLane][i].isResting = true;
+  swimmers[currentLane][i].finished = false;
   // Start rest timer now so swimmerInterval-based stagger will be honored
   swimmers[currentLane][i].restStartTime = millis();
   // Total distance should start at 0 for the new set
