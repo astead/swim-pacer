@@ -1858,8 +1858,8 @@ void drawDelayIndicators(int laneIndex) {
       // second after 2*swimmerInterval, etc.
       targetRestDuration = (unsigned long)((i + 1) * (unsigned long)swimSetSettings.swimmerIntervalSeconds * 1000);
     } else {
-      // Subsequent rounds: use rest time + swimmer interval offset
-      targetRestDuration = (unsigned long)(swimSetSettings.restTimeSeconds * 1000) + (unsigned long)(i * swimSetSettings.swimmerIntervalSeconds * 1000);
+      // Subsequent rounds: use rest time
+      targetRestDuration = (unsigned long)(swimSetSettings.restTimeSeconds * 1000);
     }
 
     unsigned long swimmerStartTime = swimmer->restStartTime + targetRestDuration;
