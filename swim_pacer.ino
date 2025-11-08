@@ -1845,7 +1845,7 @@ void drawDelayIndicators(int laneIndex) {
     Swimmer* swimmer = &swimmers[laneIndex][i];
 
     // Only consider swimmers who are resting
-    if (!swimmer->isResting) {
+    if (!swimmer->isResting || swimmer->finished) {
       continue;
     }
 
