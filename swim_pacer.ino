@@ -2139,6 +2139,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           }
           // Mark swimmer as finished so we stop further updates
           swimmer->finished = true;
+          swimmer->isResting = true;
+          swimmer->restStartTime = currentTime;
         }
 
         // Place LED at the wall based on direction
