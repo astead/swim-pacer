@@ -258,6 +258,25 @@ bool dequeueSwimSet(SwimSet &out) {
   return true;
 }
 
+// Peek at the next swim set in queue without removing it
+bool peekSwimSet(SwimSet &out, int lane) {
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
+  if (swimSetQueueCount[lane] == 0) return false;
+  out = swimSetQueue[lane][swimSetQueueHead[lane]];
+  return true;
+}
+
+// Get a swim set by index in the queue (0 = first set in queue)
+bool getSwimSetByIndex(SwimSet &out, int lane, int index) {
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
+  if (index < 0 || index >= swimSetQueueCount[lane]) return false;
+
+  // Calculate the actual queue position accounting for circular buffer
+  int actualIndex = (swimSetQueueHead[lane] + index) % SWIMSET_QUEUE_MAX;
+  out = swimSetQueue[lane][actualIndex];
+  return true;
+}
+
 // Minimal JSON extractor helpers (no ArduinoJson dependency)
 float extractJsonFloat(const String &json, const char *key, float fallback) {
   String keyStr = String("\"") + key + String("\"");
@@ -320,6 +339,14 @@ struct Swimmer {
   float distanceTraveled;      // Distance traveled in current underwater phase
   unsigned long hideTimerStart;   // When hide timer started (after surface distance completed)
   bool finished;               // Has swimmer completed all rounds
+
+  // Per-swimmer cached swim set settings (for independent progression through queue)
+  int cachedNumRounds;         // Number of rounds for this swimmer's active swim set
+  int cachedLapsPerRound;      // Number of laps per round (calculated from distance)
+  float cachedSpeedMPS;        // Speed in meters per second
+  int cachedRestSeconds;       // Rest duration in seconds
+  uint32_t activeSwimSetId;    // ID of the active swim set this swimmer is executing
+  int queueIndex;              // Index in the lane's queue that this swimmer is currently executing (0-based)
 };
 
 Swimmer swimmers[4][6]; // Support up to 6 swimmers per lane, for up to 4 lanes
@@ -407,6 +434,14 @@ void applySwimSetToSettings(const SwimSet &s) {
     // Initialize debug tracking
     swimmers[currentLane][i].debugRestingPrinted = false;
     swimmers[currentLane][i].debugSwimmingPrinted = false;
+
+    // Cache swim set settings for this swimmer (enables independent progression through queue)
+    swimmers[currentLane][i].cachedNumRounds = s.rounds;
+    swimmers[currentLane][i].cachedLapsPerRound = ceil(s.length / globalConfigSettings.poolLength);
+    swimmers[currentLane][i].cachedSpeedMPS = speedMPS;
+    swimmers[currentLane][i].cachedRestSeconds = s.restSeconds;
+    swimmers[currentLane][i].activeSwimSetId = s.id;
+    swimmers[currentLane][i].queueIndex = 0;  // Starting with first set in queue
   }
 
   // Debug: dump swimmer state for current lane after initialization (first 6 swimmers)
@@ -1944,8 +1979,16 @@ void initializeSwimmers() {
       swimmers[lane][i].debugRestingPrinted = false;
       swimmers[lane][i].debugSwimmingPrinted = false;
 
-  // Initialize finished flag
-  swimmers[lane][i].finished = false;
+      // Initialize finished flag
+      swimmers[lane][i].finished = false;
+
+      // Initialize cached swim set settings (will be populated when swim set starts)
+      swimmers[lane][i].cachedNumRounds = 0;
+      swimmers[lane][i].cachedLapsPerRound = 0;
+      swimmers[lane][i].cachedSpeedMPS = 0.0;
+      swimmers[lane][i].cachedRestSeconds = 0;
+      swimmers[lane][i].activeSwimSetId = 0;
+      swimmers[lane][i].queueIndex = 0;  // Start at first set in queue
 
       // Set colors based on mode
       updateSwimmerColors();
@@ -1990,7 +2033,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       targetRestDuration = (unsigned long)((swimmerIndex + 1) * (unsigned long)swimSetSettings.swimmerIntervalSeconds * 1000);
     } else {
       // Subsequent rounds: include rest period plus swimmer interval offset
-      targetRestDuration = (unsigned long)(swimSetSettings.restTimeSeconds * 1000) + (unsigned long)(swimmerIndex * swimSetSettings.swimmerIntervalSeconds * 1000);
+      targetRestDuration = (unsigned long)(swimmer->cachedRestSeconds * 1000) + (unsigned long)(swimmerIndex * swimSetSettings.swimmerIntervalSeconds * 1000);
     }
 
     // Print debug info only once when entering rest state
@@ -2078,10 +2121,10 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     float speedInPoolUnits;
     if (globalConfigSettings.poolUnitsYards) {
       // Convert meters/sec to yards/sec (1 yard = 0.9144 m)
-      speedInPoolUnits = swimSetSettings.speedMetersPerSecond / 0.9144;
+      speedInPoolUnits = swimmer->cachedSpeedMPS / 0.9144;
     } else {
       // Already meters/sec
-      speedInPoolUnits = swimSetSettings.speedMetersPerSecond;
+      speedInPoolUnits = swimmer->cachedSpeedMPS;
     }
     float distanceTraveled = speedInPoolUnits * deltaSeconds;
 
@@ -2132,21 +2175,84 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         swimmer->totalDistance = 0.0;
 
         // Only rest if we haven't completed all rounds yet
-        if (swimmer->currentRound < swimSetSettings.numRounds) {
+        if (swimmer->currentRound < swimmer->cachedNumRounds) {
           swimmer->currentRound++;
           swimmer->isResting = true;
           swimmer->restStartTime = currentTime;
         } else {
+          // All rounds complete for this swim set
           if (DEBUG_ENABLED) {
-            Serial.println("  *** ALL ROUNDS COMPLETE ***");
+            Serial.println("  *** ALL ROUNDS COMPLETE FOR CURRENT SET ***");
             Serial.print("    Swimmer ");
             Serial.print(swimmerIndex);
-            Serial.println(" finished!");
+            Serial.print(" finished swim set ID ");
+            Serial.print(swimmer->activeSwimSetId);
+            Serial.print(" (queue index ");
+            Serial.print(swimmer->queueIndex);
+            Serial.println(")");
           }
-          // Mark swimmer as finished so we stop further updates
-          swimmer->finished = true;
-          swimmer->isResting = true;
-          swimmer->restStartTime = currentTime;
+
+          // Try to get the next swim set in queue (queueIndex + 1)
+          SwimSet nextSet;
+          if (getSwimSetByIndex(nextSet, laneIndex, swimmer->queueIndex + 1)) {
+            if (DEBUG_ENABLED) {
+              Serial.println("  *** AUTO-ADVANCING TO NEXT SWIM SET ***");
+              Serial.print("    Next set ID: ");
+              Serial.print(nextSet.id);
+              Serial.print(", queue index: ");
+              Serial.print(swimmer->queueIndex + 1);
+              Serial.print(", length: ");
+              Serial.print(nextSet.length);
+              Serial.print(", pace: ");
+              Serial.print(nextSet.paceSeconds);
+              Serial.print(", rounds: ");
+              Serial.print(nextSet.rounds);
+              Serial.print(", rest: ");
+              Serial.println(nextSet.restSeconds);
+            }
+
+            // Calculate new settings for the next set
+            float lengthMeters = convertPoolToStripUnits((float)nextSet.length);
+            float speedMPS = (nextSet.paceSeconds > 0) ? (lengthMeters / nextSet.paceSeconds) : 0.0;
+            int lapsPerRound = ceil(nextSet.length / globalConfigSettings.poolLength);
+
+            // Cache the new swim set settings in this swimmer
+            swimmer->cachedNumRounds = nextSet.rounds;
+            swimmer->cachedLapsPerRound = lapsPerRound;
+            swimmer->cachedSpeedMPS = speedMPS;
+            swimmer->cachedRestSeconds = nextSet.restSeconds;
+            swimmer->activeSwimSetId = nextSet.id;
+            swimmer->queueIndex++;  // Move to next index in queue
+
+            // Reset swimmer state for new set
+            swimmer->currentRound = 1;
+            swimmer->currentLap = 1;
+            swimmer->lapsPerRound = lapsPerRound;
+            swimmer->isResting = true;
+            swimmer->restStartTime = currentTime;
+            swimmer->totalDistance = 0.0;
+            swimmer->finished = false;
+
+            if (DEBUG_ENABLED) {
+              Serial.print("    Swimmer ");
+              Serial.print(swimmerIndex);
+              Serial.println(" starting rest before next set");
+            }
+          } else {
+            // No more sets in queue - swimmer is done
+            if (DEBUG_ENABLED) {
+              Serial.println("  *** NO MORE SETS IN QUEUE ***");
+              Serial.print("    Swimmer ");
+              Serial.print(swimmerIndex);
+              Serial.print(" completed all ");
+              Serial.print(swimmer->queueIndex + 1);
+              Serial.println(" sets!");
+            }
+            // Mark swimmer as finished so we stop further updates
+            swimmer->finished = true;
+            swimmer->isResting = true;
+            swimmer->restStartTime = currentTime;
+          }
         }
 
         // Place LED at the wall based on direction
