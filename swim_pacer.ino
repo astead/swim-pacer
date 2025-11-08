@@ -410,23 +410,23 @@ void applySwimSetToSettings(const SwimSet &s) {
   for (int i = 0; i < 6; i++) {
     //swimmers[currentLane][i].position = 0; This should continue from previous position
     //swimmers[currentLane][i].direction = 1; This should continue from previous direction
-  swimmers[currentLane][i].hasStarted = false;  // Initialize as not started
-  swimmers[currentLane][i].lastUpdate = millis();
+    swimmers[currentLane][i].hasStarted = false;  // Initialize as not started
+    swimmers[currentLane][i].lastUpdate = millis();
 
     // Initialize round and rest tracking
     swimmers[currentLane][i].currentRound = 1;
     swimmers[currentLane][i].currentLap = 1;
     swimmers[currentLane][i].lapsPerRound = ceil(swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
-  swimmers[currentLane][i].isResting = true;
-  swimmers[currentLane][i].finished = false;
-  // Start rest timer now so swimmerInterval-based stagger will be honored
-  swimmers[currentLane][i].restStartTime = millis();
-  // Total distance should start at 0 for the new set
-  swimmers[currentLane][i].totalDistance = 0.0;
+    swimmers[currentLane][i].isResting = true;
+    swimmers[currentLane][i].finished = false;
+    // Start rest timer now so swimmerInterval-based stagger will be honored
+    swimmers[currentLane][i].restStartTime = millis();
+    // Total distance should start at 0 for the new set
+    swimmers[currentLane][i].totalDistance = 0.0;
     //swimmers[currentLane][i].lapDirection = 1;  This should continue from previous direction
 
-  // Initialize underwater tracking
-  swimmers[currentLane][i].underwaterActive = globalConfigSettings.underwatersEnabled;
+    // Initialize underwater tracking
+    swimmers[currentLane][i].underwaterActive = globalConfigSettings.underwatersEnabled;
     swimmers[currentLane][i].inSurfacePhase = false;
     swimmers[currentLane][i].distanceTraveled = 0.0;
     swimmers[currentLane][i].hideTimerStart = 0;
