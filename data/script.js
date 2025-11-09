@@ -1781,10 +1781,99 @@ function deleteSwimSet(index) {
 
     if (index < 0 || index >= swimSetQueues[currentLane].length) return;
 
-    if (confirm('Delete this swim set from Lane ' + (currentLane + 1) + '?')) {
-        swimSetQueues[currentLane].splice(index, 1);
+    if (!confirm('Delete this swim set from Lane ' + (currentLane + 1) + '?')) return;
+
+    // Mark locally as pending delete rather than immediately removing.
+    // This prevents a later reconcile from re-adding it if the server delete fails.
+    const item = swimSetQueues[currentLane][index];
+    item.deletedPending = true;
+    item.deleteRequestedAt = Date.now();
+
+    // Update UI to reflect pending deletion (disable buttons / show status)
+    updateQueueDisplay();
+    updatePacerButtons();
+
+    // Attempt server delete (best-effort). On success remove; on failure keep pending and retry later.
+    attemptDeleteOnServer(currentLane, item).catch(err => {
+        console.debug('Initial delete request failed, will retry later', err && err.message ? err.message : err);
+    });
+}
+
+// Try to delete an item on the server; resolves true when deleted on server.
+async function attemptDeleteOnServer(lane, item) {
+    if (isStandaloneMode) {
+        // In standalone mode just remove locally after short delay
+        setTimeout(() => {
+            try {
+                const idx = swimSetQueues[lane].indexOf(item);
+                if (idx !== -1) {
+                    swimSetQueues[lane].splice(idx, 1);
+                    updateQueueDisplay();
+                    updatePacerButtons();
+                }
+            } catch (e) {}
+        }, 50);
+        return true;
+    }
+
+    if (item.id && item.id !== 0) {
+        console.log('Attempting delete on server for item with id:', item.id);
+    } else if (item.clientTempId) {
+        console.log('Attempting delete on server for item with clientTempId:', item.clientTempId);
+    } else {
+        console.log('No id or clientTempId to match swim set for deletion on server, removing locally only');
+        // nothing to match on, remove locally
+        const idx = swimSetQueues[lane].indexOf(item);
+        if (idx !== -1) swimSetQueues[lane].splice(idx, 1);
         updateQueueDisplay();
         updatePacerButtons();
+        return false;
+    }
+
+    try {
+        // Build JSON body
+        const body = {};
+        if (item.id && item.id !== 0) body.matchId = Number(item.id);
+        else if (item.clientTempId) body.matchClientTempId = String(item.clientTempId);
+        body.lane = lane;
+        console.log("calling /deleteSwimSet with body:", body);
+        const resp = await fetch('/deleteSwimSet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (resp.ok) {
+            // Remove locally on confirmed deletion
+            const idx = swimSetQueues[lane].indexOf(item);
+            if (idx !== -1) swimSetQueues[lane].splice(idx, 1);
+            updateQueueDisplay();
+            updatePacerButtons();
+            return true;
+        } else {
+            // leave item.pending so retry logic can pick it up
+            return false;
+        }
+    } catch (e) {
+        // Network failed - keep pending
+        return false;
+    }
+}
+
+// Periodic retry for pending deletes. Call from startup and reconcile paths.
+async function retryPendingDeletes() {
+    if (isStandaloneMode) return;
+    for (let lane = 0; lane < swimSetQueues.length; lane++) {
+        for (let i = swimSetQueues[lane].length - 1; i >= 0; i--) {
+            const it = swimSetQueues[lane][i];
+            if (it && it.deletedPending) {
+                // attempt delete, but don't block UI
+                try {
+                    await attemptDeleteOnServer(lane, it);
+                } catch (e) {
+                    // ignore, will retry next time
+                }
+            }
+        }
     }
 }
 
@@ -1852,8 +1941,8 @@ function handleDrop(evt, targetIndex) {
     console.log('handleDrop calling /reorderSwimQueue');
     fetch('/reorderSwimQueue', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `lane=${currentLane}&order=${encodeURIComponent(order)}`
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lane: currentLane, order })
     }).then(resp => {
         if (!resp.ok) throw new Error('reorder failed');
         // Optionally reconcile response in the future
@@ -2226,20 +2315,19 @@ async function reconcileQueueWithDevice() {
         // Iterate local queue and mark swim sets as synced when their clientTempId or signature appears
         for (let i = 0; i < swimSetQueues[lane].length; i++) {
             const local = swimSetQueues[lane][i];
-            // Only reconcile swim-sets (not action/rest items)
+            // Skip pending deletions so we don't re-sync deleted items
+            if (local.deletedPending) continue;
             if (local.type === 'rest' || local.type === 'action') continue;
 
-            // Prefer direct clientTempId match when available
             if (local.clientTempId) {
                 const d = deviceByClientTemp.get(String(local.clientTempId));
                 if (d) {
                     local.synced = true;
                     if (d.id !== undefined) local.id = d.id;
-                    continue; // matched
+                    continue;
                 }
             }
 
-            // Fallback to signature heuristic
             const sig = `${Math.round(local.settings.swimTime)}|${local.settings.restTime}|${local.settings.numRounds}|${Number(local.settings.swimDistance).toFixed(0)}`;
             const idx = deviceSignatures.indexOf(sig);
             if (idx !== -1) {
@@ -2248,9 +2336,13 @@ async function reconcileQueueWithDevice() {
                 if (d.id !== undefined) local.id = d.id;
             }
         }
+
         updateQueueDisplay();
     } catch (e) {
         // ignore network errors
+    } finally {
+        // Kick off retry of pending deletes (best-effort)
+        retryPendingDeletes().catch(()=>{});
     }
 }
 

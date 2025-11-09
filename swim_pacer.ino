@@ -833,6 +833,83 @@ void setupWebServer() {
     }
   });
 
+  // Delete a swim set by device id or clientTempId for a lane.
+  // Accepts form-encoded or JSON: matchId=<n> or matchClientTempId=<hex>, and lane=<n>
+  server.on("/deleteSwimSet", HTTP_POST, []() {
+    Serial.println("/deleteSwimSet ENTER");
+    String body = server.arg("plain");
+    Serial.println(" Received raw body: " + body);
+
+    // Expect application/json body
+    if (body.length() == 0) {
+      server.send(400, "application/json", "{\"error\":\"empty body\"}");
+      return;
+    }
+    long matchId = extractJsonLong(body, "matchId", 0);
+    String matchClientTemp = extractJsonString(body, "matchClientTempId", "");
+    int lane = (int)extractJsonLong(body, "lane", currentLane);
+
+    // Validate lane...
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      Serial.println(" Invalid lane");
+      server.send(400, "application/json", "{\"ok\":false, \"error\":\"Invalid lane\"}");
+      return;
+    }
+    Serial.println("  lane=" + String(lane));
+    Serial.print("  matchId="); Serial.println(matchId);
+    Serial.print("  matchClientTempId="); Serial.println(matchClientTemp);
+
+    // Build vector of existing entries
+    std::vector<SwimSet> existing;
+    for (int i = 0; i < swimSetQueueCount[lane]; i++) {
+      int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
+      existing.push_back(swimSetQueue[lane][idx]);
+    }
+
+    // Try match by numeric id
+    bool removed = false;
+    if (matchId != 0) {
+      for (size_t i = 0; i < existing.size(); i++) {
+        if (existing[i].id == (uint32_t)matchId) {
+          Serial.println(" deleteSwimSet: matched by id=" + String(existing[i].id));
+          existing.erase(existing.begin() + i);
+          removed = true;
+          break;
+        }
+      }
+    }
+
+    // Try match by clientTempId (hex or decimal)
+    if (!removed && matchClientTemp.length() > 0) {
+      unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
+      if (parsed != 0) {
+        for (size_t i = 0; i < existing.size(); i++) {
+          if (existing[i].clientTempId == parsed) {
+            Serial.println(" deleteSwimSet: matched by clientTempId=" + String((unsigned long long)existing[i].clientTempId));
+            existing.erase(existing.begin() + i);
+            removed = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // Write remaining entries back into circular buffer
+    swimSetQueueHead[lane] = 0;
+    swimSetQueueTail[lane] = 0;
+    swimSetQueueCount[lane] = 0;
+    for (size_t i = 0; i < existing.size() && i < SWIMSET_QUEUE_MAX; i++) {
+      swimSetQueue[lane][swimSetQueueTail[lane]] = existing[i];
+      swimSetQueueTail[lane] = (swimSetQueueTail[lane] + 1) % SWIMSET_QUEUE_MAX;
+      swimSetQueueCount[lane]++;
+    }
+
+    // Perform removal logic (match by id or clientTempId) and respond with JSON
+    if (removed) server.send(200, "application/json", "{\"ok\":true}");
+    else server.send(404, "application/json", "{\"ok\":false, \"error\":\"not found\"}");
+  });
+
+
   // Reset swimmers for a given lane to starting wall (position=0, direction=1)
   server.on("/resetLane", HTTP_POST, []() {
     String body = server.arg("plain");
