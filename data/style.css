@@ -235,18 +235,6 @@ button.secondary:hover {
     font-weight: 600;
 }
 
-/* Small button variant used in special options */
-.small-button {
-    padding: 6px 8px;
-    font-size: 13px;
-    border-radius: 6px;
-    border: 1px solid transparent;
-    background: #007bff;
-    color: white;
-    cursor: pointer;
-}
-.small-button:hover { background: #0056b3; }
-
 /* Compact button: visually similar to primary buttons but smaller than .big-button */
 .compact-button {
     padding: 6px 8px; /* compact padding */
@@ -280,15 +268,6 @@ button.secondary:hover {
 }
 .create-tabs { align-items: center; }
 .create-tabs .tab.small:focus { outline: none; box-shadow: none; }
-
-/* Equal-width buttons for special action row */
-.special-action-row { display:flex; gap:8px; }
-.special-action-row .small-button { flex: 1; }
-
-/* breadcrumb */
-/* breadcrumb removed - no styles needed */
-
-
 
 /* Toggle Switch Styles */
 .toggle-container {
