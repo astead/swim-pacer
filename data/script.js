@@ -689,7 +689,7 @@ function setNumSwimmersUI(value) {
     const v = parseInt(value);
     const el = document.getElementById('numSwimmers');
     if (el) el.value = v;
-    // Update per-lane value and mirror to currentSettings for backwards compatibility
+    // Update per-lane value
     const lane = currentSettings.currentLane || 0;
     currentSettings.numSwimmersPerLane[lane] = v;
 }
@@ -1222,11 +1222,38 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
 
     // Ensure currentSettings reflect inputs
     // TODO: Is this needed? Shouldn't updates to any of these already update currentSettings?
-    currentSettings.numSwimmersPerLane[currentLane] = parseInt(document.getElementById('numSwimmers').value) || currentSettings.numSwimmersPerLane[currentLane];
-    currentSettings.swimmerInterval = parseInt(document.getElementById('swimmerInterval').value) || currentSettings.swimmerInterval;
-    currentSettings.numRounds = parseInt(document.getElementById('numRounds').value) || currentSettings.numRounds;
+    // Let's check if any of these differ from currentSettings before overwriting?
+    // Maybe this is used when editing an existing set?
+    let settingsMatched = true;
+    const currentLane = currentSettings.currentLane;
+    const newNumSwimmers = parseInt(document.getElementById('numSwimmers').value);
+    if (newNumSwimmers !== currentSettings.numSwimmersPerLane[currentLane]) {
+        console.log(`BUG?: numSwimmers for lane ${currentLane} was not updated when creating swim set (variable: ${currentSettings.numSwimmersPerLane[currentLane]} !== HTML:${newNumSwimmers}).`);
+        currentSettings.numSwimmersPerLane[currentLane] = newNumSwimmers;
+        settingsMatched = false;
+    }
+    const newSwimmerInterval = parseInt(document.getElementById('swimmerInterval').value);
+    if (newSwimmerInterval !== currentSettings.swimmerInterval) {
+        console.log(`BUG?: swimmerInterval was not updated when creating swim set (variable: ${currentSettings.swimmerInterval} !== HTML:${newSwimmerInterval}).`);
+        currentSettings.swimmerInterval = newSwimmerInterval;
+        settingsMatched = false;
+    }
+    const newNumRounds = parseInt(document.getElementById('numRounds').value);
+    if (newNumRounds !== currentSettings.numRounds) {
+        console.log(`BUG?: numRounds was not updated when creating swim set (variable: ${currentSettings.numRounds} !== HTML:${newNumRounds}).`);
+        currentSettings.numRounds = newNumRounds;
+        settingsMatched = false;
+    }
     currentSettings.swimTime = parseTimeInput(document.getElementById('swimTime').value);
-    currentSettings.restTime = parseInt(document.getElementById('restTime').value) || currentSettings.restTime;
+    const newRestTime = parseInt(document.getElementById('restTime').value);
+    if (newRestTime !== currentSettings.restTime) {
+        console.log(`BUG?: restTime was not updated when creating swim set (variable: ${currentSettings.restTime} !== HTML:${newRestTime}).`);
+        currentSettings.restTime = newRestTime;
+        settingsMatched = false;
+    }
+    if (settingsMatched) {
+        console.log('Current settings match UI inputs.');
+    }
 
     // If set is empty, create a fresh set using current inputs
     if (!currentSet || currentSet.length === 0) {
@@ -1260,6 +1287,8 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
             settings: { ...currentSettings, swimTime: currentSettings.swimTime },
             summary: generateSetSummary(newSet, currentSettings)
         };
+
+        console.log('New swim set created:', createdSwimSets[currentSettings.currentLane]);
     } else {
         console.log('Updating existing swimmer set from config');
         // Update existing set in-place
@@ -1313,6 +1342,7 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
             settings: { ...currentSettings, swimTime: currentSettings.swimTime },
             summary: generateSetSummary(currentSet, currentSettings)
         };
+        console.log('Existing swim set updated:', createdSwimSets[currentSettings.currentLane]);
     }
 
     // Refresh the swimmers UI if visible
@@ -1326,6 +1356,7 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
 
     // Record per-lane count in settings
     currentSettings.numSwimmersPerLane[lane] = deviceNumSwimmers;
+    console.log(`Migrated (from device) swimmer count for lane ${lane}: ${deviceNumSwimmers}`);
 
     // Resize swimmerSets[lane]
     let set = swimmerSets[lane] || [];
@@ -1369,6 +1400,7 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
 
     // If this is the currently selected lane, update UI controls
     if (currentSettings.currentLane === lane) {
+        console.log(`Updating UI controls for lane ${lane} after migrating swimmer count from device`);
         try {
             document.getElementById('numSwimmers').value = deviceNumSwimmers;
             setNumSwimmersUI(deviceNumSwimmers);
@@ -1612,12 +1644,19 @@ function editSwimSet(index) {
 }
 
 function loadSwimSetIntoConfig(swimSet) {
+    console.log('Loading swim set into config for editing:', swimSet);
     // Restore settings
     // Copy settings into currentSettings (shallow copy) so we can modify freely
     Object.assign(currentSettings, JSON.parse(JSON.stringify(swimSet.settings || {})));
 
     // Set current lane
     currentSettings.currentLane = swimSet.lane;
+    // Check if the lane differs from the current UI selection
+    if (currentSettings.currentLane !== getCurrentLaneFromUI()) {
+        console.log('loadSwimSetIntoConfig: Current lane differs from UI selection, updating UI to match loaded swim set lane');
+        // Update any UI elements that depend on current lane
+        updateLaneUI(currentSettings.currentLane);
+    }
 
     // Restore swimmer set
     // Use a deep copy to avoid mutating the queued swimSet until the user saves
@@ -1835,8 +1874,15 @@ function stopQueue() {
 }
 
 function loadSwimSetForExecution(swimSet) {
+    console.log('Loading swim set for execution:', swimSet);
     // Set the current lane
     currentSettings.currentLane = swimSet.lane;
+    // Check if the lane differs from the current UI selection
+    if (currentSettings.currentLane !== getCurrentLaneFromUI()) {
+        console.log('loadSwimSetForExecution: Current lane differs from UI selection, updating UI to match loaded swim set lane');
+        // Update any UI elements that depend on current lane
+        updateLaneUI(currentSettings.currentLane);
+    }
 
     // Load settings
     Object.assign(currentSettings, swimSet.settings);
@@ -2396,6 +2442,7 @@ async function fetchDeviceSettingsAndApply() {
         if (dev.ledsPerMeter !== undefined) currentSettings.ledsPerMeter = parseInt(dev.ledsPerMeter);
         if (dev.numLanes !== undefined) currentSettings.numLanes = parseInt(dev.numLanes);
         if (dev.numSwimmersPerLane !== undefined && Array.isArray(dev.numSwimmersPerLane)) {
+
             // Prefer per-lane counts
             try {
                 for (let li = 0; li < dev.numSwimmersPerLane.length && li < 4; li++) {
