@@ -2154,7 +2154,9 @@ function updateAllUIFromSettings() {
 
     // Update lane selector
     updateLaneSelector();
-}// Initialize queue display on page load
+}
+
+// Initialize queue display on page load
 function initializeQueueSystem() {
     // Ensure queue display is updated on initialization
     if (document.getElementById('queueList')) {
