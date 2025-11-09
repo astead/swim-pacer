@@ -173,12 +173,16 @@ function updateCalculations(triggerSave = true) {
 function updateNumLanes() {
     const numLanes = parseInt(document.getElementById('numLanes').value);
     currentSettings.numLanes = numLanes;
+    console.log('updateNumLanes: calling updateLaneSelector after setting numLanes to what was selected in UI: ' + numLanes);
     updateLaneSelector();
     updateLaneNamesSection();
     sendNumLanes(numLanes);
 }
 
 function updateLaneSelector() {
+    console.log('updateLaneSelector() called - currentSettings.numLanes=', currentSettings.numLanes,
+                'currentSettings.currentLane=', currentSettings.currentLane,
+                'DOM currentLane element exists=', !!document.getElementById('currentLane'));
     const laneSelector = document.getElementById('laneSelector');
     const currentLaneSelect = document.getElementById('currentLane');
 
@@ -188,16 +192,20 @@ function updateLaneSelector() {
         laneSelector.style.display = 'block';
 
         // Populate lane options
-        currentLaneSelect.innerHTML = '';
-        for (let i = 0; i < currentSettings.numLanes; i++) {
-            const option = document.createElement('option');
-            option.value = i;
-            option.textContent = currentSettings.laneNames[i];
-            currentLaneSelect.appendChild(option);
-        }
+        if (currentLaneSelect) {
+            currentLaneSelect.innerHTML = '';
+            for (let i = 0; i < currentSettings.numLanes; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = currentSettings.laneNames[i];
+                currentLaneSelect.appendChild(option);
+            }
 
-        // Set current lane
-        currentLaneSelect.value = currentSettings.currentLane;
+            // Set current lane
+            currentLaneSelect.value = currentSettings.currentLane;
+        } else {
+            console.log('updateLaneSelector: currentLane select element not found in DOM');
+        }
     } else {
         console.log('Hiding lane selector for single lane configuration');
         laneSelector.style.display = 'none';
@@ -235,6 +243,7 @@ function updateLaneNamesSection() {
         input.style.cssText = 'flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;';
         input.onchange = function() {
             currentSettings.laneNames[i] = this.value;
+            console.log('updateLaneNamesSection: calling updateLaneSelector after setting laneNames[' + i + '] to: ' + this.value);
             updateLaneSelector(); // Refresh the dropdown on main page
             // Lane names are client-only UI labels; no server update necessary
         };
@@ -386,9 +395,9 @@ function resetLanePositions() {
         if (!resp.ok) throw new Error('reset failed');
         // On success, reconcile queue and refresh status/UI
         // Ask device for updated queue/state
-        setTimeout(() => {
+        setTimeout(async () => {
             reconcileQueueWithDevice();
-            fetchDeviceSettingsAndApply();
+            await fetchDeviceSettingsAndApply();
             updateStatus();
             updateQueueDisplay();
         }, 200);
@@ -1913,6 +1922,7 @@ function loadSwimSetForExecution(swimSet) {
     setCurrentSwimmerSet(swimSet.swimmers);
 
     // Update lane selector to reflect current lane
+    console.log('loadSwimSetForExecution: calling updateLaneSelector after setting current lane to:', currentSettings.currentLane);
     updateLaneSelector();
 }
 
@@ -2161,6 +2171,7 @@ function updateAllUIFromSettings() {
     updateVisualSelection();
 
     // Update lane selector
+    console.log('updateAllUIFromSettings: calling updateLaneSelector with current lane:', currentSettings.currentLane);
     updateLaneSelector();
 }
 
@@ -2289,10 +2300,37 @@ function updateSwimmerSetDisplay() {
 }
 
 // Initialize queue system after DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize all DOM-dependent functions
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('******** DOM fully loaded **********');
+
+    // Device-first: fetch device settings and apply them before doing queue reconciliation or UI init
+    try {
+        await fetchDeviceSettingsAndApply();
+        console.log('Device settings applied before UI init');
+    } catch (e) {
+        console.warn('fetchDeviceSettingsAndApply failed, proceeding with local defaults', e);
+    }
+
+    // Reconcile queue once now (using device-applied settings) and start periodic reconciliation
+    if (!isStandaloneMode) {
+        try {
+            await reconcileQueueWithDevice();
+            console.log('Initial queue reconciliation complete');
+        } catch (e) {
+            console.warn('Initial reconcileQueueWithDevice failed', e);
+        }
+        reconcileIntervalId = setInterval(reconcileQueueWithDevice, 10000);
+    }
+
+    // Some browsers restore form control values after load (preserve user inputs).
+    // To ensure labels stay in sync with actual slider values (which may be restored
+    // by the browser after scripts run), schedule a short re-sync.
+    setTimeout(syncRangeLabels, 60);
+
+    // Initialize rest of the UI now that device values are applied and queue reconciled
     updateCalculations(false);
     initializeBrightnessDisplay();
+    console.log('DOM fully loaded: calling updateLaneSelector with current lane:', currentSettings.currentLane);
     updateLaneSelector();
     updateLaneNamesSection();
     updateStatus();
@@ -2300,16 +2338,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Ensure visual selection is applied after DOM is ready
     updateVisualSelection();
     initializeQueueSystem();
-    // Attempt to fetch device settings from ESP32 and merge into UI defaults
-    fetchDeviceSettingsAndApply();
-    // Reconcile with device queue shortly after load
-    setTimeout(reconcileQueueWithDevice, 300);
-    // Start periodic reconciliation every 10s
-    reconcileIntervalId = setInterval(reconcileQueueWithDevice, 10000);
-    // Some browsers restore form control values after load (preserve user inputs).
-    // To ensure labels stay in sync with actual slider values (which may be restored
-    // by the browser after scripts run), schedule a short re-sync.
-    setTimeout(syncRangeLabels, 60);
+
     // Initialize the create/edit tabs and restore last-used tab
     try {
         const last = localStorage.getItem('createTab') || 'swimmers';
@@ -2449,6 +2478,13 @@ async function fetchDeviceSettingsAndApply() {
         const res = await fetch('/globalConfigSettings');
         if (!res.ok) return;
         const dev = await res.json();
+        console.log('fetchDeviceSettingsAndApply: device payload:', dev);
+
+        if (dev.numLanes !== undefined) {
+            console.log('Device reports numLanes=', dev.numLanes, ' (type:', typeof dev.numLanes, ')');
+        } else {
+            console.log('Device did not report numLanes');
+        }
         console.log("Received globalConfigSettings, underwaters:" + dev.underwatersEnabled);
         console.log('DEBUG: device reports numSwimmersPerLane =', dev.numSwimmersPerLane);
 
