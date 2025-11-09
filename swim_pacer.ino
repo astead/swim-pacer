@@ -821,8 +821,8 @@ void setupWebServer() {
       swimmers[lane][i].hideTimerStart = 0;
     }
 
-  // Update lane running state: do not alter laneRunning flag here - caller controls starting/stopping
-  // No 'runningSets' or 'runningSettings' arrays exist in this firmware build; nothing to clear.
+    // Update lane running state: do not alter laneRunning flag here - caller controls starting/stopping
+    // No 'runningSets' or 'runningSettings' arrays exist in this firmware build; nothing to clear.
 
     server.send(200, "text/plain", "OK");
   });
