@@ -96,8 +96,10 @@ struct GlobalConfigSettings {
 GlobalConfigSettings globalConfigSettings;
 
 // ========= Swim Set Settings ==========
+// This is used only to store default values
 struct SwimSetSettings {
   float speedMetersPerSecond = 1.693;        // Speed in meters per second (~5.56 ft/s)
+  int swimTimeSeconds = 30;                  // Swim time for laps in seconds
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
   int swimSetDistance = 50;                  // Distance for pace calculation (in pool's native units)
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
@@ -110,10 +112,11 @@ SwimSetSettings swimSetSettings;
 enum SwimSetType { SWIMSET_TYPE = 0, REST_TYPE = 1, LOOP_TYPE = 2, MOVE_TYPE = 3 };
 
 struct SwimSet {
-  uint16_t length;         // distance in pool's native units (no units attached)
-  float paceSeconds;       // seconds to swim the 'length'
   uint8_t rounds;          // number of rounds
+  uint16_t swimDistance;   // distance in pool's native units (no units attached)
+  uint16_t swimSeconds;    // seconds to swim the 'length'
   uint16_t restSeconds;    // rest time between rounds
+  uint16_t swimmerInterval; // interval between swimmers (seconds)
   uint8_t type;            // SwimSetType
   uint8_t repeat;          // repeat metadata for LOOP_TYPE
   uint32_t id;             // device-assigned canonical id (0 = not assigned)
@@ -149,7 +152,7 @@ uint32_t nextActionId = 0;
 uint32_t nextSwimSetId = 0;
 
 // Forward declarations for functions used below
-float convertPoolToStripUnits(float distanceInPoolUnits);
+float convertPoolToMeters(float distanceInPoolUnits);
 void recalculateValues();
 void initializeSwimmers();
 void saveSwimSetSettings();
@@ -187,20 +190,29 @@ bool enqueueSwimSet(const SwimSet &s) {
   // the HTTP endpoint which passes the lane separately. Here use currentLane.
   int lane = currentLane;
   if (DEBUG_ENABLED) {
-    Serial.println("enqueueSwimSet(): received set for lane:");
-    Serial.print("  lane="); Serial.println(lane);
-    Serial.print("  length="); Serial.println(s.length);
+    Serial.print("enqueueSwimSet(): received set for lane:");
+    Serial.println(lane);
+    Serial.print("  rounds=");
+    Serial.println(s.rounds);
+    Serial.print("  swimDistance=");
+    Serial.println(s.swimDistance);
+    Serial.print("  swimTime=");
+    Serial.println(s.swimSeconds);
+    Serial.print("  restTime=");
+    Serial.println(s.restSeconds);
+    Serial.print("  swimmerInterval=");
+    Serial.println(s.swimmerInterval);
   }
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
   if (swimSetQueueCount[lane] >= SWIMSET_QUEUE_MAX) {
-    if (DEBUG_ENABLED) Serial.println("enqueueSwimSet(): lane queue full, rejecting set");
+    if (DEBUG_ENABLED) Serial.println("  queue full, rejecting set");
     return false;
   }
   swimSetQueue[lane][swimSetQueueTail[lane]] = s;
   swimSetQueueTail[lane] = (swimSetQueueTail[lane] + 1) % SWIMSET_QUEUE_MAX;
   swimSetQueueCount[lane]++;
   if (DEBUG_ENABLED) {
-    Serial.print("enqueueSwimSet(): lane queueCountAfter="); Serial.println(swimSetQueueCount[lane]);
+    Serial.print("  Queue Count After Insert="); Serial.println(swimSetQueueCount[lane]);
   }
   return true;
 }
@@ -361,16 +373,17 @@ CRGB swimmerColors[] = {
 
 // Apply the swim set to current swimSetSettings and start the set on current lane
 void applySwimSetToSettings(const SwimSet &s) {
-  // Compute speed (m/s) from length (in pool units) and paceSeconds
-  // convert length to meters using current pool units
-  float lengthMeters = convertPoolToStripUnits((float)s.length);
-  if (s.paceSeconds <= 0.0f) return; // avoid divide by zero
-  float speedMPS = lengthMeters / s.paceSeconds;
+  // Compute speed (m/s) from swimDistance (in pool units) and swimSeconds
+  // convert swimDistance to meters using current pool units
+  float swimDistanceMeters = convertPoolToMeters((float)s.swimDistance);
+  if (s.swimSeconds <= 0.0f) return; // avoid divide by zero
+  float speedMPS = swimDistanceMeters / s.swimSeconds;
 
   swimSetSettings.speedMetersPerSecond = speedMPS;
-  swimSetSettings.swimSetDistance = s.length;
+  swimSetSettings.swimSetDistance = s.swimDistance;
   swimSetSettings.numRounds = s.rounds;
   swimSetSettings.restTimeSeconds = s.restSeconds;
+  swimSetSettings.swimmerIntervalSeconds = s.swimmerInterval;
 
   needsRecalculation = true;
   recalculateValues();
@@ -378,12 +391,13 @@ void applySwimSetToSettings(const SwimSet &s) {
   // Debug: print swim set being applied
   if (DEBUG_ENABLED) {
     Serial.println("applySwimSetToSettings(): applying set:");
-    Serial.print("  length="); Serial.println(s.length);
-    Serial.print("  paceSeconds="); Serial.println(s.paceSeconds);
-    Serial.print("  rounds="); Serial.println(s.rounds);
-    Serial.print("  restSeconds="); Serial.println(s.restSeconds);
-    Serial.print("  computed speedMPS="); Serial.println(speedMPS, 4);
     Serial.print("  currentLane="); Serial.println(currentLane);
+    Serial.print("  rounds="); Serial.println(s.rounds);
+    Serial.print("  swimDistance="); Serial.println(s.swimDistance);
+    Serial.print("  swimSeconds="); Serial.println(s.swimSeconds);
+    Serial.print("  restSeconds="); Serial.println(s.restSeconds);
+    Serial.print("  swimmerIntervalSeconds="); Serial.println(s.swimmerInterval);
+    Serial.print("  computed speedMPS="); Serial.println(speedMPS, 4);
   }
 
   // Defensive check: ensure swimmer interval is sane (non-zero). If it's zero
@@ -437,7 +451,7 @@ void applySwimSetToSettings(const SwimSet &s) {
 
     // Cache swim set settings for this swimmer (enables independent progression through queue)
     swimmers[currentLane][i].cachedNumRounds = s.rounds;
-    swimmers[currentLane][i].cachedLapsPerRound = ceil(s.length / globalConfigSettings.poolLength);
+    swimmers[currentLane][i].cachedLapsPerRound = ceil(s.swimDistance / globalConfigSettings.poolLength);
     swimmers[currentLane][i].cachedSpeedMPS = speedMPS;
     swimmers[currentLane][i].cachedRestSeconds = s.restSeconds;
     swimmers[currentLane][i].activeSwimSetId = s.id;
@@ -446,7 +460,7 @@ void applySwimSetToSettings(const SwimSet &s) {
 
   // Debug: dump swimmer state for current lane after initialization (first 6 swimmers)
   if (DEBUG_ENABLED) {
-    Serial.println("applySwimSetToSettings(): swimmer state after initializeSwimmers():");
+    Serial.println("  swimmer state after applying the swim set:");
     for (int i = 0; i < 6; i++) {
       Swimmer &sw = swimmers[currentLane][i];
       Serial.print("  swimmer="); Serial.print(i);
@@ -467,7 +481,7 @@ void applySwimSetToSettings(const SwimSet &s) {
         targetRestDuration = (unsigned long)(swimSetSettings.restTimeSeconds * 1000) + (unsigned long)(i * swimSetSettings.swimmerIntervalSeconds * 1000);
       }
       unsigned long swimmerStartTime = sw.restStartTime + targetRestDuration;
-      Serial.print(" targetRestSecs="); Serial.print((float)targetRestDuration / 1000.0, 2);
+      Serial.print(" targetRestSecs="); Serial.print(swimSetSettings.restTimeSeconds);
       Serial.print(" startAtMillis="); Serial.print(swimmerStartTime);
       Serial.print(" totalDistance="); Serial.print(sw.totalDistance, 3);
       Serial.print(" lapDirection="); Serial.println(sw.lapDirection);
@@ -658,8 +672,6 @@ void setupWebServer() {
   // Handle getting current globalConfigSettings (for dynamic updates)
   server.on("/globalConfigSettings", HTTP_GET, handleGetSettings);
   server.on("/currentLane", HTTP_GET, handleGetCurrentLane);
-  // Debug: quick endpoint that returns just the per-lane swimmer counts
-  server.on("/getNumSwimmersPerLane", HTTP_GET, handleGetNumSwimmersPerLane);
 
   // API Units and persistence notes:
   // - Speed: stored and returned as meters per second (m/s). Client should POST /setSpeed with m/s.
@@ -670,24 +682,18 @@ void setupWebServer() {
   // - LEDs per meter: integer - preference key: "ledsPerMeter"
   // - Colors: swimmer default color stored as three bytes colorRed/colorGreen/colorBlue; client uses hex (#rrggbb)
 
-  // Handle start/stop commands
-  server.on("/control", HTTP_POST, handleControl);
-
-  // New simplified handlers for the updated interface
+  // handlers for the swimmer interface
   server.on("/toggle", HTTP_POST, handleToggle);
-  server.on("/setSpeed", HTTP_POST, handleSetSpeed);
-  server.on("/setColor", HTTP_POST, handleSetColor);
   server.on("/setBrightness", HTTP_POST, handleSetBrightness);
   server.on("/setPulseWidth", HTTP_POST, handleSetPulseWidth);
   server.on("/setStripLength", HTTP_POST, handleSetStripLength);
   server.on("/setPoolLength", HTTP_POST, handleSetPoolLength);
   server.on("/setLedsPerMeter", HTTP_POST, handleSetLedsPerMeter);
   server.on("/setNumLanes", HTTP_POST, handleSetNumLanes);
-  server.on("/setCurrentLane", HTTP_POST, handleSetCurrentLane);
+  server.on("/setSwimDistance", HTTP_POST, handleSetSwimDistance);
+  server.on("/setSwimTime", HTTP_POST, handleSetSwimTime);
   server.on("/setRestTime", HTTP_POST, handleSetRestTime);
-  server.on("/setPaceDistance", HTTP_POST, handleSetPaceDistance);
   server.on("/setSwimmerInterval", HTTP_POST, handleSetSwimmerInterval);
-  server.on("/getSwimmerInterval", HTTP_GET, handleGetSwimmerInterval);
   server.on("/setDelayIndicators", HTTP_POST, handleSetDelayIndicators);
   server.on("/setNumSwimmers", HTTP_POST, handleSetNumSwimmers);
   server.on("/setNumRounds", HTTP_POST, handleSetNumRounds);
@@ -703,10 +709,11 @@ void setupWebServer() {
     // Read raw body
     String body = server.arg("plain");
     SwimSet s;
-    s.length = (uint16_t)extractJsonLong(body, "length", 50);
-    s.paceSeconds = extractJsonFloat(body, "paceSeconds", swimSetSettings.speedMetersPerSecond);
     s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
+    s.swimDistance = (uint16_t)extractJsonLong(body, "swimDistance", swimSetSettings.swimSetDistance);
+    s.swimSeconds = (uint16_t)extractJsonLong(body, "swimSeconds", swimSetSettings.swimTimeSeconds);
     s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
+    s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
     s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
     s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
     s.id = 0;
@@ -749,8 +756,8 @@ void setupWebServer() {
       int qCount = swimSetQueueCount[lane];
       String json = "{";
       json += "\"ok\":true,";
-  json += "\"id\":" + String(s.id) + ",";
-  json += "\"clientTempId\":\"" + String((unsigned long long)s.clientTempId) + "\",";
+      json += "\"id\":" + String(s.id) + ",";
+      json += "\"clientTempId\":\"" + String((unsigned long long)s.clientTempId) + "\",";
       json += "\"queueCount\":" + String(qCount);
       json += "}";
       server.send(200, "application/json", json);
@@ -761,16 +768,17 @@ void setupWebServer() {
 
   // Update an existing swim set in-place by device id or clientTempId
   // Body may include matchId (device id) or matchClientTempId (string) to locate
-  // the queued entry. The fields length, paceSeconds, rounds, restSeconds, type, repeat
+  // the queued entry. The fields length, swimSeconds, rounds, restSeconds, type, repeat
   // will be used to replace the entry. Optionally provide clientTempId to update the
   // stored clientTempId for future reconciliation.
   server.on("/updateSwimSet", HTTP_POST, []() {
     String body = server.arg("plain");
     SwimSet s;
-    s.length = (uint16_t)extractJsonLong(body, "length", 50);
-    s.paceSeconds = extractJsonFloat(body, "paceSeconds", swimSetSettings.speedMetersPerSecond);
     s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
+    s.swimDistance = (uint16_t)extractJsonLong(body, "swimDistance", swimSetSettings.swimSetDistance);
+    s.swimSeconds = (uint16_t)extractJsonLong(body, "swimSeconds", swimSetSettings.swimTimeSeconds);
     s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
+    s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
     s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
     s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
 
@@ -795,10 +803,11 @@ void setupWebServer() {
       // match by device id if provided
       if (matchId != 0 && entry.id == (uint32_t)matchId) {
         // Replace fields
-        entry.length = s.length;
-        entry.paceSeconds = s.paceSeconds;
         entry.rounds = s.rounds;
+        entry.swimDistance = s.swimDistance;
+        entry.swimSeconds = s.swimSeconds;
         entry.restSeconds = s.restSeconds;
+        entry.swimmerInterval = s.swimmerInterval;
         entry.type = s.type;
         entry.repeat = s.repeat;
         if (newClientTemp.length() > 0) {
@@ -820,10 +829,11 @@ void setupWebServer() {
       if (matchClientTemp.length() > 0) {
         unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
         if (parsed != 0 && entry.clientTempId == parsed) {
-          entry.length = s.length;
-          entry.paceSeconds = s.paceSeconds;
           entry.rounds = s.rounds;
+          entry.swimDistance = s.swimDistance;
+          entry.swimSeconds = s.swimSeconds;
           entry.restSeconds = s.restSeconds;
+          entry.swimmerInterval = s.swimmerInterval;
           entry.type = s.type;
           entry.repeat = s.repeat;
           if (newClientTemp.length() > 0) {
@@ -881,15 +891,16 @@ void setupWebServer() {
   server.on("/runSwimSetNow", HTTP_POST, []() {
     String body = server.arg("plain");
     SwimSet s;
-    s.length = (uint16_t)extractJsonLong(body, "length", 50);
-    s.paceSeconds = extractJsonFloat(body, "paceSeconds", swimSetSettings.speedMetersPerSecond);
     s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
+    s.swimDistance = (uint16_t)extractJsonLong(body, "swimDistance", swimSetSettings.swimSetDistance);
+    s.swimSeconds = (uint16_t)extractJsonLong(body, "swimSeconds", swimSetSettings.swimTimeSeconds);
     s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
+    s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
     s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
     s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
 
     // Apply and start immediately
-    Serial.println("runSwimSetNow: calling applySwimSetToSettings()");
+    Serial.println("/runSwimSetNow: calling applySwimSetToSettings()");
     applySwimSetToSettings(s);
     server.send(200, "text/plain", "Started");
   });
@@ -902,12 +913,13 @@ void setupWebServer() {
       SwimSet &s = swimSetQueue[lane][idx];
       if (i) json += ",";
       json += "{";
-  json += String("\"id\":") + String(s.id) + ",";
-  json += String("\"clientTempId\":\"") + String((unsigned long long)s.clientTempId) + String("\",");
-      json += String("\"length\":") + String(s.length) + ",";
-      json += String("\"paceSeconds\":") + String(s.paceSeconds, 2) + ",";
+      json += String("\"id\":") + String(s.id) + ",";
+      json += String("\"clientTempId\":\"") + String((unsigned long long)s.clientTempId) + String("\",");
       json += String("\"rounds\":") + String(s.rounds) + ",";
-      json += String("\"restSeconds\":") + String(s.restSeconds) + ",";
+      json += String("\"swimDistance\":") + String(s.swimDistance) + ",";
+      json += String("\"swimSeconds\":") + String(s.swimSeconds, 2) + ",";
+      json += String("\"restSeconds\":") + String(s.restSeconds, 2) + ",";
+      json += String("\"swimmerInterval\":") + String(s.swimmerInterval, 2) + ",";
       json += String("\"type\":") + String(s.type) + ",";
       json += String("\"repeat\":") + String(s.repeat);
       json += "}";
@@ -1031,63 +1043,6 @@ void setupWebServer() {
     server.send(200, "text/plain", "OK");
   });
 
-  server.on("/startNextSwimSet", HTTP_POST, []() {
-    // Determine lane for this request (default to currentLane)
-    String body = server.arg("plain");
-    int lane = (body.length() > 0) ? (int)extractJsonLong(body, "lane", currentLane) : currentLane;
-    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-      server.send(400, "text/plain", "Invalid lane");
-      return;
-    }
-
-    // First, process any queued action for this lane
-    ActionItem a;
-    if (dequeueAction(a, lane)) {
-      if (DEBUG_ENABLED) Serial.println("startNextSwimSet: processing action first for lane");
-      if (a.type == REST_TYPE) {
-        swimSetSettings.restTimeSeconds = a.seconds;
-        saveSwimSetSettings();
-        server.send(200, "text/plain", "Action (rest) acknowledged");
-        return;
-      } else if (a.type == MOVE_TYPE) {
-        if (a.target == 0) {
-          for (int i = 0; i < 6; i++) {
-            swimmers[lane][i].position = 0;
-            swimmers[lane][i].isResting = true;
-            swimmers[lane][i].restStartTime = millis();
-            swimmers[lane][i].currentLap = 1;
-            swimmers[lane][i].totalDistance = 0.0;
-          }
-        } else {
-          float poolLengthInStripUnits = convertPoolToStripUnits(globalConfigSettings.poolLength);
-          int farPos = floor((poolLengthInStripUnits * globalConfigSettings.ledsPerMeter)-1);
-          for (int i = 0; i < 6; i++) {
-            swimmers[lane][i].position = farPos;
-            swimmers[lane][i].isResting = true;
-            swimmers[lane][i].restStartTime = millis();
-            swimmers[lane][i].currentLap = 1;
-            swimmers[lane][i].totalDistance = 0.0;
-          }
-        }
-        server.send(200, "text/plain", "Action (move) acknowledged");
-        return;
-      }
-    }
-
-    // If no action, start the next swim set for this lane
-    SwimSet next;
-    int oldLane = currentLane;
-    currentLane = lane;
-    if (dequeueSwimSet(next)) {
-      Serial.println("startNextSwimSet: calling applySwimSetToSettings()");
-      applySwimSetToSettings(next);
-      server.send(200, "text/plain", "Started next");
-    } else {
-      server.send(404, "text/plain", "Queue empty");
-    }
-    currentLane = oldLane;
-  });
-
   // Endpoint to accept lightweight action items (rest, move)
   server.on("/enqueueAction", HTTP_POST, []() {
     String body = server.arg("plain");
@@ -1142,17 +1097,6 @@ void setupWebServer() {
     } else {
       server.send(507, "text/plain", "Action queue full");
     }
-  });
-
-  // Temporary debug endpoint to reset color preferences
-  server.on("/resetColors", HTTP_POST, []() {
-    preferences.remove("colorRed");
-    preferences.remove("colorGreen");
-    preferences.remove("colorBlue");
-    loadSettings(); // Reload with new defaults
-    // Update swimmer colors to reflect new defaults without reinitializing positions/timing
-    updateSwimmerColors(); // Apply to swimmers
-    server.send(200, "text/plain", "Color preferences reset to red default");
   });
 
   server.begin();
@@ -1228,17 +1172,6 @@ void handleGetSettings() {
   server.send(200, "application/json", json);
 }
 
-// Simple debug handler that returns the per-lane swimmer counts as a JSON array
-void handleGetNumSwimmersPerLane() {
-  String json = "[";
-  for (int li = 0; li < 4; li++) {
-    json += String(globalConfigSettings.numSwimmersPerLane[li]);
-    if (li < 3) json += ",";
-  }
-  json += "]";
-  server.send(200, "application/json", json);
-}
-
 void handleGetCurrentLane() {
   String json = "{";
   json += "\"currentLane\":" + String(currentLane);
@@ -1247,19 +1180,6 @@ void handleGetCurrentLane() {
   server.send(200, "application/json", json);
 }
 
-void handleControl() {
-  if (server.hasArg("action")) {
-    String action = server.arg("action");
-    if (action == "toggle") {
-      globalConfigSettings.isRunning = !globalConfigSettings.isRunning;
-      saveGlobalConfigSettings();
-    }
-  }
-
-  server.send(200, "text/plain", "Control updated");
-}
-
-// New simplified handlers for the updated interface
 void handleToggle() {
   // Toggle the current lane's running state
   globalConfigSettings.laneRunning[currentLane] = !globalConfigSettings.laneRunning[currentLane];
@@ -1277,56 +1197,6 @@ void handleToggle() {
 
   String status = globalConfigSettings.laneRunning[currentLane] ? "Lane Pacer Started" : "Lane Pacer Stopped";
   server.send(200, "text/plain", status);
-}
-
-void handleSetSpeed() {
-  if (server.hasArg("speed")) {
-    float speed = server.arg("speed").toFloat();
-    // speed comes in meters per second (client and server now use m/s)
-    swimSetSettings.speedMetersPerSecond = speed;
-    saveSwimSetSettings();
-    needsRecalculation = true;
-  }
-  server.send(200, "text/plain", "Speed updated");
-}
-
-void handleSetColor() {
-  if (server.hasArg("color")) {
-    String color = server.arg("color");
-
-    // Check if it's a hex color (starts with #) or named color
-    if (color.startsWith("#")) {
-      // Use hex-to-RGB conversion for hex colors from browser
-      uint8_t r, g, b;
-      hexToRGB(color, r, g, b);
-
-      globalConfigSettings.colorRed = r;
-      globalConfigSettings.colorGreen = g;
-      globalConfigSettings.colorBlue = b;
-    } else {
-      // Handle named colors for backward compatibility
-      if (color == "red") {
-        globalConfigSettings.colorRed = 255; globalConfigSettings.colorGreen = 0; globalConfigSettings.colorBlue = 0;
-      } else if (color == "green") {
-        globalConfigSettings.colorRed = 0; globalConfigSettings.colorGreen = 255; globalConfigSettings.colorBlue = 0;
-      } else if (color == "blue") {
-        globalConfigSettings.colorRed = 0; globalConfigSettings.colorGreen = 0; globalConfigSettings.colorBlue = 255;
-      } else if (color == "yellow") {
-        globalConfigSettings.colorRed = 255; globalConfigSettings.colorGreen = 255; globalConfigSettings.colorBlue = 0;
-      } else if (color == "purple") {
-        globalConfigSettings.colorRed = 128; globalConfigSettings.colorGreen = 0; globalConfigSettings.colorBlue = 128;
-      } else if (color == "cyan") {
-        globalConfigSettings.colorRed = 0; globalConfigSettings.colorGreen = 255; globalConfigSettings.colorBlue = 255;
-      } else if (color == "white") {
-        globalConfigSettings.colorRed = 255; globalConfigSettings.colorGreen = 255; globalConfigSettings.colorBlue = 255;
-      }
-    }
-
-    saveGlobalConfigSettings();
-    // Update swimmer colors to apply the new color without full reinitialization
-    updateSwimmerColors();
-  }
-  server.send(200, "text/plain", "Color updated");
 }
 
 void handleSetBrightness() {
@@ -1403,14 +1273,13 @@ void handleSetNumLanes() {
   server.send(200, "text/plain", "Number of lanes updated");
 }
 
-void handleSetCurrentLane() {
-  if (server.hasArg("currentLane")) {
-    int lane = server.arg("currentLane").toInt();
-    if (lane >= 0 && lane < globalConfigSettings.numLanes) {
-      currentLane = lane;
-    }
+void handleSetSwimTime() {
+  if (server.hasArg("swimTime")) {
+    int swimTime = server.arg("swimTime").toInt();
+    swimSetSettings.swimTimeSeconds = swimTime;
+    saveSwimSetSettings();
   }
-  server.send(200, "text/plain", "Current lane updated");
+  server.send(200, "text/plain", "Swim time updated");
 }
 
 void handleSetRestTime() {
@@ -1422,13 +1291,13 @@ void handleSetRestTime() {
   server.send(200, "text/plain", "Rest time updated");
 }
 
-void handleSetPaceDistance() {
-  if (server.hasArg("paceDistance")) {
-    int paceDistance = server.arg("paceDistance").toInt();
-    swimSetSettings.swimSetDistance = paceDistance;
+void handleSetSwimDistance() {
+  if (server.hasArg("swimDistance")) {
+    int swimDistance = server.arg("swimDistance").toInt();
+    swimSetSettings.swimSetDistance = swimDistance;
     saveSwimSetSettings();
   }
-  server.send(200, "text/plain", "Pace distance updated");
+  server.send(200, "text/plain", "Swim distance updated");
 }
 
 
@@ -1466,14 +1335,6 @@ void handleSetSwimmerInterval() {
   server.send(200, "text/plain", "Swimmer interval updated");
 }
 
-// Simple GET to return current swimmer interval (seconds)
-void handleGetSwimmerInterval() {
-  String json = "{";
-  json += "\"swimmerInterval\":" + String(swimSetSettings.swimmerIntervalSeconds);
-  json += "}";
-  server.send(200, "application/json", json);
-}
-
 void handleSetDelayIndicators() {
   if (server.hasArg("enabled")) {
     bool enabled = server.arg("enabled") == "true";
@@ -1486,21 +1347,9 @@ void handleSetDelayIndicators() {
 void handleSetNumSwimmers() {
   if (server.hasArg("numSwimmers")) {
     int numSwimmers = server.arg("numSwimmers").toInt();
-    int lane = -1;
-    if (server.hasArg("lane")) {
-      lane = server.arg("lane").toInt();
-      if (lane < 0 || lane >= 4) lane = -1;
-    }
+    int lane = server.arg("lane").toInt();
 
-    if (lane >= 0) {
-      globalConfigSettings.numSwimmersPerLane[lane] = numSwimmers;
-      // Keep legacy global value in sync with lane 0 for backward compatibility
-      globalConfigSettings.numSwimmers = globalConfigSettings.numSwimmersPerLane[0];
-    } else {
-      // Update global fallback and also apply to all lanes if desired
-      globalConfigSettings.numSwimmers = numSwimmers;
-      for (int li = 0; li < 4; li++) globalConfigSettings.numSwimmersPerLane[li] = numSwimmers;
-    }
+    globalConfigSettings.numSwimmersPerLane[lane] = numSwimmers;
 
     saveGlobalConfigSettings();
   }
@@ -1629,7 +1478,6 @@ void handleSetSwimmerColors() {
 void handleSetUnderwaterSettings() {
   if (server.hasArg("enabled")) {
     bool enabled = server.arg("enabled") == "true";
-    Serial.println(enabled);
     globalConfigSettings.underwatersEnabled = enabled;
 
     if (enabled) {
@@ -1692,6 +1540,7 @@ void saveGlobalConfigSettings() {
 void saveSwimSetSettings() {
   // Persist speed in meters per second
   preferences.putFloat("speedMPS", swimSetSettings.speedMetersPerSecond);
+  preferences.putInt("swimTimeSeconds", swimSetSettings.swimTimeSeconds);
   preferences.putInt("restTimeSeconds", swimSetSettings.restTimeSeconds);
   preferences.putInt("swimSetDistance", swimSetSettings.swimSetDistance);
   // Sanitize swimmer interval before persisting to avoid storing invalid (<=0) values
@@ -1734,6 +1583,7 @@ void loadGlobalConfigSettings() {
 void loadSwimSetSettings() {
   // Load speed (meters per second) with a sensible default ~1.693 m/s (5.56 ft/s)
   swimSetSettings.speedMetersPerSecond = preferences.getFloat("speedMPS", 1.693);
+  swimSetSettings.swimTimeSeconds = preferences.getInt("swimTimeSeconds", 30);
   swimSetSettings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
   swimSetSettings.swimSetDistance = preferences.getInt("swimSetDistance", 50);  // Default in yards (matches pool default)
   swimSetSettings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
@@ -1761,7 +1611,7 @@ void recalculateValues() {
   pulseWidthLEDs = (int)(pulseWidthCM / ledSpacingCM);
 
   // Calculate pool to strip ratio for timing adjustments
-  float poolLengthInMeters = convertPoolToStripUnits(globalConfigSettings.poolLength);
+  float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
   poolToStripRatio = poolLengthInMeters / globalConfigSettings.stripLengthMeters;
 
   // Calculate delayMS based on swim pace and distance between LEDs
@@ -1807,7 +1657,7 @@ void updateSwimmersLapsPerRound() {
 // ----- end targeted helpers -----
 
 // Helper function to convert pool units (yards or meters) to LED strip units (meters)
-float convertPoolToStripUnits(float distanceInPoolUnits) {
+float convertPoolToMeters(float distanceInPoolUnits) {
   if (globalConfigSettings.poolUnitsYards) {
     // Convert yards to meters for LED strip
     return distanceInPoolUnits * 0.9144;
@@ -1867,8 +1717,8 @@ void drawDelayIndicators(int laneIndex) {
   }
 
   // Convert to strip units and calculate LEDs
-  float maxDelayDistanceInStripUnits = convertPoolToStripUnits(maxDelayDistance);
-  int maxDelayLEDs = (int)(maxDelayDistanceInStripUnits * globalConfigSettings.ledsPerMeter);
+  float maxDelayDistanceInMeters = convertPoolToMeters(maxDelayDistance);
+  int maxDelayLEDs = (int)(maxDelayDistanceInMeters * globalConfigSettings.ledsPerMeter);
 
   // Find the next swimmer who is resting and has the shortest time until they start
   int nextSwimmerIndex = -1;
@@ -1927,8 +1777,8 @@ void drawDelayIndicators(int laneIndex) {
     }
 
     // Convert to strip units and then to LEDs
-    float delayDistanceInStripUnits = convertPoolToStripUnits(delayDistanceInPoolUnits);
-    int delayLEDs = (int)(delayDistanceInStripUnits * globalConfigSettings.ledsPerMeter);
+    float delayDistanceInMeters = convertPoolToMeters(delayDistanceInPoolUnits);
+    int delayLEDs = (int)(delayDistanceInMeters * globalConfigSettings.ledsPerMeter);
 
     // Ensure at least 1 LED if there's time remaining
     if (delayLEDs < 1) delayLEDs = 1;
@@ -2049,6 +1899,9 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       Serial.print("  Target rest duration: ");
       Serial.print(targetRestDuration / 1000.0);
       Serial.println(" seconds");
+      Serial.print("  Elapsed rest time: ");
+      Serial.print(restElapsed / 1000.0);
+      Serial.println(" seconds");
       swimmer->debugRestingPrinted = true;
       swimmer->debugSwimmingPrinted = false; // Reset for next swim phase
     }
@@ -2096,7 +1949,10 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       Serial.print(laneIndex);
       Serial.print(", Swimmer ");
       Serial.print(swimmerIndex);
-      Serial.print(" - SWIMMING - Round ");
+      Serial.print(" - SWIMMING - ");
+      Serial.print("Queue Index: ");
+      Serial.print(swimmer->queueIndex);
+      Serial.print(", Round ");
       Serial.print(swimmer->currentRound);
       Serial.print(", Lap ");
       Serial.print(swimmer->currentLap);
@@ -2164,21 +2020,38 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
 
       // Check if round is complete (all lengths done)
       if (swimmer->currentLap > swimmer->lapsPerRound) {
+        // Round complete - reset length counter and check if we should rest
+        swimmer->currentLap = 1;
+        swimmer->totalDistance = 0.0;
+
         if (DEBUG_ENABLED) {
           Serial.println("  *** ROUND COMPLETE ***");
           Serial.print("    Completed round ");
           Serial.println(swimmer->currentRound);
+          Serial.print("    Current lap reset to ");
+          Serial.println(swimmer->currentLap);
+          Serial.print("    Total distance reset to ");
+          Serial.println(swimmer->totalDistance);
         }
-
-        // Round complete - reset length counter and check if we should rest
-        swimmer->currentLap = 1;
-        swimmer->totalDistance = 0.0;
 
         // Only rest if we haven't completed all rounds yet
         if (swimmer->currentRound < swimmer->cachedNumRounds) {
           swimmer->currentRound++;
           swimmer->isResting = true;
-          swimmer->restStartTime = currentTime;
+          // Rest start time should be calculated from when they were
+          // supposed to hit the wall, not current time (to account for overshoot)
+          swimmer->restStartTime = currentTime - (overshoot / swimmer->cachedSpeedMPS * 1000.0);
+
+          if (DEBUG_ENABLED) {
+            Serial.println("  *** MORE ROUNDS TO GO IN SET ***");
+            Serial.print("    Now on round ");
+            Serial.println(swimmer->currentRound);
+            Serial.println("    isResting set to true");
+            Serial.print("    restStartTime to ");
+            Serial.print(swimmer->restStartTime);
+            Serial.print(" (accounting for overshoot of ");
+            Serial.println((overshoot / swimmer->cachedSpeedMPS * 1000.0));
+          }
         } else {
           // All rounds complete for this swim set
           if (DEBUG_ENABLED) {
@@ -2201,20 +2074,20 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               Serial.print(nextSet.id);
               Serial.print(", queue index: ");
               Serial.print(swimmer->queueIndex + 1);
-              Serial.print(", length: ");
-              Serial.print(nextSet.length);
-              Serial.print(", pace: ");
-              Serial.print(nextSet.paceSeconds);
               Serial.print(", rounds: ");
               Serial.print(nextSet.rounds);
-              Serial.print(", rest: ");
+              Serial.print(", swimDistance: ");
+              Serial.print(nextSet.swimDistance);
+              Serial.print(", swim seconds: ");
+              Serial.print(nextSet.swimSeconds);
+              Serial.print(", rest seconds: ");
               Serial.println(nextSet.restSeconds);
             }
 
             // Calculate new settings for the next set
-            float lengthMeters = convertPoolToStripUnits((float)nextSet.length);
-            float speedMPS = (nextSet.paceSeconds > 0) ? (lengthMeters / nextSet.paceSeconds) : 0.0;
-            int lapsPerRound = ceil(nextSet.length / globalConfigSettings.poolLength);
+            float lengthMeters = convertPoolToMeters((float)nextSet.swimDistance);
+            float speedMPS = (nextSet.swimSeconds > 0) ? (lengthMeters / nextSet.swimSeconds) : 0.0;
+            int lapsPerRound = ceil(nextSet.swimDistance / globalConfigSettings.poolLength);
 
             // Cache the new swim set settings in this swimmer
             swimmer->cachedNumRounds = nextSet.rounds;
@@ -2240,6 +2113,11 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             }
           } else {
             // No more sets in queue - swimmer is done
+            // Mark swimmer as finished so we stop further updates
+            swimmer->finished = true;
+            swimmer->isResting = true;
+            swimmer->hasStarted = false;
+            swimmer->restStartTime = currentTime;
             if (DEBUG_ENABLED) {
               Serial.println("  *** NO MORE SETS IN QUEUE ***");
               Serial.print("    Swimmer ");
@@ -2248,10 +2126,6 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               Serial.print(swimmer->queueIndex + 1);
               Serial.println(" sets!");
             }
-            // Mark swimmer as finished so we stop further updates
-            swimmer->finished = true;
-            swimmer->isResting = true;
-            swimmer->restStartTime = currentTime;
           }
         }
 
@@ -2260,8 +2134,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           swimmer->position = 0;
         } else {
           // Convert pool length to LED position
-          float poolLengthInStripUnits = convertPoolToStripUnits(globalConfigSettings.poolLength);
-          float ledPosition = floor((poolLengthInStripUnits * globalConfigSettings.ledsPerMeter)-1);
+          float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
+          float ledPosition = floor((poolLengthInMeters * globalConfigSettings.ledsPerMeter)-1);
           swimmer->position = ledPosition;
         }
       } else {
@@ -2275,13 +2149,13 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         }
 
         // Place LED position where we overshot the wall
-        float overshootInStripUnits = convertPoolToStripUnits(overshoot);
-        int overshootLEDs = (int)(overshootInStripUnits * globalConfigSettings.ledsPerMeter);
+        float overshootInMeters = convertPoolToMeters(overshoot);
+        int overshootLEDs = (int)(overshootInMeters * globalConfigSettings.ledsPerMeter);
         if (swimmer->lapDirection == 1) {
           swimmer->position = overshootLEDs;
         } else {
-          float poolLengthInStripUnits = convertPoolToStripUnits(globalConfigSettings.poolLength);
-          float ledPosition = floor((poolLengthInStripUnits * globalConfigSettings.ledsPerMeter)-1) - overshootLEDs;
+          float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
+          float ledPosition = floor((poolLengthInMeters * globalConfigSettings.ledsPerMeter)-1) - overshootLEDs;
           swimmer->position = ledPosition;
         }
       }
@@ -2289,17 +2163,17 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       // Normal movement within the pool length
       // distanceForCurrentLength is the distance traveled in the current lap
       // Convert to LED strip units
-      float distanceInStripUnits = convertPoolToStripUnits(distanceForCurrentLength);
-      float poolLengthInStripUnits = convertPoolToStripUnits(globalConfigSettings.poolLength);
+      float distanceInMeters = convertPoolToMeters(distanceForCurrentLength);
+      float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
 
       // Calculate LED position based on direction
       if (swimmer->lapDirection == 1) {
         // Swimming away from start: position = 0 + distance
-        swimmer->position = (int)(distanceInStripUnits * globalConfigSettings.ledsPerMeter);
+        swimmer->position = (int)(distanceInMeters * globalConfigSettings.ledsPerMeter);
       } else {
         // Swimming back to start: position = poolLength - distance
-        float positionInStripUnits = poolLengthInStripUnits - distanceInStripUnits;
-        swimmer->position = (int)(positionInStripUnits * globalConfigSettings.ledsPerMeter);
+        float positionInMeters = poolLengthInMeters - distanceInMeters;
+        swimmer->position = (int)(positionInMeters * globalConfigSettings.ledsPerMeter);
       }
     }
 
@@ -2389,8 +2263,16 @@ void printPeriodicStatus() {
             Serial.print("RESTING (");
             Serial.print((currentTime - s->restStartTime) / 1000.0);
             Serial.print("s)");
+            Serial.print(" Q:");
+            Serial.print(s->queueIndex);
+            Serial.print(" hasStarted=");
+            Serial.print(s->hasStarted);
           } else {
-            Serial.print("Swimming - R");
+            Serial.print("Swimming - ");
+
+            Serial.print(" Q:");
+            Serial.print(s->queueIndex);
+            Serial.print(" R");
             Serial.print(s->currentRound);
             Serial.print("/");
             Serial.print(swimSetSettings.numRounds);
@@ -2508,8 +2390,8 @@ void drawUnderwaterZone(int swimmerIndex, int laneIndex) {
   }
 
   // Convert to strip units and then to LEDs
-  float lightSizeInStripUnits = convertPoolToStripUnits(lightSizeInPoolUnits);
-  int lightSizeLEDs = (int)(lightSizeInStripUnits * globalConfigSettings.ledsPerMeter);
+  float lightSizeInMeters = convertPoolToMeters(lightSizeInPoolUnits);
+  int lightSizeLEDs = (int)(lightSizeInMeters * globalConfigSettings.ledsPerMeter);
   if (lightSizeLEDs < 1) lightSizeLEDs = 1; // Minimum 1 LED
 
   // Position underwater light exactly at the swimmer's position (moves with swimmer)

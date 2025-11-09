@@ -186,20 +186,20 @@ button.secondary:hover {
     font-weight: bold;
 }
 
-.swimmer-pace-input {
+.swimmer-swimTime-input {
     width: 80px;
     padding: 5px;
     border: 1px solid #ccc;
     border-radius: 3px;
 }
 
-/* Pace input layout in swimmer rows */
-.swimmer-pace {
+/* Swim time input layout in swimmer rows */
+.swimmer-swimTime {
     display: flex;
     align-items: center;
     gap: 6px;
 }
-.pace-unit {
+.swimTime-unit {
     font-size: 13px;
     color: #444;
 }

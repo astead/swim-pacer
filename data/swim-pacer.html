@@ -16,7 +16,7 @@
         <!-- Main Pacer Page -->
         <div id="main" class="page active">
             <!-- Lane Selector (shown when multiple lanes configured) -->
-            <div id="laneSelector" style="display: none; margin: 15px 0;">
+            <div id="laneSelector" style="margin: 15px 0;">
                 <div class="control">
                     <select id="currentLane" onchange="updateCurrentLane()">
                         <!-- Options populated by JavaScript -->
@@ -95,17 +95,17 @@
                         </div>
 
                         <div class="control">
-                            <label for="paceDistance">Distance:</label>
+                            <label for="swimDistance">Distance:</label>
                             <div>
-                                <input type="number" id="paceDistance" min="5" max="1000" step="5" value="50" onchange="updatePaceDistance()" class="compact-input">
+                                <input type="number" id="swimDistance" min="5" max="1000" step="5" value="50" onchange="updateSwimDistance()" class="compact-input">
                                 <span id="distanceUnits">yards</span>
                             </div>
                         </div>
 
                         <div class="control">
-                            <label for="paceTimeSeconds">Swim time:</label>
+                            <label for="swimTime">Swim time:</label>
                             <div>
-                                <input type="text" id="paceTimeSeconds" value="30" oninput="updateFromPace()" class="compact-input" placeholder="30 or 1:30">
+                                <input type="text" id="swimTime" value="30" oninput="updateSwimTime()" class="compact-input" placeholder="30 or 1:30">
                                 <span>min:sec</span>
                             </div>
                         </div>

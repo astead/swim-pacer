@@ -1,17 +1,17 @@
 ﻿// Detect if running in standalone mode (file:// protocol)
 const isStandaloneMode = window.location.protocol === 'file:';
 
+
 let currentSettings = {
-    // speed is meters per second (client and device now use m/s)
-    speed: 1.693,
     color: 'red',
     brightness: 196,
     pulseWidth: 1.0,
     restTime: 5,
-    paceDistance: 50,
+    swimTime: 30,
+    swimDistance: 50,
     swimmerInterval: 1,
     delayIndicatorsEnabled: true,
-    numSwimmers: 3,
+    maxSwimmersPerLane: 10,
     numSwimmersPerLane: [3,3,3,3],
     numRounds: 10,
     colorMode: 'individual',
@@ -86,20 +86,6 @@ function showPage(pageId) {
     event.target.classList.add('active');
 }
 
-// Conversion functions for swimming
-function paceToSpeed(paceSeconds, poolYards = 50) {
-    // Return speed in meters/second for a given pace (seconds per pool length).
-    // poolYards is the pool length in yards (default 50 yards). Convert to meters then divide by time.
-    const poolMeters = poolYards * 0.9144;
-    return poolMeters / paceSeconds; // meters per second
-}
-
-function speedToPace(speedFps, poolYards = 50) {
-    // speed is meters/second; return pace (seconds per pool length)
-    const poolMeters = poolYards * 0.9144;
-    return poolMeters / speedFps;
-}
-
 // Helper function to parse time input (supports both "30" and "1:30" formats)
 function parseTimeInput(timeStr) {
     if (!timeStr || timeStr.trim() === '') return 30; // Default to 30 seconds
@@ -138,33 +124,18 @@ function formatCompactTime(seconds) {
     return `${s}s`;
 }
 
-function updateFromPace() {
-    const paceInput = document.getElementById('paceTimeSeconds').value;
-    const pace = parseTimeInput(paceInput);
-    const paceDistance = currentSettings.paceDistance;
+function updateSwimDistance(triggerSave = true) {
+    const swimDistance = parseInt(document.getElementById('swimDistance').value);
+    currentSettings.swimDistance = swimDistance;
 
-    // Let's always set pace to speed (meters per second)
-    // Compute pool distance in meters first, then divide by seconds to get m/s
-    let poolMeters = paceDistance;
-    if (currentSettings.poolLengthUnits === 'yards') {
-        poolMeters = paceDistance * 0.9144; // yards -> meters
-    }
-    // Avoid divide-by-zero
-    currentSettings.speed = (pace > 0) ? (poolMeters / pace) : 0;
-}
-
-function updatePaceDistance(triggerSave = true) {
-    const paceDistance = parseInt(document.getElementById('paceDistance').value);
-    currentSettings.paceDistance = paceDistance;
-
-    // Recalculate speed based on current pace input and new distance
-    updateFromPace();
     if (triggerSave) {
-        // Save only the pace distance and derived speed
-        sendPaceDistance(currentSettings.paceDistance);
-        sendSpeed(currentSettings.speed);
+        // Save only the swim distance
+        sendSwimDistance(currentSettings.swimDistance);
     }
-    // Update swimmer set so UI and created set reflect the new pace distance immediately
+    // Update swimmer set so UI and created set reflect the new swim distance immediately
+    // TODO: I don't think we want this
+    //console.log('Swim distance updated - Skipping updating swimmer set from config');
+    console.log('Swim distance updated - calling create or updating swimmer set from config');
     try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
@@ -185,8 +156,7 @@ function updateCalculations(triggerSave = true) {
     // Update distance units when pool length changes.
     // We only want to save the specific fields that changed instead of issuing
     // a broad, multi-endpoint write which would overwrite other device state.
-    // Recompute pace-derived internals but suppress the global save here.
-    updatePaceDistance(false);
+    updateSwimDistance(false);
 
     // If caller requested saving, call the targeted send helpers so the
     // server only receives the changed values.
@@ -296,6 +266,7 @@ function toggleLaneIdentification() {
     }
 }
 
+// TODO: This is not handled on the server side yet
 function sendLaneIdentificationCommand(laneIndex, colorHex) {
     // Convert hex color to RGB
     const r = parseInt(colorHex.substr(1, 2), 16);
@@ -311,6 +282,7 @@ function sendLaneIdentificationCommand(laneIndex, colorHex) {
     });
 }
 
+// TODO: This is not handled on the server side yet
 function stopLaneIdentification() {
     fetch('/stopIdentification', {
         method: 'POST'
@@ -357,8 +329,7 @@ function updateCurrentLane() {
 
     // Update the numSwimmers selector to reflect per-lane count if available
     try {
-        currentSettings.numSwimmersPerLane = currentSettings.numSwimmersPerLane || [currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers];
-        const laneCount = currentSettings.numSwimmersPerLane[newLane] || currentSettings.numSwimmers;
+        const laneCount = currentSettings.numSwimmersPerLane[newLane];
         setNumSwimmersUI(laneCount);
     } catch (e) {}
 
@@ -468,6 +439,21 @@ function updatePulseWidth() {
     sendPulseWidth(pulseWidth);
 }
 
+function updateSwimTime() {
+    const swimTime = document.getElementById('swimTime').value;
+    currentSettings.swimTime = parseInt(swimTime);
+    const unit = parseInt(swimTime) === 1 ? ' second' : ' seconds';
+    const rlabel = document.getElementById('swimTimeValue');
+    if (rlabel) rlabel.textContent = swimTime + unit;
+    // Also send swim time to device so it can be used as a default for swim-sets
+    sendSwimTime(currentSettings.swimTime);
+
+    // Rebuild swimmer set so UI reflects the new rest time immediately
+    // TODO: Why are we doing this?
+    console.log('Swim time updated - Skipping updating swimmer set from config');
+    //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
+}
+
 function updateRestTime() {
     const restTime = document.getElementById('restTime').value;
     currentSettings.restTime = parseInt(restTime);
@@ -477,7 +463,8 @@ function updateRestTime() {
     // Also send rest time to device so it can be used as a default for swim-sets
     sendRestTime(currentSettings.restTime);
     // Rebuild swimmer set so UI reflects the new rest time immediately
-    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
+    console.log('Rest time updated - Skipping updating swimmer set from config');
+    //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 
@@ -491,7 +478,8 @@ function updateSwimmerInterval() {
     // Also send swimmer interval to device so it can be used as a default for swim-sets
     sendSwimmerInterval(currentSettings.swimmerInterval);
     // Rebuild swimmer set so UI reflects the new swimmer interval immediately
-    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
+    console.log('Swimmer interval updated - Skipping updating swimmer set from config');
+    //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 function updateDelayIndicatorsEnabled() {
@@ -703,9 +691,7 @@ function setNumSwimmersUI(value) {
     if (el) el.value = v;
     // Update per-lane value and mirror to currentSettings for backwards compatibility
     const lane = currentSettings.currentLane || 0;
-    currentSettings.numSwimmersPerLane = currentSettings.numSwimmersPerLane || [currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers];
     currentSettings.numSwimmersPerLane[lane] = v;
-    currentSettings.numSwimmers = v;
 }
 
 function setNumRoundsUI(value) {
@@ -731,10 +717,8 @@ function openColorPickerForSurface() {
 function updateNumSwimmers() {
     const numSwimmers = parseInt(document.getElementById('numSwimmers').value);
     const lane = currentSettings.currentLane || 0;
-    currentSettings.numSwimmersPerLane = currentSettings.numSwimmersPerLane || [currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers];
     currentSettings.numSwimmersPerLane[lane] = numSwimmers;
-    currentSettings.numSwimmers = numSwimmers;
-    sendNumSwimmers(numSwimmers, lane);
+    sendNumSwimmers(lane, numSwimmers);
 }
 
 function updateNumRounds() {
@@ -742,7 +726,8 @@ function updateNumRounds() {
     currentSettings.numRounds = parseInt(numRounds);
     sendNumRounds(currentSettings.numRounds);
     // Rebuild current swimmer set so UI and created set reflect the new rounds immediately
-    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
+    console.log('Num rounds updated - Skipping updating swimmer set from config');
+    //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 function updateColorMode() {
@@ -1060,12 +1045,12 @@ function togglePacer() {
         // Create immutable copies of current set and settings
         runningSets[currentLane] = JSON.parse(JSON.stringify(getCurrentSwimmerSet()));
         runningSettings[currentLane] = {
-            paceDistance: currentSettings.paceDistance,
-            paceTimeSeconds: parseTimeInput(document.getElementById('paceTimeSeconds').value),
+            swimDistance: currentSettings.swimDistance,
+            swimTime: currentSettings.swimTime,
             restTime: currentSettings.restTime,
             numRounds: currentSettings.numRounds,
             swimmerInterval: currentSettings.swimmerInterval,
-            numSwimmers: currentSettings.numSwimmers,
+            numSwimmers: currentSettings.numSwimmersPerLane[currentLane],
             laneName: currentSettings.laneNames[currentLane]
         };
 
@@ -1107,15 +1092,11 @@ function initializePacerStatus() {
     }
 
     // Initialize round timing display using running settings
-    const paceSeconds = runningData.paceTimeSeconds;
+    const swimSeconds = runningData.swimTime;
     const restSeconds = runningData.restTime;
-    const totalRoundTime = paceSeconds + restSeconds;
-    const totalRoundMinutes = Math.floor(totalRoundTime / 60);
-    const totalRoundSecondsOnly = Math.floor(totalRoundTime % 60);
-    const totalTimeStr = `${totalRoundMinutes}:${totalRoundSecondsOnly.toString().padStart(2, '0')}`;
+    const totalRoundTime = swimSeconds + restSeconds;
 
     // Compute total set duration (when the last swimmer finishes all rounds)
-    // lastSwimmerStartDelay = initial delay + (numSwimmers-1)*swimmerInterval
     const lastSwimmerStartDelay = (runningData.swimmerInterval || 0) + ((runningData.numSwimmers - 1) * (runningData.swimmerInterval || 0));
     const totalSetTimePerSwimmer = runningData.numRounds * totalRoundTime;
     const totalSetDuration = lastSwimmerStartDelay + totalSetTimePerSwimmer; // seconds
@@ -1128,11 +1109,11 @@ function initializePacerStatus() {
     // Active swimmers/next event/current phase UI removed — skip updating them
 
     // Update set basics display using running settings
-    const paceDistance = runningData.paceDistance;
+    const swimDistance = runningData.swimDistance;
     const numRounds = runningData.numRounds;
     const setBasicsEl = document.getElementById('setBasics');
     if (setBasicsEl) {
-        setBasicsEl.textContent = `- ${numRounds} x ${paceDistance}'s`;
+        setBasicsEl.textContent = `- ${numRounds} x ${swimDistance}'s`;
     }
 
     // Show initial delay countdown using running settings
@@ -1159,9 +1140,6 @@ function updatePacerStatus() {
     const currentLane = currentSettings.currentLane;
     const runningData = getRunningSettings();
     const elapsedSeconds = Math.floor((Date.now() - pacerStartTimes[currentLane]) / 1000);
-    const minutes = Math.floor(elapsedSeconds / 60);
-    const seconds = elapsedSeconds % 60;
-    // Elapsed time element removed from UI; keep timing internal but do not write to DOM.
 
     // Account for initial delay using running settings
     const initialDelaySeconds = runningData.swimmerInterval || 0;
@@ -1170,11 +1148,11 @@ function updatePacerStatus() {
     // Check if we're still in the initial delay period
     if (timeAfterInitialDelay < 0) {
         // Still in initial delay phase — update round timing and round number only
-        const paceSeconds = runningData.paceTimeSeconds;
+        const swimSeconds = runningData.swimTime;
         const restSeconds = runningData.restTime;
 
         // Compute totalSetStr locally and update set total timing to show elapsed 0
-        const totalRoundTime_loc = paceSeconds + restSeconds;
+        const totalRoundTime_loc = swimSeconds + restSeconds;
         const lastSwimmerStartDelay_loc = (runningData.swimmerInterval || 0) + ((runningData.numSwimmers - 1) * (runningData.swimmerInterval || 0));
         const totalSetTimePerSwimmer_loc = runningData.numRounds * totalRoundTime_loc;
         const totalSetDuration_loc = lastSwimmerStartDelay_loc + totalSetTimePerSwimmer_loc;
@@ -1187,9 +1165,9 @@ function updatePacerStatus() {
     }
 
     // Calculate current phase and progress (after initial delay) using running settings
-    const paceSeconds = runningData.paceTimeSeconds;
+    const swimSeconds = runningData.swimTime;
     const restSeconds = runningData.restTime;
-    const totalRoundTime = paceSeconds + restSeconds;
+    const totalRoundTime = swimSeconds + restSeconds;
 
     // Update current round (after initial delay)
     const calculatedRound = Math.floor(timeAfterInitialDelay / totalRoundTime) + 1;
@@ -1235,102 +1213,26 @@ function updatePacerStatus() {
     }
 }
 
-function createSwimSet() {
-    // Validate configuration first
-    if (currentSettings.numSwimmers < 1) {
-        alert('Please set at least 1 swimmer');
-        return;
-    }
-
-    if (currentSettings.numRounds < 1) {
-        alert('Please set at least 1 round');
-        return;
-    }
-
-    const configControls = document.getElementById('configControls');
-    const swimmerSetDiv = document.getElementById('swimmerSet');
-
-    // Clear existing set for current lane
-    setCurrentSwimmerSet([]);
-
-    // Get current pace from the main settings
-    const currentPace = parseTimeInput(document.getElementById('paceTimeSeconds').value);
-
-    // Create swimmer configurations for current lane
-    const newSet = [];
-    for (let i = 0; i < currentSettings.numSwimmers; i++) {
-        // Determine color based on color mode
-        let swimmerColor;
-        if (currentSettings.colorMode === 'same') {
-            // Store the actual hex color directly to avoid shared "custom" reference
-            swimmerColor = currentSettings.swimmerColor;
-        } else {
-            // Use predefined colors for individual mode
-            swimmerColor = colorHex[swimmerColors[i]];
-        }
-
-        // Create individual swimmer object (no shared references)
-        const newSwimmer = {
-            id: i + 1,
-            color: swimmerColor, // Store hex color directly
-            pace: currentPace,
-            interval: (i + 1) * currentSettings.swimmerInterval, // Use swimmerInterval for first-swimmer delay and subsequent offsets
-            lane: currentSettings.currentLane // Track which lane this swimmer belongs to
-        };
-
-        newSet.push(newSwimmer);
-        //console.log(`Created swimmer ${i + 1} for ${currentSettings.laneNames[currentSettings.currentLane]} with color: ${swimmerColor}`);
-    }
-
-    // Store the set for current lane
-    setCurrentSwimmerSet(newSet);
-
-    // Create swim set object with metadata
-        createdSwimSets[currentSettings.currentLane] = {
-        id: Date.now(), // Simple unique ID
-        lane: currentSettings.currentLane,
-        laneName: currentSettings.laneNames[currentSettings.currentLane],
-        swimmers: newSet,
-        settings: {
-            ...currentSettings,
-            paceTimeSeconds: currentPace // Explicitly include the pace value
-        }, // Deep copy of current settings with pace
-        summary: generateSetSummary(newSet, currentSettings)
-    };
-
-    // Display the set
-    displaySwimmerSet();
-
-    // Hide config controls and show swimmer set
-    configControls.style.display = 'none';
-    swimmerSetDiv.style.display = 'block';
-
-    // Switch to queue buttons
-    document.getElementById('configButtons').style.display = 'none';
-    document.getElementById('queueButtons').style.display = 'block';
-}
-
 // Create or update the current lane's swimmer set from the configuration controls.
-// If resetPaces is true, any per-swimmer custom pace values are overwritten with the
-// current pace input value (useful when the user changes the swim time).
-function createOrUpdateSwimmerSetFromConfig(resetPaces = false) {
-    const currentLane = currentSettings.currentLane;
+// If resetSwimTimes is true, any per-swimmer custom swim time values are overwritten with the
+// current swim time input value (useful when the user changes the swim time).
+function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
+    console.log('createOrUpdateSwimmerSetFromConfig called with resetSwimTimes =', resetSwimTimes);
     let currentSet = getCurrentSwimmerSet() || [];
 
-    const numSwimmers = parseInt(document.getElementById('numSwimmers').value) || currentSettings.numSwimmers;
-    const currentPace = parseTimeInput(document.getElementById('paceTimeSeconds').value);
-    const swimmerInterval = parseInt(document.getElementById('swimmerInterval').value) || currentSettings.swimmerInterval;
-
     // Ensure currentSettings reflect inputs
-    currentSettings.numSwimmers = numSwimmers;
-    currentSettings.swimmerInterval = swimmerInterval;
+    // TODO: Is this needed? Shouldn't updates to any of these already update currentSettings?
+    currentSettings.numSwimmersPerLane[currentLane] = parseInt(document.getElementById('numSwimmers').value) || currentSettings.numSwimmersPerLane[currentLane];
+    currentSettings.swimmerInterval = parseInt(document.getElementById('swimmerInterval').value) || currentSettings.swimmerInterval;
     currentSettings.numRounds = parseInt(document.getElementById('numRounds').value) || currentSettings.numRounds;
+    currentSettings.swimTime = parseTimeInput(document.getElementById('swimTime').value);
     currentSettings.restTime = parseInt(document.getElementById('restTime').value) || currentSettings.restTime;
 
     // If set is empty, create a fresh set using current inputs
     if (!currentSet || currentSet.length === 0) {
+        console.log('Creating new swimmer set from config');
         const newSet = [];
-        for (let i = 0; i < numSwimmers; i++) {
+        for (let i = 0; i < currentSettings.numSwimmersPerLane[currentLane]; i++) {
             let swimmerColor;
             if (currentSettings.colorMode === 'same') {
                 swimmerColor = currentSettings.swimmerColor;
@@ -1340,29 +1242,32 @@ function createOrUpdateSwimmerSetFromConfig(resetPaces = false) {
             const newSwimmer = {
                 id: i + 1,
                 color: swimmerColor,
-                pace: currentPace,
-                interval: (i + 1) * swimmerInterval,
-                lane: currentLane
+                swimTime: currentSettings.swimTime,
+                interval: (i + 1) * currentSettings.swimmerInterval,
+                lane: currentSettings.currentLane,
             };
             newSet.push(newSwimmer);
         }
+
         setCurrentSwimmerSet(newSet);
+
         // Also store as createdSwimSets so the rest of the UI expects a created set
-        createdSwimSets[currentLane] = {
+        createdSwimSets[currentSettings.currentLane] = {
             id: Date.now(),
-            lane: currentLane,
-            laneName: currentSettings.laneNames[currentLane],
+            lane: currentSettings.currentLane,
+            laneName: currentSettings.laneNames[currentSettings.currentLane],
             swimmers: JSON.parse(JSON.stringify(newSet)),
-            settings: { ...currentSettings, paceTimeSeconds: currentPace },
+            settings: { ...currentSettings, swimTime: currentSettings.swimTime },
             summary: generateSetSummary(newSet, currentSettings)
         };
     } else {
+        console.log('Updating existing swimmer set from config');
         // Update existing set in-place
         // Resize if number of swimmers changed
-        if (numSwimmers < currentSet.length) {
-            currentSet = currentSet.slice(0, numSwimmers);
-        } else if (numSwimmers > currentSet.length) {
-            for (let i = currentSet.length; i < numSwimmers; i++) {
+        if (currentSettings.numSwimmersPerLane[currentSettings.currentLane] < currentSet.length) {
+            currentSet = currentSet.slice(0, currentSettings.numSwimmersPerLane[currentSettings.currentLane]);
+        } else if (currentSettings.numSwimmersPerLane[currentSettings.currentLane] > currentSet.length) {
+            for (let i = currentSet.length; i < currentSettings.numSwimmersPerLane[currentSettings.currentLane]; i++) {
                 let swimmerColor;
                 if (currentSettings.colorMode === 'same') {
                     swimmerColor = currentSettings.swimmerColor;
@@ -1372,25 +1277,25 @@ function createOrUpdateSwimmerSetFromConfig(resetPaces = false) {
                 currentSet.push({
                     id: i + 1,
                     color: swimmerColor,
-                    pace: currentPace,
-                    interval: (i + 1) * swimmerInterval,
-                    lane: currentLane
+                    swimTime: currentSettings.swimTime,
+                    interval: (i + 1) * currentSettings.swimmerInterval,
+                    lane: currentSettings.currentLane
                 });
             }
         }
 
-        // If pace changed and we must reset per-swimmer customizations, overwrite pace
-        if (resetPaces) {
+        // If swim time changed and we must reset per-swimmer customizations, overwrite swim time
+        if (resetSwimTimes) {
             for (let i = 0; i < currentSet.length; i++) {
-                currentSet[i].pace = currentPace;
+                currentSet[i].swimTime = currentSettings.swimTime;
             }
         }
 
         // Recompute intervals and ids to keep consistent
         for (let i = 0; i < currentSet.length; i++) {
             currentSet[i].id = i + 1;
-            currentSet[i].interval = (i + 1) * swimmerInterval;
-            currentSet[i].lane = currentLane;
+            currentSet[i].interval = (i + 1) * currentSettings.swimmerInterval;
+            currentSet[i].lane = currentSettings.currentLane;
             // ensure color exists
             if (!currentSet[i].color) {
                 currentSet[i].color = (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]];
@@ -1398,13 +1303,14 @@ function createOrUpdateSwimmerSetFromConfig(resetPaces = false) {
         }
 
         setCurrentSwimmerSet(currentSet);
+
         // Keep createdSwimSets in sync so queuing/start paths can use it
-        createdSwimSets[currentLane] = {
-            id: createdSwimSets[currentLane] ? createdSwimSets[currentLane].id : Date.now(),
-            lane: currentLane,
-            laneName: currentSettings.laneNames[currentLane],
+        createdSwimSets[currentSettings.currentLane] = {
+            id: createdSwimSets[currentSettings.currentLane] ? createdSwimSets[currentSettings.currentLane].id : Date.now(),
+            lane: currentSettings.currentLane,
+            laneName: currentSettings.laneNames[currentSettings.currentLane],
             swimmers: JSON.parse(JSON.stringify(currentSet)),
-            settings: { ...currentSettings, paceTimeSeconds: currentPace },
+            settings: { ...currentSettings, swimTime: currentSettings.swimTime },
             summary: generateSetSummary(currentSet, currentSettings)
         };
     }
@@ -1413,81 +1319,12 @@ function createOrUpdateSwimmerSetFromConfig(resetPaces = false) {
     updateSwimmerSetDisplay();
 }
 
-// Migrate local swimmer sets to match a device-reported number of swimmers.
-// This updates currentSettings.numSwimmers and resizes per-lane sets (created and saved)
-// to avoid UI/firmware mismatch where the device is running with a different count.
-function migrateSwimmerCountsToDevice(deviceNumSwimmers) {
-    if (!deviceNumSwimmers || deviceNumSwimmers < 1) return;
-    // If already equal, nothing to do
-    if (currentSettings.numSwimmers === deviceNumSwimmers) return;
-
-    const oldNum = currentSettings.numSwimmers;
-    // Update global and per-lane records
-    currentSettings.numSwimmers = deviceNumSwimmers;
-    currentSettings.numSwimmersPerLane = [deviceNumSwimmers, deviceNumSwimmers, deviceNumSwimmers, deviceNumSwimmers];
-
-    // Resize any stored swimmerSets and createdSwimSets for each lane
-    for (let lane = 0; lane < swimmerSets.length; lane++) {
-        // Resize swimmerSets[lane]
-        let set = swimmerSets[lane] || [];
-        if (deviceNumSwimmers < set.length) {
-            set = set.slice(0, deviceNumSwimmers);
-        } else if (deviceNumSwimmers > set.length) {
-            for (let i = set.length; i < deviceNumSwimmers; i++) {
-                set.push({ id: i + 1, color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]], pace: (parseTimeInput(document.getElementById('paceTimeSeconds').value) || 30), interval: (i + 1) * currentSettings.swimmerInterval, lane: lane });
-            }
-        }
-        swimmerSets[lane] = set;
-
-        // Resize createdSwimSets if present
-        const created = createdSwimSets[lane];
-        if (created && created.swimmers) {
-            let cs = created.swimmers;
-            if (deviceNumSwimmers < cs.length) cs = cs.slice(0, deviceNumSwimmers);
-            else if (deviceNumSwimmers > cs.length) {
-                for (let i = cs.length; i < deviceNumSwimmers; i++) {
-                    cs.push({ id: i + 1, color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]], pace: created.settings ? (created.settings.paceTimeSeconds || parseTimeInput(document.getElementById('paceTimeSeconds').value)) : parseTimeInput(document.getElementById('paceTimeSeconds').value), interval: (i + 1) * (created.settings ? created.settings.swimmerInterval || currentSettings.swimmerInterval : currentSettings.swimmerInterval), lane: lane });
-                }
-            }
-            created.swimmers = cs;
-            created.settings = created.settings || {};
-            created.settings.numSwimmers = deviceNumSwimmers;
-            created.summary = generateSetSummary(created.swimmers, created.settings || currentSettings);
-            createdSwimSets[lane] = created;
-        }
-
-        // If there's an active running set for this lane, mark it for placement update
-        if (activeSwimSets[lane]) {
-            // If the count changed, flag to recompute runtime UI for that lane
-            activeSwimSets[lane].needsPlacement = true;
-            // Trim or expand internal runningSettings if present
-            if (runningSets[lane]) {
-                let rs = runningSets[lane];
-                if (deviceNumSwimmers < rs.length) rs = rs.slice(0, deviceNumSwimmers);
-                else if (deviceNumSwimmers > rs.length) {
-                    for (let i = rs.length; i < deviceNumSwimmers; i++) {
-                        rs.push({ id: i + 1, color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]], pace: rs[0] ? rs[0].pace : parseTimeInput(document.getElementById('paceTimeSeconds').value), interval: (i + 1) * currentSettings.swimmerInterval, lane: lane });
-                    }
-                }
-                runningSets[lane] = rs;
-            }
-        }
-    }
-
-    // Update UI inputs where appropriate
-    try {
-        document.getElementById('numSwimmers').value = deviceNumSwimmers;
-        setNumSwimmersUI(deviceNumSwimmers);
-    } catch (e) {}
-}
-
 // Resize data for a single lane to match device-reported swimmer count
 function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
     if (lane < 0 || lane >= swimmerSets.length) return;
     if (!deviceNumSwimmers || deviceNumSwimmers < 1) return;
 
     // Record per-lane count in settings
-    currentSettings.numSwimmersPerLane = currentSettings.numSwimmersPerLane || [currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers, currentSettings.numSwimmers];
     currentSettings.numSwimmersPerLane[lane] = deviceNumSwimmers;
 
     // Resize swimmerSets[lane]
@@ -1496,7 +1333,13 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
         set = set.slice(0, deviceNumSwimmers);
     } else if (deviceNumSwimmers > set.length) {
         for (let i = set.length; i < deviceNumSwimmers; i++) {
-            set.push({ id: i + 1, color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]], pace: (parseTimeInput(document.getElementById('paceTimeSeconds').value) || 30), interval: (i + 1) * currentSettings.swimmerInterval, lane: lane });
+            set.push({
+                id: i + 1,
+                color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]],
+                swimTime: (parseTimeInput(document.getElementById('swimTime').value) || 30),
+                interval: (i + 1) * currentSettings.swimmerInterval,
+                lane: lane
+            });
         }
     }
     swimmerSets[lane] = set;
@@ -1508,7 +1351,13 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
         if (deviceNumSwimmers < cs.length) cs = cs.slice(0, deviceNumSwimmers);
         else if (deviceNumSwimmers > cs.length) {
             for (let i = cs.length; i < deviceNumSwimmers; i++) {
-                cs.push({ id: i + 1, color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]], pace: created.settings ? (created.settings.paceTimeSeconds || parseTimeInput(document.getElementById('paceTimeSeconds').value)) : parseTimeInput(document.getElementById('paceTimeSeconds').value), interval: (i + 1) * (created.settings ? created.settings.swimmerInterval || currentSettings.swimmerInterval : currentSettings.swimmerInterval), lane: lane });
+                cs.push({
+                    id: i + 1,
+                    color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]],
+                    swimTime: created.settings ? (created.settings.swimTime || parseTimeInput(document.getElementById('swimTime').value)) : parseTimeInput(document.getElementById('swimTime').value),
+                    interval: (i + 1) * (created.settings ? created.settings.swimmerInterval || currentSettings.swimmerInterval : currentSettings.swimmerInterval),
+                    lane: lane
+                });
             }
         }
         created.swimmers = cs;
@@ -1531,16 +1380,16 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
 
 
 function generateSetSummary(swimmers, settings) {
-    const paceDistance = settings.paceDistance;
-    const avgPace = swimmers.length > 0 ? swimmers[0].pace : 30;
+    const swimDistance = settings.swimDistance;
+    const swimTime = swimmers[0].swimTime;
     const restTime = settings.restTime;
     const numRounds = settings.numRounds;
 
-    // Display pace/rest using compact formatting: 'Ns' for <=60s, 'M:SS' for >60s
-    const avgPaceDisplay = formatCompactTime(avgPace);
+    // Display swim/rest time using compact formatting: 'Ns' for <=60s, 'M:SS' for >60s
+    const avgSwimTimeDisplay = formatCompactTime(swimTime);
     const restDisplay = formatCompactTime(restTime);
 
-    return `${numRounds} x ${paceDistance}'s on the ${avgPaceDisplay} with ${restDisplay} rest`;
+    return `${numRounds} x ${swimDistance}'s on the ${avgSwimTimeDisplay} with ${restDisplay} rest`;
 }
 
 function queueSwimSet() {
@@ -1550,7 +1399,10 @@ function queueSwimSet() {
     // Swimmer Customizations tab but hasn't explicitly created a set, build it
     // from the current controls so we can queue what they're seeing.
     try {
-        if (!createdSwimSets[currentLane]) createOrUpdateSwimmerSetFromConfig(false);
+        if (!createdSwimSets[currentLane]) {
+            console.log('We are queuing a new swim set, but it does not exist - Creating from config');
+            createOrUpdateSwimmerSetFromConfig(false);
+        }
     } catch (e) {
         console.log('Failed to auto-create set before queueing:', e);
     }
@@ -2066,9 +1918,9 @@ function loadSwimSetForExecution(swimSet) {
     Object.assign(currentSettings, swimSet.settings);
 
     // Update the DOM input fields with the swim set's settings
-    if (swimSet.settings.paceTimeSeconds !== undefined) {
-        const el = document.getElementById('paceTimeSeconds');
-        if (el) el.value = formatSecondsToMmSs(swimSet.settings.paceTimeSeconds);
+    if (swimSet.settings.swimTime !== undefined) {
+        const el = document.getElementById('swimTime');
+        if (el) el.value = formatSecondsToMmSs(swimSet.settings.swimTime);
     }
     if (swimSet.settings.numRounds) {
         document.getElementById('numRounds').value = swimSet.settings.numRounds;
@@ -2165,69 +2017,6 @@ function stopPacerExecution() {
     sendStopCommand();
 }
 
-// Functions to communicate with ESP32
-function sendStartCommand() {
-    // Send only the specific fields that matter for starting the pacer.
-    // Avoid issuing a broad, multi-endpoint write which may overwrite device state.
-
-    // Geometry and LED mapping
-    sendPoolLength(currentSettings.poolLength, currentSettings.poolLengthUnits);
-    sendStripLength(currentSettings.stripLength);
-    sendLedsPerMeter(currentSettings.ledsPerMeter);
-
-    // Visual settings
-    // sendBrightness expects a percent (0-100)
-    try {
-        const brightnessPercent = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
-        sendBrightness(brightnessPercent);
-    } catch (e) {
-        // ignore if conversion fails
-    }
-    sendPulseWidth(currentSettings.pulseWidth);
-
-    // Lane and swimmer counts
-    sendNumLanes(currentSettings.numLanes);
-    sendNumSwimmers(currentSettings.numSwimmers);
-    sendNumRounds(currentSettings.numRounds);
-
-    // Pace-related
-    sendPaceDistance(currentSettings.paceDistance);
-    sendSpeed(currentSettings.speed);
-
-    // Rest and swimmer interval defaults (help the device maintain consistent defaults)
-    sendRestTime(currentSettings.restTime);
-    sendSwimmerInterval(currentSettings.swimmerInterval);
-
-    // Indicators and underwater config
-    sendDelayIndicators(currentSettings.delayIndicatorsEnabled);
-    sendUnderwaterSettings();
-
-    // Color configuration
-    if (currentSettings.colorMode === 'individual') {
-        const set = getCurrentSwimmerSet();
-        const colors = [];
-        for (let i = 0; i < currentSettings.numSwimmers; i++) {
-            if (set && set[i] && set[i].color) colors.push(set[i].color);
-            else colors.push(currentSettings.swimmerColor);
-        }
-    sendSwimmerColors(colors.join(','));
-    } else {
-        sendSwimmerColor(currentSettings.swimmerColor);
-    }
-
-    // Finally, request the device to toggle/start. Small delay ensures prior posts are scheduled.
-    setTimeout(() => {
-        fetch('/toggle', { method: 'POST' })
-        .then(response => response.text())
-        .then(result => {
-            console.log('Start command issued, server response:', result);
-        })
-        .catch(err => {
-            console.log('Start command failed (standalone mode)');
-        });
-    }, 100);
-}
-
 function sendStopCommand() {
     fetch('/toggle', { method: 'POST' })
     .then(response => response.text())
@@ -2250,14 +2039,13 @@ function displaySwimmerSet() {
 
     // Update set details in swim practice nomenclature
     const setDetails = document.getElementById('setDetails');
-    const paceDistance = currentSettings.paceDistance;
-    const avgPace = currentSet.length > 0 ? currentSet[0].pace : parseTimeInput(document.getElementById('paceTimeSeconds').value);
+    const swimDistance = currentSettings.swimDistance;
+    const swimTime = currentSet.length > 0 ? currentSet[0].swimTime : parseTimeInput(document.getElementById('swimTime').value);
     const restTime = currentSettings.restTime;
     const numRounds = currentSettings.numRounds;
-    const laneName = currentSettings.laneNames[currentSettings.currentLane];
 
-    const avgPaceDisplay = (avgPace > 60) ? formatSecondsToMmSs(avgPace) : `${Math.round(avgPace)}s`;
-    setDetails.innerHTML = `${numRounds} x ${paceDistance}'s on the ${avgPaceDisplay} with ${restTime} sec rest`;
+    const avgSwimTimeDisplay = (swimTime > 60) ? formatSecondsToMmSs(swimTime) : `${Math.round(swimTime)}s`;
+    setDetails.innerHTML = `${numRounds} x ${swimDistance}'s on the ${avgSwimTimeDisplay} with ${restTime} sec rest`;
 
     const swimmerList = document.getElementById('swimmerList');
     swimmerList.innerHTML = '';
@@ -2276,16 +2064,16 @@ function displaySwimmerSet() {
             displayColor = colorHex[swimmer.color] || swimmer.color;
         }
 
-        // Format pace value for display: use M:SS when > 60s, else plain seconds
-        const paceValueDisplay = (swimmer.pace > 60) ? formatSecondsToMmSs(swimmer.pace) : `${Math.round(swimmer.pace)}`;
-        const paceUnitLabel = (swimmer.pace > 60) ? 'min:sec' : 'sec';
+        // Format swimTime value for display: use M:SS when > 60s, else plain seconds
+        const swimTimeDisplay = (swimmer.swimTime > 60) ? formatSecondsToMmSs(swimmer.swimTime) : `${Math.round(swimmer.swimTime)}`;
+        const swimTimeUnitLabel = (swimmer.swimTime > 60) ? 'min:sec' : 'sec';
 
        row.innerHTML = `
           <div class="swimmer-color" style="background-color: ${displayColor}"
               onclick="cycleSwimmerColor(${index})" title="Click to change color"></div>
           <div class="swimmer-info">Swimmer ${swimmer.id}</div>
-          <div class="swimmer-pace"> <input type="text" class="swimmer-pace-input" value="${paceValueDisplay}"
-              placeholder="30 or 1:30" onchange="updateSwimmerPace(${index}, this.value)"> <span class="pace-unit">${paceUnitLabel}</span></div>
+          <div class="swimmer-swimTime"> <input type="text" class="swimmer-swimTime-input" value="${swimTimeDisplay}"
+              placeholder="30 or 1:30" onchange="updateSwimmerSwimTime(${index}, this.value)"> <span class="swimTime-unit">${swimTimeUnitLabel}</span></div>
        `;
 
         swimmerList.appendChild(row);
@@ -2307,12 +2095,12 @@ function cycleSwimmerColor(swimmerIndex) {
     document.getElementById('customColorPicker').style.display = 'block';
 }
 
-function updateSwimmerPace(swimmerIndex, newPace) {
+function updateSwimmerSwimTime(swimmerIndex, newSwimTime) {
     const currentSet = getCurrentSwimmerSet();
     if (currentSet[swimmerIndex]) {
         // parseTimeInput supports both seconds and M:SS formats
-        const parsed = parseTimeInput(String(newPace));
-        currentSet[swimmerIndex].pace = parsed;
+        const parsed = parseTimeInput(String(newSwimTime));
+        currentSet[swimmerIndex].swimTime = parsed;
         // Refresh display to update unit labels if needed
         updateSwimmerSetDisplay();
     }
@@ -2324,12 +2112,12 @@ function updateSwimmerPace(swimmerIndex, newPace) {
 function buildMinimalSwimSetPayload(createdSet) {
     // createdSet: { id, lane, swimmers, settings, summary }
     const settings = createdSet.settings || {};
-    const paceSeconds = settings.paceTimeSeconds || parseTimeInput(document.getElementById('paceTimeSeconds').value);
     return {
-        length: Number(settings.paceDistance || currentSettings.paceDistance),
-        paceSeconds: Number(paceSeconds),
         rounds: Number(settings.numRounds || currentSettings.numRounds),
+        swimDistance: Number(settings.swimDistance || currentSettings.swimDistance),
+        swimSeconds: Number(settings.swimTime || currentSettings.swimTime),
         restSeconds: Number(settings.restTime || currentSettings.restTime),
+        swimmerInterval: Number(settings.swimmerInterval || currentSettings.swimmerInterval),
         type: 0,
         repeat: 0
     };
@@ -2339,10 +2127,11 @@ function buildMinimalSwimSetPayload(createdSet) {
 function updateAllUIFromSettings() {
     // Update input fields
     document.getElementById('numRounds').value = currentSettings.numRounds;
+    document.getElementById('swimTime').value = currentSettings.swimTime;
     document.getElementById('restTime').value = currentSettings.restTime;
-    document.getElementById('numSwimmers').value = currentSettings.numSwimmers;
+    document.getElementById('numSwimmers').value = currentSettings.numSwimmersPerLane[currentSettings.currentLane];
     document.getElementById('swimmerInterval').value = currentSettings.swimmerInterval;
-    document.getElementById('paceDistance').value = currentSettings.paceDistance;
+    document.getElementById('swimDistance').value = currentSettings.swimDistance;
     document.getElementById('brightness').value = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
 
     // Update underwater fields
@@ -2377,24 +2166,9 @@ function updateAllUIFromSettings() {
     // Update display values (use UI-only setters to avoid POSTs)
     setNumRoundsUI(currentSettings.numRounds);
     setRestTimeUI(currentSettings.restTime);
-    setNumSwimmersUI(currentSettings.numSwimmers);
+    setNumSwimmersUI(currentSettings.numSwimmersPerLane[currentSettings.currentLane]);
     setSwimmerIntervalUI(currentSettings.swimmerInterval);
-    // update speed -> show human-friendly pace (seconds per selected distance)
-    // Avoid inserting raw m/s into the pace input (it would be parsed as seconds).
     setPoolLengthUI(currentSettings.poolLength, currentSettings.poolLengthUnits);
-    try {
-        const paceInputEl = document.getElementById('paceTimeSeconds');
-        const paceDistance = currentSettings.paceDistance || 50;
-        const poolMeters = currentSettings.poolLengthUnits === 'yards' ? (paceDistance * 0.9144) : paceDistance;
-        const paceSeconds = (currentSettings.speed && currentSettings.speed > 0) ? (poolMeters / currentSettings.speed) : 30;
-        if (paceInputEl) paceInputEl.value = formatSecondsToMmSs(paceSeconds);
-        // Recompute internals from the displayed pace (no save)
-        updateFromPace();
-        updatePaceDistance(false);
-    } catch (e) {
-        // fall back to safe defaults if DOM not ready
-        const el = document.getElementById('paceTimeSeconds'); if (el) el.value = '0:30';
-    }
     setBrightnessUI(Math.round((currentSettings.brightness - 20) * 100 / (255 - 20)));
     setFirstUnderwaterDistanceUI(currentSettings.firstUnderwaterDistance);
     setUnderwaterDistanceUI(currentSettings.underwaterDistance);
@@ -2435,7 +2209,7 @@ async function reconcileQueueWithDevice() {
             if (d.clientTempId !== undefined && d.clientTempId !== null && String(d.clientTempId) !== '0' && String(d.clientTempId) !== '') {
                 deviceByClientTemp.set(String(d.clientTempId), d);
             }
-            const sig = `${Number(d.paceSeconds).toFixed(0)}|${d.restSeconds}|${d.rounds}|${Number(d.length).toFixed(0)}`;
+            const sig = `${Number(d.swimSeconds).toFixed(0)}|${d.restSeconds}|${d.rounds}|${Number(d.swimDistance).toFixed(0)}`;
             deviceSignatures.push(sig);
         }
 
@@ -2456,7 +2230,7 @@ async function reconcileQueueWithDevice() {
             }
 
             // Fallback to signature heuristic
-            const sig = `${Math.round(local.settings.paceTimeSeconds)}|${local.settings.restTime}|${local.settings.numRounds}|${Number(local.settings.paceDistance).toFixed(0)}`;
+            const sig = `${Math.round(local.settings.swimTime)}|${local.settings.restTime}|${local.settings.numRounds}|${Number(local.settings.swimDistance).toFixed(0)}`;
             const idx = deviceSignatures.indexOf(sig);
             if (idx !== -1) {
                 const d = deviceQueue[idx];
@@ -2601,8 +2375,6 @@ function toggleSection(areaId, toggleBtnId) {
 function setCreateTab(tabName, silent) {
     const detailsTab = document.getElementById('createDetailsTab');
     const swimmersTab = document.getElementById('createSwimmersTab');
-    const breadcrumb = document.getElementById('createBreadcrumb');
-    const breadcrumbTab = document.getElementById('breadcrumbTab');
     const specialTab = document.getElementById('createSpecialTab');
 
     // Hide all specialized areas first
@@ -2640,6 +2412,8 @@ function setCreateTab(tabName, silent) {
             // Ensure a swimmer set exists based on current inputs so reloads that
             // restore the swimmers tab show the swimmer list immediately.
             try {
+                //console.log('skipping auto-create swimmer set on tab switch');
+                console.log('We are switching to the swimmer tab, - Creating or update from config');
                 createOrUpdateSwimmerSetFromConfig(false);
             } catch (e) {
                 // Swallow errors to avoid breaking tab switch
@@ -2653,15 +2427,13 @@ function setCreateTab(tabName, silent) {
     } catch (e) {}
 }
 
-// When the swim time input changes, update internal pace and reset per-swimmer paces
-// so that swimmer customizations are ignored and all swimmers use the new pace.
+// When the swim time input changes, reset per-swimmer swim times
+// so that swimmer customizations are ignored and all swimmers use the new swim time.
 document.addEventListener('DOMContentLoaded', function() {
-    const paceEl = document.getElementById('paceTimeSeconds');
-    if (paceEl) {
-        paceEl.addEventListener('change', function() {
-            // Update derived speed
-            updateFromPace();
-            // Rebuild the swimmer set and reset swimmer paces to the new value
+    const swimTimeEl = document.getElementById('swimTime');
+    if (swimTimeEl) {
+        swimTimeEl.addEventListener('change', function() {
+            // Rebuild the swimmer set and reset swimmer swim times to the new value
             createOrUpdateSwimmerSetFromConfig(true);
         });
     }
@@ -2672,8 +2444,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const specialTabBtn = document.getElementById('createSpecialTab');
     if (swimmersTabBtn) {
         swimmersTabBtn.addEventListener('click', function() {
-            // Auto-create/update the set from current controls without resetting paces
-            createOrUpdateSwimmerSetFromConfig(false);
+            // Auto-create/update the set from current controls without resetting swim times
+            // TODO: We were ensuring swim times were properly set when changing tabs
+            // but it doesn't seem to be necessary.
+            console.log('Switching to swimmers tab - Skipping updating swimmer set from config');
+            //createOrUpdateSwimmerSetFromConfig(false);
         });
     }
     if (detailsTabBtn) {
@@ -2715,9 +2490,9 @@ async function fetchDeviceSettingsAndApply() {
         console.log("Fetching globalConfigSettings");
         const res = await fetch('/globalConfigSettings');
         if (!res.ok) return;
-    const dev = await res.json();
-    console.log("Received globalConfigSettings, underwaters:" + dev.underwatersEnabled);
-    console.log('DEBUG: device reports numSwimmersPerLane =', dev.numSwimmersPerLane, ' numSwimmers (legacy) =', dev.numSwimmers);
+        const dev = await res.json();
+        console.log("Received globalConfigSettings, underwaters:" + dev.underwatersEnabled);
+        console.log('DEBUG: device reports numSwimmersPerLane =', dev.numSwimmersPerLane, ' numSwimmers (legacy) =', dev.numSwimmers);
 
         // Merge device settings into currentSettings with conversions
         if (dev.stripLengthMeters !== undefined) currentSettings.stripLength = parseFloat(dev.stripLengthMeters);
@@ -2727,25 +2502,18 @@ async function fetchDeviceSettingsAndApply() {
             // Prefer per-lane counts
             try {
                 for (let li = 0; li < dev.numSwimmersPerLane.length && li < 4; li++) {
-                    const n = parseInt(dev.numSwimmersPerLane[li]) || currentSettings.numSwimmers;
-                    // Apply per-lane value by resizing swimmerSets for each lane
-                    migrateSwimmerCountsToDeviceForLane(li, n);
+                    const n = parseInt(dev.numSwimmersPerLane[li]);
+                    if (!isNaN(n) && n >= 0 && n <= currentSettings.maxSwimmers) {
+                        // Apply per-lane value by resizing swimmerSets for each lane
+                        migrateSwimmerCountsToDeviceForLane(li, n);
+                    }
                 }
             } catch (e) {
                 // fallback to global value
             }
-        } else if (dev.numSwimmers !== undefined) {
-            // Adopt device-reported global swimmer count and migrate per-lane sets to match
-            const deviceNum = parseInt(dev.numSwimmers);
-            migrateSwimmerCountsToDevice(deviceNum);
         }
         if (dev.poolLength !== undefined) currentSettings.poolLength = dev.poolLength;
         if (dev.poolLengthUnits !== undefined) currentSettings.poolLengthUnits = dev.poolLengthUnits;
-
-        // Convert firmware speed (feet/sec) to m/s for client
-        if (dev.speedMetersPerSecond !== undefined) {
-            currentSettings.speed = parseFloat(dev.speedMetersPerSecond);
-        }
 
         // Convert brightness 0-255 to percent (0-100)
         if (dev.brightness !== undefined) {
@@ -2881,11 +2649,8 @@ function sendDelayIndicators(enabled) {
     return postForm('/setDelayIndicators', `enabled=${enabled ? 'true' : 'false'}`);
 }
 
-function sendNumSwimmers(numSwimmers) {
-    // Default: no lane (apply to all). If a lane is provided as second arg, include it.
-    const lane = (arguments.length > 1 && typeof arguments[1] === 'number') ? arguments[1] : null;
-    let body = `numSwimmers=${encodeURIComponent(numSwimmers)}`;
-    if (lane !== null) body += `&lane=${encodeURIComponent(lane)}`;
+function sendNumSwimmers(lane, numSwimmers) {
+    let body = `numSwimmers=${encodeURIComponent(numSwimmers)}&lane=${encodeURIComponent(lane)}`;
     return postForm('/setNumSwimmers', body);
 }
 
@@ -2913,16 +2678,16 @@ function sendBrightness(percent) {
     return postForm('/setBrightness', `brightness=${encodeURIComponent(internal)}`);
 }
 
-function sendSpeed(speed) {
-    return postForm('/setSpeed', `speed=${encodeURIComponent(Number(speed))}`);
-}
-
-function sendPaceDistance(paceDistance) {
-    return postForm('/setPaceDistance', `paceDistance=${encodeURIComponent(Number(paceDistance))}`);
+function sendSwimDistance(swimDistance) {
+    return postForm('/setSwimDistance', `swimDistance=${encodeURIComponent(Number(swimDistance))}`);
 }
 
 function sendNumRounds(numRounds) {
     return postForm('/setNumRounds', `numRounds=${encodeURIComponent(Number(numRounds))}`);
+}
+
+function sendSwimTime(swimSeconds) {
+    return postForm('/setSwimTime', `swimTime=${encodeURIComponent(Number(parseTimeInput(swimSeconds)))}`);
 }
 
 function sendRestTime(restSeconds) {
@@ -2956,14 +2721,12 @@ async function sendStartCommand() {
 
     // Lane and swimmer counts
     promises.push(sendNumLanes(currentSettings.numLanes));
-    promises.push(sendNumSwimmers(currentSettings.numSwimmers));
+    promises.push(sendNumSwimmers(currentSettings.currentLane, currentSettings.numSwimmersPerLane[currentSettings.currentLane]));
     promises.push(sendNumRounds(currentSettings.numRounds));
 
-    // Pace-related
-    promises.push(sendPaceDistance(currentSettings.paceDistance));
-    promises.push(sendSpeed(currentSettings.speed));
-
-    // Rest and swimmer interval defaults
+    // Swim set-related
+    promises.push(sendSwimDistance(currentSettings.swimDistance));
+    promises.push(sendSwimTime(currentSettings.swimTime));
     promises.push(sendRestTime(currentSettings.restTime));
     promises.push(sendSwimmerInterval(currentSettings.swimmerInterval));
 
@@ -2975,7 +2738,7 @@ async function sendStartCommand() {
     if (currentSettings.colorMode === 'individual') {
         const set = getCurrentSwimmerSet();
         const colors = [];
-        for (let i = 0; i < currentSettings.numSwimmers; i++) {
+        for (let i = 0; i < currentSettings.numSwimmersPerLane[currentSettings.currentLane]; i++) {
             if (set && set[i] && set[i].color) colors.push(set[i].color);
             else colors.push(currentSettings.swimmerColor);
         }
