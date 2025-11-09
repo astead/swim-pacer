@@ -1474,6 +1474,7 @@ function queueSwimSet() {
     const clientTempId = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
     payload.clientTempId = clientTempId;
 
+    console.log('queueSwimSet calling /enqueueSwimSet');
     fetch('/enqueueSwimSet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1717,6 +1718,7 @@ function saveSwimSet() {
     payload.clientTempId = newClientTemp;
 
     // Try to update on the device; if network fails, apply local-only change
+    console.log('saveSwimSet calling /updateSwimSet');
     fetch('/updateSwimSet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1837,6 +1839,7 @@ function handleDrop(evt, targetIndex) {
 
     // Send new order to device: POST lane & order (comma-separated ids or clientTempIds)
     const order = swimSetQueues[currentLane].map(s => s.id && s.id !== 0 ? String(s.id) : String(s.clientTempId || '0')).join(',');
+    console.log('handleDrop calling /reorderSwimQueue');
     fetch('/reorderSwimQueue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -2193,6 +2196,7 @@ async function reconcileQueueWithDevice() {
     if (isStandaloneMode) return;
     const lane = currentSettings.currentLane;
     try {
+        console.log('reconcileQueueWithDevice calling /getSwimQueue');
         const res = await fetch('/getSwimQueue');
         if (!res.ok) return;
         const deviceQueue = await res.json();
@@ -2403,15 +2407,47 @@ function setCreateTab(tabName, silent) {
         document.getElementById('configControls').style.display = 'none';
         document.getElementById('swimmerSet').style.display = 'block';
         const queueBtn = document.getElementById('queueBtn'); if (queueBtn) queueBtn.style.display = 'inline-block';
-        // Ensure a swimmer set exists based on current inputs so reloads that
-        // restore the swimmers tab show the swimmer list immediately.
+
+        // Only create/update the swimmer set if we don't already have one
+        // or if the current settings differ from the created set's settings.
         try {
-            //console.log('skipping auto-create swimmer set on tab switch');
-            console.log('We are switching to the swimmer tab, - Creating or update from config');
-            createOrUpdateSwimmerSetFromConfig(false);
+            const lane = currentSettings.currentLane || 0;
+            const created = createdSwimSets[lane];
+            let needCreate = false;
+            if (!created || !created.settings) {
+                needCreate = true;
+            } else {
+                const createdNumSwimmers = (created.swimmers && created.swimmers.length) || (created.settings.numSwimmers || currentSettings.numSwimmersPerLane[lane]);
+                const createdSig = `${created.settings.swimDistance}|${created.settings.swimTime}|${created.settings.restTime}|${created.settings.numRounds}|${created.settings.swimmerInterval}|${createdNumSwimmers}`;
+                const curSig = `${currentSettings.swimDistance}|${currentSettings.swimTime}|${currentSettings.restTime}|${currentSettings.numRounds}|${currentSettings.swimmerInterval}|${currentSettings.numSwimmersPerLane[lane]}`;
+                if (createdSig !== curSig) needCreate = true;
+            }
+
+            if (needCreate) {
+                console.log('We are switching to the swimmer tab, - Creating or update from config');
+                createOrUpdateSwimmerSetFromConfig(false);
+            } else {
+                console.log('Swimmers tab switch: existing created set is up-to-date, skipping rebuild');
+                // Ensure the existing created set is rendered into the swimmer UI
+                try {
+                    if (created && created.swimmers) {
+                        // Populate the editable swimmer set and update the display
+                        setCurrentSwimmerSet(JSON.parse(JSON.stringify(created.swimmers)));
+                        // Ensure forms/values reflect the created set's settings
+                        Object.assign(currentSettings, JSON.parse(JSON.stringify(created.settings || {})));
+                        updateAllUIFromSettings();
+                        updateSwimmerSetDisplay();
+                    } else {
+                        // If no created set present, still ensure current UI shows any existing swimmerSet
+                        updateSwimmerSetDisplay();
+                    }
+                } catch (e) {
+                    console.warn('Failed to render existing created set on tab switch:', e);
+                }
+            }
         } catch (e) {
-            // Swallow errors to avoid breaking tab switch
-            console.log('Failed to auto-create swimmer set on tab switch:', e);
+            console.log('Error checking created set on tab switch, falling back to create:', e);
+            try { createOrUpdateSwimmerSetFromConfig(false); } catch (e2) {}
         }
     }
 
