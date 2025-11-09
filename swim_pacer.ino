@@ -76,8 +76,7 @@ struct GlobalConfigSettings {
   int numLanes = 1;                          // Number of LED strips/lanes connected
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   bool delayIndicatorsEnabled = true;        // Whether to show delay countdown indicators
-  int numSwimmers = 1;                       // Number of swimmers (light pulses) - legacy global fallback
-  int numSwimmersPerLane[4] = {1,1,1,1};    // Per-lane swimmer counts (preferred)
+  int numSwimmersPerLane[4] = {3,3,3,3};    // Per-lane swimmer counts (preferred)
   uint8_t colorRed = 0;                      // RGB color values - default to blue
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
@@ -131,23 +130,6 @@ int swimSetQueueHead[MAX_LANES_SUPPORTED] = {0,0,0,0};
 int swimSetQueueTail[MAX_LANES_SUPPORTED] = {0,0,0,0};
 int swimSetQueueCount[MAX_LANES_SUPPORTED] = {0,0,0,0};
 
-// ----- Action queue types and storage -----
-// Actions are lightweight commands (rest pause, move to wall) that should
-// be executed in-order with swim sets. Keep per-lane action queues small.
-struct ActionItem {
-  uint32_t id;
-  uint8_t type; // REST_TYPE or MOVE_TYPE
-  uint16_t seconds; // for REST_TYPE
-  uint8_t target; // for MOVE_TYPE: 0=start, 1=far
-};
-
-const int ACTION_QUEUE_MAX = 12;
-ActionItem actionQueue[MAX_LANES_SUPPORTED][ACTION_QUEUE_MAX];
-int actionQueueHead[MAX_LANES_SUPPORTED] = {0,0,0,0};
-int actionQueueTail[MAX_LANES_SUPPORTED] = {0,0,0,0};
-int actionQueueCount[MAX_LANES_SUPPORTED] = {0,0,0,0};
-// Device-assigned action ID counter (monotonic)
-uint32_t nextActionId = 0;
 // Device-assigned swimset ID counter (monotonic)
 uint32_t nextSwimSetId = 0;
 
@@ -214,49 +196,6 @@ bool enqueueSwimSet(const SwimSet &s) {
   if (DEBUG_ENABLED) {
     Serial.print("  Queue Count After Insert="); Serial.println(swimSetQueueCount[lane]);
   }
-  return true;
-}
-
-// Action queue helpers
-// Enqueue an action into the specified lane's queue
-bool enqueueAction(const ActionItem &a, int lane) {
-  if (DEBUG_ENABLED) {
-    Serial.println("enqueueAction(): received action:");
-    Serial.print("  id="); Serial.println(a.id);
-    Serial.print("  type="); Serial.println(a.type);
-    Serial.print("  seconds="); Serial.println(a.seconds);
-    Serial.print("  target="); Serial.println(a.target);
-    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) Serial.println("  lane=INVALID");
-    else Serial.print("  actionQueueCountBefore="); Serial.println(actionQueueCount[lane]);
-  }
-  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
-  if (actionQueueCount[lane] >= ACTION_QUEUE_MAX) {
-    if (DEBUG_ENABLED) Serial.println("enqueueAction(): action queue full for lane, rejecting");
-    return false;
-  }
-  // Copy locally and assign canonical id when caller did not provide one
-  ActionItem local = a;
-  if (local.id == 0) {
-    nextActionId++;
-    if (nextActionId == 0) nextActionId = 1; // avoid reserving zero
-    local.id = nextActionId;
-  }
-  actionQueue[lane][actionQueueTail[lane]] = local;
-  actionQueueTail[lane] = (actionQueueTail[lane] + 1) % ACTION_QUEUE_MAX;
-  actionQueueCount[lane]++;
-  if (DEBUG_ENABLED) {
-    Serial.print("enqueueAction(): actionQueueCountAfter="); Serial.println(actionQueueCount[lane]);
-  }
-  return true;
-}
-
-// Dequeue an action from the specified lane's queue
-bool dequeueAction(ActionItem &out, int lane) {
-  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
-  if (actionQueueCount[lane] == 0) return false;
-  out = actionQueue[lane][actionQueueHead[lane]];
-  actionQueueHead[lane] = (actionQueueHead[lane] + 1) % ACTION_QUEUE_MAX;
-  actionQueueCount[lane]--;
   return true;
 }
 
@@ -1043,62 +982,6 @@ void setupWebServer() {
     server.send(200, "text/plain", "OK");
   });
 
-  // Endpoint to accept lightweight action items (rest, move)
-  server.on("/enqueueAction", HTTP_POST, []() {
-    String body = server.arg("plain");
-    int lane = (int)extractJsonLong(body, "lane", currentLane);
-    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-      server.send(400, "text/plain", "Invalid lane");
-      return;
-    }
-    // Build ActionItem
-    ActionItem a;
-    a.id = (uint32_t)extractJsonLong(body, "id", 0);
-    String nestedType = extractJsonString(body, "type", "");
-    if (nestedType.length() > 0) {
-      if (nestedType == "rest") {
-        a.type = REST_TYPE;
-        a.seconds = (uint16_t)extractJsonLong(body, "seconds", 30);
-        a.target = 0;
-      } else if (nestedType == "action" || nestedType == "move") {
-        a.type = MOVE_TYPE;
-        String targetStr = extractJsonString(body, "target", "start");
-        a.target = (targetStr == "far") ? 1 : 0;
-        a.seconds = 0;
-      } else {
-        server.send(400, "text/plain", "Unknown action type");
-        return;
-      }
-    } else {
-      if (body.indexOf("\"rest\"") >= 0) {
-        a.type = REST_TYPE;
-        a.seconds = (uint16_t)extractJsonLong(body, "seconds", 30);
-        a.target = 0;
-      } else if (body.indexOf("\"move\"") >= 0 || body.indexOf("\"action\"") >= 0) {
-        a.type = MOVE_TYPE;
-        a.target = (body.indexOf("\"far\"") >= 0) ? 1 : 0;
-        a.seconds = 0;
-      } else {
-        server.send(400, "text/plain", "Unknown action payload");
-        return;
-      }
-    }
-
-    bool ok = enqueueAction(a, lane);
-    if (ok) {
-      int lastIdx = (actionQueueTail[lane] - 1 + ACTION_QUEUE_MAX) % ACTION_QUEUE_MAX;
-      uint32_t storedId = actionQueue[lane][lastIdx].id;
-      String json = "{";
-      json += "\"ok\":true,";
-      json += "\"id\":" + String(storedId) + ",";
-      json += "\"queueCount\":" + String(actionQueueCount[lane]);
-      json += "}";
-      server.send(200, "application/json", json);
-    } else {
-      server.send(507, "text/plain", "Action queue full");
-    }
-  });
-
   server.begin();
   Serial.println("Web server started");
 }
@@ -1146,8 +1029,6 @@ void handleGetSettings() {
   json += "\"colorBlue\":" + String(globalConfigSettings.colorBlue) + ",";
   json += "\"brightness\":" + String(globalConfigSettings.brightness) + ","; // 0-255
   json += "\"numLanes\":" + String(globalConfigSettings.numLanes) + ",";
-  // Expose legacy global numSwimmers (fallback) only once and the per-lane counts below
-  json += "\"numSwimmers\":" + String(globalConfigSettings.numSwimmers) + ",";
   // Build array for per-lane swimmer counts
   json += "\"numSwimmersPerLane\": [";
   for (int li = 0; li < 4; li++) {
@@ -1519,9 +1400,6 @@ void saveGlobalConfigSettings() {
   preferences.putFloat("stripLengthM", globalConfigSettings.stripLengthMeters);
   preferences.putInt("ledsPerMeter", globalConfigSettings.ledsPerMeter);
   preferences.putFloat("pulseWidthFeet", globalConfigSettings.pulseWidthFeet);
-  preferences.putInt("numSwimmers", globalConfigSettings.numSwimmers);
-  // Persist per-lane counts for backward compatibility and per-lane support
-  // Persist per-lane counts (key shortened to "swimLaneX" to fit 15-char NVS limit)
   for (int li = 0; li < 4; li++) {
     String key = String("swimLane") + String(li);
     preferences.putInt(key.c_str(), globalConfigSettings.numSwimmersPerLane[li]);
@@ -1532,8 +1410,6 @@ void saveGlobalConfigSettings() {
   preferences.putUChar("brightness", globalConfigSettings.brightness);
   preferences.putBool("isRunning", globalConfigSettings.isRunning);
   preferences.putBool("sameColorMode", globalConfigSettings.sameColorMode);
-
-  // Save underwatersEnabled (key shortened to "underwaterEn" to fit 15-char NVS limit)
   preferences.putBool("underwaterEn", globalConfigSettings.underwatersEnabled);
 }
 
@@ -1562,12 +1438,10 @@ void loadGlobalConfigSettings() {
   globalConfigSettings.ledsPerMeter = preferences.getInt("ledsPerMeter", 30);
   globalConfigSettings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
   // Keep preference fallbacks consistent with struct defaults
-  // Load legacy global fallback
-  globalConfigSettings.numSwimmers = preferences.getInt("numSwimmers", 1);
   // Load per-lane counts if present (key changed to "swimLaneX" to fit 15-char NVS limit)
   for (int li = 0; li < 4; li++) {
     String key = String("swimLane") + String(li);
-    globalConfigSettings.numSwimmersPerLane[li] = preferences.getInt(key.c_str(), globalConfigSettings.numSwimmers);
+    globalConfigSettings.numSwimmersPerLane[li] = preferences.getInt(key.c_str(), 3);
   }
   globalConfigSettings.colorRed = preferences.getUChar("colorRed", 0);      // Default to blue
   globalConfigSettings.colorGreen = preferences.getUChar("colorGreen", 0);

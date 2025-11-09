@@ -1455,84 +1455,6 @@ function queueSwimSet() {
     });
 }
 
-// Enqueue a rest action from the special input box
-function enqueueRestFromInput() {
-    const v = document.getElementById('specialRestInput').value;
-    const seconds = parseTimeInput(String(v));
-    if (!seconds || seconds <= 0) {
-        alert('Please enter a valid rest time (e.g., 30 or 0:30)');
-        return;
-    }
-    const currentLane = currentSettings.currentLane;
-    const actionItem = {
-        id: Date.now(), // temporary optimistic id
-        type: 'rest',
-        seconds: seconds,
-        summary: `Rest: ${formatSecondsToMmSs(seconds)}`
-    };
-
-    // Try to enqueue on device; if it fails, keep local queue only.
-    // On success, reconcile the device-returned canonical id into our UI queue.
-    fetch('/enqueueAction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lane: currentLane, action: actionItem })
-    }).then(async resp => {
-        if (!resp.ok) throw new Error('enqueueAction failed');
-        let json = null;
-        try { json = await resp.json(); } catch (e) { /* ignore */ }
-        const canonicalId = (json && json.id) ? json.id : actionItem.id;
-        const queued = JSON.parse(JSON.stringify(actionItem));
-        queued.id = canonicalId;
-        queued.synced = true;
-        swimSetQueues[currentLane].push(queued);
-        updateQueueDisplay();
-        updatePacerButtons();
-        setTimeout(reconcileQueueWithDevice, 200);
-    }).catch(err => {
-        console.log('Failed to enqueue rest on device, keeping local queue only');
-        actionItem.synced = false;
-        swimSetQueues[currentLane].push(actionItem);
-        updateQueueDisplay();
-        updatePacerButtons();
-    });
-}
-
-// Enqueue a move action: target is 'start' or 'far'
-function enqueueMoveAction(target) {
-    const currentLane = currentSettings.currentLane;
-    const actionItem = {
-        id: Date.now(), // temporary optimistic id
-        type: 'action',
-        action: 'move',
-        target: target,
-        summary: (target === 'start') ? 'Move to starting wall' : 'Move to far wall'
-    };
-    fetch('/enqueueAction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lane: currentLane, action: actionItem })
-    }).then(resp => {
-        if (!resp.ok) throw new Error('enqueueAction failed');
-        return resp.json().catch(() => null);
-    }).then(json => {
-        const canonicalId = (json && json.id) ? json.id : actionItem.id;
-        const queued = JSON.parse(JSON.stringify(actionItem));
-        queued.id = canonicalId;
-        queued.synced = true;
-        swimSetQueues[currentLane].push(queued);
-        updateQueueDisplay();
-        updatePacerButtons();
-        setTimeout(reconcileQueueWithDevice, 200);
-    }).catch(err => {
-        console.log('Failed to enqueue move action on device, keeping local queue only');
-        actionItem.synced = false;
-        swimSetQueues[currentLane].push(actionItem);
-        updateQueueDisplay();
-        updatePacerButtons();
-    });
-}
-
 function cancelSwimSet() {
     const currentLane = currentSettings.currentLane;
     createdSwimSets[currentLane] = null;
@@ -1585,6 +1507,7 @@ function updateQueueDisplay() {
             // If this queue entry is an action/rest item, render it specially
             const draggable = (!isActive && !isCompleted) ? `draggable="true" ondragstart="handleDragStart(event, ${index})" ondragover="handleDragOver(event)" ondrop="handleDrop(event, ${index})"` : '';
             if (swimSet.type === 'rest' || swimSet.type === 'action') {
+                /*
                 const actionSummary = swimSet.summary || (swimSet.type === 'rest' ? `Rest: ${formatSecondsToMmSs(swimSet.seconds)}` : (swimSet.summary || 'Action'));
                 const actionClass = 'style="background: #f5f5f5; border: 1px dashed #bbb; padding: 8px 10px; margin: 5px 0; border-radius: 4px;"';
                 html += `
@@ -1599,6 +1522,7 @@ function updateQueueDisplay() {
                         </div>
                     </div>
                 `;
+                */
             } else {
                 statusClass = `style="background: ${backgroundColor}; border: 1px solid ${borderColor}; padding: 8px 10px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}"`;
 
@@ -2375,50 +2299,29 @@ function toggleSection(areaId, toggleBtnId) {
 function setCreateTab(tabName, silent) {
     const detailsTab = document.getElementById('createDetailsTab');
     const swimmersTab = document.getElementById('createSwimmersTab');
-    const specialTab = document.getElementById('createSpecialTab');
-
-    // Hide all specialized areas first
-    const specialArea = document.getElementById('specialOptions');
 
     if (tabName === 'details') {
         detailsTab.classList.add('active');
         swimmersTab.classList.remove('active');
-        if (specialTab) specialTab.classList.remove('active');
         document.getElementById('configControls').style.display = 'block';
         document.getElementById('swimmerSet').style.display = 'none';
-        if (specialArea) specialArea.style.display = 'none';
         // Ensure Queue button visible
         const queueBtn = document.getElementById('queueBtn'); if (queueBtn) queueBtn.style.display = 'inline-block';
     } else {
-        // Default to swimmers tab unless explicit 'special' requested
-        if (tabName === 'special') {
-            // Activate special tab
-            detailsTab.classList.remove('active');
-            swimmersTab.classList.remove('active');
-            if (specialTab) specialTab.classList.add('active');
-            document.getElementById('configControls').style.display = 'none';
-            document.getElementById('swimmerSet').style.display = 'none';
-            if (specialArea) specialArea.style.display = 'block';
-            // Hide queue button when in special options
-            const queueBtn = document.getElementById('queueBtn'); if (queueBtn) queueBtn.style.display = 'none';
-        } else {
-            detailsTab.classList.remove('active');
-            swimmersTab.classList.add('active');
-            if (specialTab) specialTab.classList.remove('active');
-            document.getElementById('configControls').style.display = 'none';
-            document.getElementById('swimmerSet').style.display = 'block';
-            if (specialArea) specialArea.style.display = 'none';
-            const queueBtn = document.getElementById('queueBtn'); if (queueBtn) queueBtn.style.display = 'inline-block';
-            // Ensure a swimmer set exists based on current inputs so reloads that
-            // restore the swimmers tab show the swimmer list immediately.
-            try {
-                //console.log('skipping auto-create swimmer set on tab switch');
-                console.log('We are switching to the swimmer tab, - Creating or update from config');
-                createOrUpdateSwimmerSetFromConfig(false);
-            } catch (e) {
-                // Swallow errors to avoid breaking tab switch
-                console.log('Failed to auto-create swimmer set on tab switch:', e);
-            }
+        detailsTab.classList.remove('active');
+        swimmersTab.classList.add('active');
+        document.getElementById('configControls').style.display = 'none';
+        document.getElementById('swimmerSet').style.display = 'block';
+        const queueBtn = document.getElementById('queueBtn'); if (queueBtn) queueBtn.style.display = 'inline-block';
+        // Ensure a swimmer set exists based on current inputs so reloads that
+        // restore the swimmers tab show the swimmer list immediately.
+        try {
+            //console.log('skipping auto-create swimmer set on tab switch');
+            console.log('We are switching to the swimmer tab, - Creating or update from config');
+            createOrUpdateSwimmerSetFromConfig(false);
+        } catch (e) {
+            // Swallow errors to avoid breaking tab switch
+            console.log('Failed to auto-create swimmer set on tab switch:', e);
         }
     }
 
@@ -2441,7 +2344,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Ensure switching to swimmers tab creates/updates the swimmer set automatically
     const detailsTabBtn = document.getElementById('createDetailsTab');
     const swimmersTabBtn = document.getElementById('createSwimmersTab');
-    const specialTabBtn = document.getElementById('createSpecialTab');
     if (swimmersTabBtn) {
         swimmersTabBtn.addEventListener('click', function() {
             // Auto-create/update the set from current controls without resetting swim times
@@ -2454,11 +2356,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (detailsTabBtn) {
         detailsTabBtn.addEventListener('click', function() {
             // No special action needed when going back to details
-        });
-    }
-    if (specialTabBtn) {
-        specialTabBtn.addEventListener('click', function() {
-            // Nothing special to precompute for special options
         });
     }
 });
@@ -2492,7 +2389,7 @@ async function fetchDeviceSettingsAndApply() {
         if (!res.ok) return;
         const dev = await res.json();
         console.log("Received globalConfigSettings, underwaters:" + dev.underwatersEnabled);
-        console.log('DEBUG: device reports numSwimmersPerLane =', dev.numSwimmersPerLane, ' numSwimmers (legacy) =', dev.numSwimmers);
+        console.log('DEBUG: device reports numSwimmersPerLane =', dev.numSwimmersPerLane);
 
         // Merge device settings into currentSettings with conversions
         if (dev.stripLengthMeters !== undefined) currentSettings.stripLength = parseFloat(dev.stripLengthMeters);
