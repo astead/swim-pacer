@@ -181,6 +181,7 @@ function updateLaneSelector() {
 
     // Show/hide lane selector based on number of lanes
     if (currentSettings.numLanes > 1) {
+        console.log(`Updating lane selector to show ${currentSettings.numLanes} lanes`);
         laneSelector.style.display = 'block';
 
         // Populate lane options
@@ -195,6 +196,7 @@ function updateLaneSelector() {
         // Set current lane
         currentLaneSelect.value = currentSettings.currentLane;
     } else {
+        console.log('Hiding lane selector for single lane configuration');
         laneSelector.style.display = 'none';
         currentSettings.currentLane = 0; // Default to lane 0 for single lane
     }
