@@ -205,6 +205,14 @@ function updateLaneSelector() {
     }
 }
 
+// Return the currently selected lane from the UI, falling back to currentSettings
+function getCurrentLaneFromUI() {
+    const el = document.getElementById('currentLane');
+    if (!el) return (currentSettings.currentLane !== undefined) ? currentSettings.currentLane : 0;
+    const v = parseInt(el.value);
+    return isNaN(v) ? ((currentSettings.currentLane !== undefined) ? currentSettings.currentLane : 0) : v;
+}
+
 function updateLaneNamesSection() {
     const laneNamesList = document.getElementById('laneNamesList');
     laneNamesList.innerHTML = '';
