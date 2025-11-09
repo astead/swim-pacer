@@ -468,7 +468,10 @@ function updateSwimTime() {
     const rlabel = document.getElementById('swimTimeValue');
     if (rlabel) rlabel.textContent = swimTime + unit;
     // Also send swim time to device so it can be used as a default for swim-sets
-    sendSwimTime(currentSettings.swimTime);
+    // Fire-and-forget but swallow network errors (avoids uncaught AbortError)
+    sendSwimTime(currentSettings.swimTime).catch(err => {
+        console.debug('sendSwimTime failed (ignored):', err && err.message ? err.message : err);
+    });
 
     // Rebuild swimmer set so UI reflects the new rest time immediately
     // TODO: Why are we doing this?
@@ -483,7 +486,9 @@ function updateRestTime() {
     const rlabel = document.getElementById('restTimeValue');
     if (rlabel) rlabel.textContent = restTime + unit;
     // Also send rest time to device so it can be used as a default for swim-sets
-    sendRestTime(currentSettings.restTime);
+    sendRestTime(currentSettings.restTime).catch(err => {
+        console.debug('sendRestTime failed (ignored):', err && err.message ? err.message : err);
+    });
     // Rebuild swimmer set so UI reflects the new rest time immediately
     console.log('Rest time updated - Skipping updating swimmer set from config');
     //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
@@ -498,7 +503,9 @@ function updateSwimmerInterval() {
     const silabel = document.getElementById('swimmerIntervalValue');
     if (silabel) silabel.textContent = swimmerInterval + unit;
     // Also send swimmer interval to device so it can be used as a default for swim-sets
-    sendSwimmerInterval(currentSettings.swimmerInterval);
+    sendSwimmerInterval(currentSettings.swimmerInterval).catch(err => {
+        console.debug('sendSwimmerInterval failed (ignored):', err && err.message ? err.message : err);
+    });
     // Rebuild swimmer set so UI reflects the new swimmer interval immediately
     console.log('Swimmer interval updated - Skipping updating swimmer set from config');
     //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
@@ -1710,7 +1717,9 @@ function saveSwimSet() {
     const payload = buildMinimalSwimSetPayload(newEntry);
     payload.lane = currentLane;
 
-    if (existing.id && existing.id !== 0) payload.matchId = existing.id;
+    if (existing.id && existing.id !== 0) {
+        payload.matchId = existing.id;
+    }
     else if (existing.clientTempId) payload.matchClientTempId = String(existing.clientTempId);
 
     // Generate a new clientTempId to set on the server for correlation
@@ -1718,7 +1727,7 @@ function saveSwimSet() {
     payload.clientTempId = newClientTemp;
 
     // Try to update on the device; if network fails, apply local-only change
-    console.log('saveSwimSet calling /updateSwimSet');
+    console.log('saveSwimSet calling /updateSwimSet with payload:', payload);
     fetch('/updateSwimSet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1729,6 +1738,7 @@ function saveSwimSet() {
         // Merge server-assigned values back into our local entry
         if (json && json.id) newEntry.id = json.id;
         if (json && json.clientTempId) newEntry.clientTempId = String(json.clientTempId);
+        console.log("updated successfully on server");
         newEntry.synced = true;
         swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = newEntry;
 

@@ -645,6 +645,7 @@ void setupWebServer() {
 
   // Swim set queue endpoints
   server.on("/enqueueSwimSet", HTTP_POST, []() {
+    Serial.println("/enqueueSwimSet ENTER");
     // Read raw body
     String body = server.arg("plain");
     SwimSet s;
@@ -690,6 +691,17 @@ void setupWebServer() {
       s.id = nextSwimSetId;
     }
     bool ok = enqueueSwimSet(s);
+    Serial.println(" Enqueue result: " + String(ok ? "OK" : "FAILED"));
+    Serial.println("  Enqueued swim set: ");
+    Serial.println("   rounds=" + String(s.rounds));
+    Serial.println("   swimDistance=" + String(s.swimDistance));
+    Serial.println("   swimSeconds=" + String(s.swimSeconds));
+    Serial.println("   restSeconds=" + String(s.restSeconds));
+    Serial.println("   swimmerInterval=" + String(s.swimmerInterval));
+    Serial.println("   type=" + String(s.type));
+    Serial.println("   repeat=" + String(s.repeat));
+    Serial.println("   id=" + String(s.id));
+    Serial.println("   clientTempId=" + String((unsigned long long)s.clientTempId));
     currentLane = oldLane;
     if (ok) {
       int qCount = swimSetQueueCount[lane];
@@ -711,6 +723,7 @@ void setupWebServer() {
   // will be used to replace the entry. Optionally provide clientTempId to update the
   // stored clientTempId for future reconciliation.
   server.on("/updateSwimSet", HTTP_POST, []() {
+    Serial.println("/updateSwimSet ENTER");
     String body = server.arg("plain");
     SwimSet s;
     s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
@@ -732,8 +745,22 @@ void setupWebServer() {
     if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
       server.send(400, "text/plain", "Invalid lane");
       return;
+    } else {
+      Serial.println("  lane=" + String(lane));
     }
+    Serial.println("  received payload to update set: ");
+    Serial.print(" rounds="); Serial.println(s.rounds);
+    Serial.print(" swimDistance="); Serial.println(s.swimDistance);
+    Serial.print(" swimSeconds="); Serial.println(s.swimSeconds);
+    Serial.print(" restSeconds="); Serial.println(s.restSeconds);
+    Serial.print(" swimmerInterval="); Serial.println(s.swimmerInterval);
+    Serial.print(" type="); Serial.println(s.type);
+    Serial.print(" repeat="); Serial.println(s.repeat);
+    Serial.print(" matchId="); Serial.println(matchId);
+    Serial.print(" matchClientTempId="); Serial.println(matchClientTemp);
+    Serial.print(" newClientTempId="); Serial.println(newClientTemp);
 
+    Serial.println(" Searching queue for matching entry...");
     bool found = false;
     // iterate queue for this lane
     for (int i = 0; i < swimSetQueueCount[lane]; i++) {
@@ -754,6 +781,9 @@ void setupWebServer() {
           if (parsed != 0) entry.clientTempId = parsed;
         }
         found = true;
+
+        Serial.println(" Match found by id=" + String(entry.id) + ", updated entry.");
+
         // Respond with canonical id and echoed clientTempId
         String json = "{";
         json += "\"ok\":true,";
@@ -762,36 +792,43 @@ void setupWebServer() {
         json += "}";
         server.send(200, "application/json", json);
         break;
-      }
 
-      // match by clientTempId (hex/decimal string)
-      if (matchClientTemp.length() > 0) {
-        unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
-        if (parsed != 0 && entry.clientTempId == parsed) {
-          entry.rounds = s.rounds;
-          entry.swimDistance = s.swimDistance;
-          entry.swimSeconds = s.swimSeconds;
-          entry.restSeconds = s.restSeconds;
-          entry.swimmerInterval = s.swimmerInterval;
-          entry.type = s.type;
-          entry.repeat = s.repeat;
-          if (newClientTemp.length() > 0) {
-            unsigned long long parsedNew = (unsigned long long)strtoull(newClientTemp.c_str(), NULL, 16);
-            if (parsedNew != 0) entry.clientTempId = parsedNew;
+      } else {
+        Serial.println(" No match found by id=" + String(entry.id));
+        // match by clientTempId (hex/decimal string)
+        if (matchClientTemp.length() > 0) {
+          Serial.println("  matchClientTemp=" + matchClientTemp);
+          unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
+          if (parsed != 0 && entry.clientTempId == parsed) {
+            Serial.println("  Match found by clientTempId=" + String(entry.clientTempId));
+            entry.rounds = s.rounds;
+            entry.swimDistance = s.swimDistance;
+            entry.swimSeconds = s.swimSeconds;
+            entry.restSeconds = s.restSeconds;
+            entry.swimmerInterval = s.swimmerInterval;
+            entry.type = s.type;
+            entry.repeat = s.repeat;
+            if (newClientTemp.length() > 0) {
+              unsigned long long parsedNew = (unsigned long long)strtoull(newClientTemp.c_str(), NULL, 16);
+              if (parsedNew != 0) entry.clientTempId = parsedNew;
+            }
+            found = true;
+            String json = "{";
+            json += "\"ok\":true,";
+            json += "\"id\":" + String(entry.id) + ",";
+            json += "\"clientTempId\":\"" + String((unsigned long long)entry.clientTempId) + "\"";
+            json += "}";
+            server.send(200, "application/json", json);
+            break;
+          } else {
+            Serial.println("  No match found by clientTempId=" + String(entry.clientTempId));
           }
-          found = true;
-          String json = "{";
-          json += "\"ok\":true,";
-          json += "\"id\":" + String(entry.id) + ",";
-          json += "\"clientTempId\":\"" + String((unsigned long long)entry.clientTempId) + "\"";
-          json += "}";
-          server.send(200, "application/json", json);
-          break;
         }
       }
     }
 
     if (!found) {
+      Serial.println(" No matching entry found in queue");
       server.send(404, "text/plain", "Not found");
     }
   });
@@ -828,6 +865,7 @@ void setupWebServer() {
   });
 
   server.on("/runSwimSetNow", HTTP_POST, []() {
+    Serial.println("/runSwimSetNow ENTER");
     String body = server.arg("plain");
     SwimSet s;
     s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
@@ -845,6 +883,7 @@ void setupWebServer() {
   });
 
   server.on("/getSwimQueue", HTTP_GET, []() {
+    Serial.println("/getSwimQueue ENTER");
     int lane = currentLane;
     String json = "[";
     for (int i = 0; i < swimSetQueueCount[lane]; i++) {
@@ -871,6 +910,7 @@ void setupWebServer() {
   // id values can be device ids (numeric) or clientTempId strings. Entries not matched
   // will be appended at the end in their existing order.
   server.on("/reorderSwimQueue", HTTP_POST, []() {
+    Serial.println("/reorderSwimQueue ENTER");
     String body = server.arg("plain");
     int lane = (int)extractJsonLong(body, "lane", currentLane);
     if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
