@@ -88,9 +88,12 @@ function showPage(pageId) {
 
 // Helper function to parse time input (supports both "30" and "1:30" formats)
 function parseTimeInput(timeStr) {
-    if (!timeStr || timeStr.trim() === '') return 30; // Default to 30 seconds
+    // Accept numbers or strings; convert to string unless null/undefined.
+    if (timeStr === undefined || timeStr === null) return 30; // Default to 30 seconds
 
-    timeStr = timeStr.trim();
+    // Coerce non-strings (numbers) to string and trim safely.
+    timeStr = String(timeStr).trim();
+    if (timeStr === '') return 30; // Default to 30 seconds
 
     // Check if it contains a colon (minutes:seconds format)
     if (timeStr.includes(':')) {
