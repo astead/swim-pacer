@@ -9,7 +9,7 @@ let currentSettings = {
     restTime: 5,
     swimTime: 30,
     swimDistance: 50,
-    swimmerInterval: 1,
+    swimmerInterval: 4,
     delayIndicatorsEnabled: true,
     maxSwimmersPerLane: 10,
     numSwimmersPerLane: [3,3,3,3],
