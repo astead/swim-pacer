@@ -416,3 +416,140 @@ input:checked + .toggle-slider:before {
     flex-direction: column;
     align-items: center;
 }
+
+/* Queue list styling - compact row layout to match prior UI */
+#queueList {
+    padding: 6px;
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+/* Each queue row: label/info on left, actions on right */
+.queue-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+    background: #ffffff;
+    gap: 12px;
+    box-sizing: border-box;
+}
+
+/* Text area to the left (label + small info) */
+.queue-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Main summary label */
+.queue-label {
+    font-weight: 600;
+    color: #222;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+/* Secondary info (times, rounds) */
+.queue-info {
+    font-size: 12px;
+    color: #666;
+    white-space: nowrap;
+}
+
+/* Status text (Deleting..., Running, Completed) */
+.queue-status {
+    font-size: 12px;
+    color: #777;
+    margin-left: 6px;
+}
+
+/* Action buttons group */
+button, .small-button {
+    background: #007bff;
+    color: #ffffff;
+    border: 1px solid rgba(0,0,0,0.08);
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background .12s ease, transform .06s ease;
+}
+button:hover, .small-button:hover { background: #0069d9; }
+button:active, .small-button:active { transform: translateY(1px); }
+
+button[disabled], .small-button[disabled] {
+    background: #e6e6e6;
+    color: #333333;
+    border-color: rgba(0,0,0,0.06);
+    opacity: 1;
+    cursor: default;
+}
+
+.queue-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+/* Buttons - small, compact */
+.queue-actions button {
+    background: #007bff;
+    color: #fff;
+    border: 1px solid rgba(0,0,0,0.08);
+    padding: 6px 8px;
+    font-size: 13px;
+}
+.queue-actions button:hover { background: #0069d9; }
+.queue-actions button:active { transform: translateY(1px); }
+.queue-actions button[disabled] { opacity: 0.6; cursor: default; }
+
+/* Small icons/spinner */
+.spinner { margin-left: 8px; font-size: 14px; opacity: 0.9; }
+
+/* Empty queue message */
+.queue-empty {
+    padding: 14px;
+    color: #666;
+    text-align: center;
+    background: #fafafa;
+    border-radius: 4px;
+}
+
+/* Running row: visually prominent */
+.queue-item.running {
+    background: #f0f8ff;
+    border-left: 4px solid #007bff;
+}
+
+/* Completed row: de-emphasized */
+.queue-item.completed {
+    background: #fbfbfb;
+    color: #777;
+    opacity: 0.85;
+}
+
+/* Pending delete row: show caution tint */
+.queue-item.pending-delete {
+    background: #fff8f0;
+    border-left: 4px solid #ffb74d;
+}
+
+/* If any buttons relied on very light styles, ensure text is readable */
+.btn-light, .light-button {
+    background: #f6f6f6;
+    color: #222;
+    border: 1px solid rgba(0,0,0,0.06);
+}
+
+/* Responsive tiny screens */
+@media (max-width: 520px) {
+    .queue-info { display: none; }
+    .queue-actions button { padding: 6px 6px; font-size: 12px; }
+    .queue-label { font-size: 14px; }
+}

@@ -1446,11 +1446,14 @@ function generateSetSummary(swimmers, settings) {
     const restTime = settings.restTime;
     const numRounds = settings.numRounds;
 
+    // distance label: use "50's" for plural rounds, "50'" for a single round (no "'s")
+    const distanceLabel = (numRounds === 1) ? `${swimDistance}` : `${swimDistance}'s`;
+
     // Display swim/rest time using compact formatting: 'Ns' for <=60s, 'M:SS' for >60s
     const avgSwimTimeDisplay = formatCompactTime(swimTime);
     const restDisplay = formatCompactTime(restTime);
 
-    return `${numRounds} x ${swimDistance}'s on the ${avgSwimTimeDisplay} with ${restDisplay} rest`;
+    return `${numRounds} x ${distanceLabel} on the ${avgSwimTimeDisplay} with ${restDisplay} rest`;
 }
 
 function queueSwimSet() {
@@ -1535,84 +1538,159 @@ function returnToConfigMode() {
 }
 
 function updateQueueDisplay() {
-    const currentLane = currentSettings.currentLane;
-    const queueList = document.getElementById('queueList');
+    const lane = currentSettings.currentLane || 0;
+    const listEl = document.getElementById('queueList');
+    if (!listEl) return;
 
-    if (!queueList) {
-        console.error('Queue list element not found');
+    // Rebuild the entire list to ensure DOM matches swimSetQueues state.
+    listEl.innerHTML = '';
+
+    const queue = swimSetQueues[lane] || [];
+    if (queue.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'queue-empty';
+        empty.textContent = 'Queue is empty';
+        listEl.appendChild(empty);
         return;
     }
 
-    let html = '';
+    queue.forEach((entry, idx) => {
+        const row = document.createElement('div');
+        row.className = 'queue-item';
 
-    // Show all sets in the queue (completed and pending)
-    if (swimSetQueues[currentLane].length === 0) {
-        html += '<div style="color: #666; font-style: italic;">No sets queued for Lane ' + (currentLane + 1) + '</div>';
-    } else {
-    swimSetQueues[currentLane].forEach((swimSet, index) => {
-            // Determine active set using the tracked active index for this lane.
-            const isActive = (activeSwimSetIndex[currentLane] === index);
-            const isCompleted = swimSet.completed;
+        // Determine running state for this entry
+        const isLaneRunning = !!laneRunning[lane];
+        const isEntryRunning = isLaneRunning && activeSwimSetIndex[lane] === idx;
 
-            let statusClass = '';
-            let borderColor = '#ddd';
-            let backgroundColor = '#fff';
+        // Completed entry rendering
+        if (entry.completed) {
+            row.classList.add('completed');
+            const label = document.createElement('span');
+            label.className = 'queue-label';
+            label.textContent = (entry.summary || (`${entry.rounds} x ${entry.swimDistance}'s`)) + ' — Completed';
+            row.appendChild(label);
 
-            if (isActive) {
-                backgroundColor = '#e7f3ff';
-                borderColor = '#2196F3';
-            } else if (isCompleted) {
-                backgroundColor = '#f8f9fa';
-                borderColor = '#28a745';
-            }
+            const info = document.createElement('span');
+            info.className = 'queue-info';
+            // Prefer entry.completedAt if present, else show a generic completed marker
+            const completedAt = entry.completedAt ? new Date(entry.completedAt).toLocaleString() : null;
+            info.textContent = completedAt ? `Completed: ${completedAt}` : 'Completed';
+            row.appendChild(info);
 
-            // If this queue entry is an action/rest item, render it specially
-            const draggable = (!isActive && !isCompleted) ? `draggable="true" ondragstart="handleDragStart(event, ${index})" ondragover="handleDragOver(event)" ondrop="handleDrop(event, ${index})"` : '';
-            if (swimSet.type === 'rest' || swimSet.type === 'action') {
-                /*
-                const actionSummary = swimSet.summary || (swimSet.type === 'rest' ? `Rest: ${formatSecondsToMmSs(swimSet.seconds)}` : (swimSet.summary || 'Action'));
-                const actionClass = 'style="background: #f5f5f5; border: 1px dashed #bbb; padding: 8px 10px; margin: 5px 0; border-radius: 4px;"';
-                html += `
-                    <div ${actionClass} class="queue-action-item" ${draggable}>
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <div style="font-style: italic; color: #444;">
-                                ${actionSummary}
-                            </div>
-                            <div style="display:flex; gap:6px;">
-                                <button onclick="deleteSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                */
-            } else {
-                statusClass = `style="background: ${backgroundColor}; border: 1px solid ${borderColor}; padding: 8px 10px; margin: 5px 0; border-radius: 4px; ${isCompleted ? 'opacity: 0.8;' : ''}"`;
+            const actions = document.createElement('span');
+            actions.className = 'queue-actions';
 
-                // Get the correct round values for display
-                const displayCurrentRound = isActive ? currentRounds[currentLane] : 1;
-                const displayTotalRounds = (swimSet.settings && swimSet.settings.numRounds) ||
-                                          (isActive && runningSettings[currentLane] ? runningSettings[currentLane].numRounds : 10);
+            // Allow removal of completed sets (delete) but disable edit/run
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = 'Remove';
+            removeBtn.onclick = () => { deleteSwimSet(idx); };
+            actions.appendChild(removeBtn);
 
-                html += `
-                    <div ${statusClass} ${draggable}>
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div style="font-weight: bold; color: ${isActive ? '#1976D2' : isCompleted ? '#28a745' : '#333'};">
-                                ${swimSet.summary}
-                            </div>
-                            <div style="display: flex; gap: 5px; align-items: center;">
-                                ${isActive ? `<div style="font-weight: bold; color: #1976D2; margin-left: 8px;">Round: <span id="currentRound">${displayCurrentRound}</span>/<span id="totalRounds">${displayTotalRounds}</span></div>` : ''}
-                                ${!isActive && !isCompleted ? `<button onclick="editSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Edit</button>` : ''}
-                                ${!isActive && !isCompleted ? `<button onclick="deleteSwimSet(${index})" style="padding: 2px 6px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Delete</button>` : ''}
-                                ${isCompleted ? `<div style="font-size: 12px; color: #28a745; font-weight: bold;">Completed</div>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-        });
-    }
+            row.appendChild(actions);
+            listEl.appendChild(row);
+            return;
+        }
 
-    queueList.innerHTML = html;
+        // Running entry rendering (not editable)
+        if (isEntryRunning) {
+            row.classList.add('running');
+            const label = document.createElement('span');
+            label.className = 'queue-label';
+            label.textContent = (entry.summary || (`${entry.rounds} x ${entry.swimDistance}'s`)) + ' — Running';
+            row.appendChild(label);
+
+            const status = document.createElement('span');
+            status.className = 'queue-status';
+            // show current round info if available
+            const roundInfo = currentRounds[lane] ? `Round ${currentRounds[lane]} / ${entry.settings?.numRounds || entry.rounds}` : 'In progress';
+            status.textContent = roundInfo;
+            row.appendChild(status);
+
+            const spinner = document.createElement('span');
+            spinner.className = 'spinner';
+            spinner.innerHTML = 'Running...';
+            row.appendChild(spinner);
+
+            const actions = document.createElement('span');
+            actions.className = 'queue-actions';
+
+            // Provide Stop control (stops lane execution). Do not allow Edit/Delete while running.
+            const stopBtn = document.createElement('button');
+            stopBtn.textContent = 'Stop';
+            stopBtn.onclick = () => { stopQueue(); };
+            actions.appendChild(stopBtn);
+
+            // Optional: allow "Force Remove" with confirmation (disabled by default)
+            const forceRemoveBtn = document.createElement('button');
+            forceRemoveBtn.textContent = 'Remove (force)';
+            forceRemoveBtn.title = 'Force remove (not recommended while running)';
+            forceRemoveBtn.disabled = true; // keep disabled to avoid accidental removal
+            actions.appendChild(forceRemoveBtn);
+
+            row.appendChild(actions);
+            listEl.appendChild(row);
+            return;
+        }
+
+        // If this entry is marked as pending deletion, render as such (but keep visible).
+        if (entry.deletedPending) {
+            row.classList.add('pending-delete');
+            const label = document.createElement('span');
+            label.className = 'queue-label';
+            label.textContent = entry.summary || (`${entry.rounds} x ${entry.swimDistance}'s`);
+            row.appendChild(label);
+
+            const status = document.createElement('span');
+            status.className = 'queue-status';
+            status.textContent = 'Deleting...';
+            row.appendChild(status);
+
+            const spinner = document.createElement('span');
+            spinner.className = 'spinner';
+            spinner.innerHTML = 'Loading ... ';
+            row.appendChild(spinner);
+
+            // Disabled controls placeholder so layout doesn't shift
+            const btnArea = document.createElement('span');
+            btnArea.className = 'queue-actions';
+            const disabledBtn = document.createElement('button');
+            disabledBtn.textContent = 'Delete';
+            disabledBtn.disabled = true;
+            btnArea.appendChild(disabledBtn);
+            row.appendChild(btnArea);
+
+            listEl.appendChild(row);
+            return;
+        }
+
+        // Normal (not pending/completed) rendering
+        const label = document.createElement('span');
+        label.className = 'queue-label';
+        label.textContent = entry.summary || (`${entry.rounds} x ${entry.swimDistance}'s`);
+        row.appendChild(label);
+
+        const actions = document.createElement('span');
+        actions.className = 'queue-actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.textContent = 'Edit';
+        editBtn.onclick = () => { editSwimSet(idx); };
+        actions.appendChild(editBtn);
+
+        const runBtn = document.createElement('button');
+        runBtn.textContent = 'Run';
+        runBtn.onclick = () => { runSwimSetNow(idx); };
+        actions.appendChild(runBtn);
+
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'Delete';
+        delBtn.onclick = () => { deleteSwimSet(idx); };
+        actions.appendChild(delBtn);
+
+        row.appendChild(actions);
+
+        listEl.appendChild(row);
+    });
 }
 
 function updatePacerButtons() {
