@@ -1738,10 +1738,10 @@ function saveSwimSet() {
         // Merge server-assigned values back into our local entry
         if (json && json.id) newEntry.id = json.id;
         if (json && json.clientTempId) newEntry.clientTempId = String(json.clientTempId);
-        console.log("updated successfully on server");
         newEntry.synced = true;
+        newEntry.updatePending = false;
         swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = newEntry;
-
+        console.log("updated successfully on server");
         // Clear editing state and return to create mode
         editingSwimSetIndexes[currentLane] = -1;
         createdSwimSets[currentLane] = null;
@@ -1749,7 +1749,10 @@ function saveSwimSet() {
         updateQueueDisplay();
     }).catch(err => {
         // Device not reachable or update failed — keep local change and mark unsynced
+        console.debug('saveSwimSet: network/update error - marking updatePending', err && err.message ? err.message : err);
         newEntry.synced = false;
+        newEntry.updatePending = true;
+        newEntry.updateRequestedAt = Date.now();
         newEntry.clientTempId = newClientTemp;
         swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = newEntry;
         editingSwimSetIndexes[currentLane] = -1;
@@ -1876,6 +1879,53 @@ async function retryPendingDeletes() {
         }
     }
 }
+
+// Periodic retry for pending updates (call from startup)
+async function retryPendingUpdates() {
+    if (isStandaloneMode) return;
+    for (let lane = 0; lane < swimSetQueues.length; lane++) {
+        for (let i = 0; i < swimSetQueues[lane].length; i++) {
+            const it = swimSetQueues[lane][i];
+            if (it && it.updatePending) {
+                // Re-send update to server (best-effort)
+                try {
+                    const body = {
+                        matchId: it.id || 0,
+                        matchClientTempId: it.clientTempId || undefined,
+                        lane: lane,
+                        rounds: it.settings.numRounds || it.rounds,
+                        swimDistance: it.settings.swimDistance || it.swimDistance,
+                        swimSeconds: it.settings.swimSeconds || it.swimTime || it.swimSeconds,
+                        restSeconds: it.settings.restTime || it.restSeconds,
+                        swimmerInterval: it.settings.swimmerInterval || it.swimmerInterval,
+                        type: it.type || 0,
+                        repeat: it.repeat || 0,
+                    };
+                    const ctrl = new AbortController();
+                    const to = setTimeout(() => ctrl.abort(), 7000);
+                    const resp = await fetch('/updateSwimSet', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                        signal: ctrl.signal
+                    });
+                    clearTimeout(to);
+                    if (resp.ok) {
+                        const j = await resp.json().catch(()=>null);
+                        it.updatePending = false;
+                        if (j && j.id) it.id = j.id;
+                        if (j && j.clientTempId) it.clientTempId = j.clientTempId;
+                        swimSetQueues[lane][i] = it;
+                        updateQueueDisplay();
+                    }
+                } catch (e) {
+                    // ignore; will retry later
+                }
+            }
+        }
+    }
+}
+
 
 // Drag & Drop handlers for reordering queue items
 function handleDragStart(evt, index) {
@@ -2343,6 +2393,7 @@ async function reconcileQueueWithDevice() {
     } finally {
         // Kick off retry of pending deletes (best-effort)
         retryPendingDeletes().catch(()=>{});
+        retryPendingUpdates().catch(()=>{});
     }
 }
 

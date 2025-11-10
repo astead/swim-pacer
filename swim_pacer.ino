@@ -725,29 +725,33 @@ void setupWebServer() {
   server.on("/updateSwimSet", HTTP_POST, []() {
     Serial.println("/updateSwimSet ENTER");
     String body = server.arg("plain");
+    Serial.println(" Raw body:");
+    Serial.println(body);
+
+    // Parse required fields from JSON body (no form-encoded fallback)
     SwimSet s;
     s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
     s.swimDistance = (uint16_t)extractJsonLong(body, "swimDistance", swimSetSettings.swimSetDistance);
     s.swimSeconds = (uint16_t)extractJsonLong(body, "swimSeconds", swimSetSettings.swimTimeSeconds);
     s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
     s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
-    s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
+    s.type = (uint8_t)extractJsonLong(body, "type", 0);
     s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
 
-    // Matching identifiers
     long matchId = extractJsonLong(body, "matchId", 0);
     String matchClientTemp = extractJsonString(body, "matchClientTempId", "");
-
-    // Optional new clientTempId to set on the updated entry
     String newClientTemp = extractJsonString(body, "clientTempId", "");
-
     int lane = (int)extractJsonLong(body, "lane", currentLane);
+
+    Serial.print("  lane="); Serial.println(lane);
+    Serial.print("  matchId="); Serial.println(matchId);
+    Serial.print("  matchClientTempId="); Serial.println(matchClientTemp);
+
     if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-      server.send(400, "text/plain", "Invalid lane");
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid lane\"}");
       return;
-    } else {
-      Serial.println("  lane=" + String(lane));
     }
+
     Serial.println("  received payload to update set: ");
     Serial.print(" rounds="); Serial.println(s.rounds);
     Serial.print(" swimDistance="); Serial.println(s.swimDistance);
@@ -761,14 +765,14 @@ void setupWebServer() {
     Serial.print(" newClientTempId="); Serial.println(newClientTemp);
 
     Serial.println(" Searching queue for matching entry...");
+     // Find matching entry in the lane queue and update fields
     bool found = false;
-    // iterate queue for this lane
     for (int i = 0; i < swimSetQueueCount[lane]; i++) {
       int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
       SwimSet &entry = swimSetQueue[lane][idx];
-      // match by device id if provided
+
+      // Match by device id first
       if (matchId != 0 && entry.id == (uint32_t)matchId) {
-        // Replace fields
         entry.rounds = s.rounds;
         entry.swimDistance = s.swimDistance;
         entry.swimSeconds = s.swimSeconds;
@@ -777,60 +781,67 @@ void setupWebServer() {
         entry.type = s.type;
         entry.repeat = s.repeat;
         if (newClientTemp.length() > 0) {
-          unsigned long long parsed = (unsigned long long)strtoull(newClientTemp.c_str(), NULL, 16);
-          if (parsed != 0) entry.clientTempId = parsed;
+          unsigned long long parsedNew = (unsigned long long)strtoull(newClientTemp.c_str(), NULL, 16);
+          if (parsedNew != 0) entry.clientTempId = parsedNew;
         }
         found = true;
+      }
+      // Otherwise try matching by clientTempId (hex/decimal)
+      else if (matchClientTemp.length() > 0) {
+        unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
+        if (parsed != 0 && entry.clientTempId == parsed) {
+          entry.rounds = s.rounds;
+          entry.swimDistance = s.swimDistance;
+          entry.swimSeconds = s.swimSeconds;
+          entry.restSeconds = s.restSeconds;
+          entry.swimmerInterval = s.swimmerInterval;
+          entry.type = s.type;
+          entry.repeat = s.repeat;
+          if (newClientTemp.length() > 0) {
+            unsigned long long parsedNew = (unsigned long long)strtoull(newClientTemp.c_str(), NULL, 16);
+            if (parsedNew != 0) entry.clientTempId = parsedNew;
+          }
+          found = true;
+        }
+      }
 
-        Serial.println(" Match found by id=" + String(entry.id) + ", updated entry.");
-
-        // Respond with canonical id and echoed clientTempId
+      if (found) {
+        // Respond with updated canonical info + current lane queue for immediate reconciliation
         String json = "{";
         json += "\"ok\":true,";
         json += "\"id\":" + String(entry.id) + ",";
-        json += "\"clientTempId\":\"" + String((unsigned long long)entry.clientTempId) + "\"";
+        json += "\"clientTempId\":\"" + String((unsigned long long)entry.clientTempId) + "\",";
+        json += "\"queue\":";
+        // build queue JSON for this lane
+        {
+          String q = "[";
+          for (int qi = 0; qi < swimSetQueueCount[lane]; qi++) {
+            int qidx = (swimSetQueueHead[lane] + qi) % SWIMSET_QUEUE_MAX;
+            SwimSet &qs = swimSetQueue[lane][qidx];
+            if (qi) q += ",";
+            q += "{";
+            q += String("\"id\":") + String(qs.id) + ",";
+            q += String("\"clientTempId\":\"") + String((unsigned long long)qs.clientTempId) + String("\",");
+            q += String("\"rounds\":") + String(qs.rounds) + ",";
+            q += String("\"swimDistance\":") + String(qs.swimDistance) + ",";
+            q += String("\"swimSeconds\":") + String(qs.swimSeconds) + ",";
+            q += String("\"restSeconds\":") + String(qs.restSeconds) + ",";
+            q += String("\"swimmerInterval\":") + String(qs.swimmerInterval) + ",";
+            q += String("\"type\":") + String(qs.type) + ",";
+            q += String("\"repeat\":") + String(qs.repeat);
+            q += "}";
+          }
+          q += "]";
+          json += q;
+        }
         json += "}";
         server.send(200, "application/json", json);
-        break;
-
-      } else {
-        Serial.println(" No match found by id=" + String(entry.id));
-        // match by clientTempId (hex/decimal string)
-        if (matchClientTemp.length() > 0) {
-          Serial.println("  matchClientTemp=" + matchClientTemp);
-          unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
-          if (parsed != 0 && entry.clientTempId == parsed) {
-            Serial.println("  Match found by clientTempId=" + String(entry.clientTempId));
-            entry.rounds = s.rounds;
-            entry.swimDistance = s.swimDistance;
-            entry.swimSeconds = s.swimSeconds;
-            entry.restSeconds = s.restSeconds;
-            entry.swimmerInterval = s.swimmerInterval;
-            entry.type = s.type;
-            entry.repeat = s.repeat;
-            if (newClientTemp.length() > 0) {
-              unsigned long long parsedNew = (unsigned long long)strtoull(newClientTemp.c_str(), NULL, 16);
-              if (parsedNew != 0) entry.clientTempId = parsedNew;
-            }
-            found = true;
-            String json = "{";
-            json += "\"ok\":true,";
-            json += "\"id\":" + String(entry.id) + ",";
-            json += "\"clientTempId\":\"" + String((unsigned long long)entry.clientTempId) + "\"";
-            json += "}";
-            server.send(200, "application/json", json);
-            break;
-          } else {
-            Serial.println("  No match found by clientTempId=" + String(entry.clientTempId));
-          }
-        }
+        return;
       }
-    }
+    } // end for
 
-    if (!found) {
-      Serial.println(" No matching entry found in queue");
-      server.send(404, "text/plain", "Not found");
-    }
+    Serial.println(" No matching entry found in queue");
+    server.send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}");
   });
 
   // Delete a swim set by device id or clientTempId for a lane.
