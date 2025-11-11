@@ -514,7 +514,7 @@ button[disabled], .small-button[disabled] {
 
 /* Empty queue message */
 .queue-empty {
-    padding: 14px;
+    padding: 0;
     color: #666;
     text-align: center;
     background: #fafafa;
