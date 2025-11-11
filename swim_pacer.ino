@@ -2250,7 +2250,10 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             int qidx = swimmer->queueIndex;
             if (qidx >= 0 && qidx < swimSetQueueCount[laneIndex]) {
               int actualIdx = (swimSetQueueHead[laneIndex] + qidx) % SWIMSET_QUEUE_MAX;
+              // Set completed flag
               swimSetQueue[laneIndex][actualIdx].status |= SWIMSET_STATUS_COMPLETED;
+              // turn off active flag
+              swimSetQueue[laneIndex][actualIdx].status &= ~SWIMSET_STATUS_ACTIVE;
             }
             // Here we could implement any lane-level completion logic if needed
           }
@@ -2295,6 +2298,13 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             laneActiveQueueIndex[laneIndex] = swimmer->queueIndex;
             // Optionally persist running flag / global state consistency
             // (do not force-stop lane here; clearing is handled below when all swimmers finish)
+
+            // Set the swim set status to active
+            int qidx = swimmer->queueIndex;
+            if (qidx >= 0 && qidx < swimSetQueueCount[laneIndex]) {
+              int actualIdx = (swimSetQueueHead[laneIndex] + qidx) % SWIMSET_QUEUE_MAX;
+              swimSetQueue[laneIndex][actualIdx].status |= SWIMSET_STATUS_ACTIVE;
+            }
 
             // Reset swimmer state for new set
             swimmer->currentRound = 1;
