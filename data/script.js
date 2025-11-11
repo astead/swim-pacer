@@ -2398,12 +2398,9 @@ async function reconcileQueueWithDevice() {
         if (!res.ok) return;
         const deviceQueueRaw = await res.json();
 
-        // DEBUG: always log the raw payload so you can verify what the server sends
         console.log('reconcileQueueWithDevice: device payload:', deviceQueueRaw);
 
-        // Normalize device queue payloads:
-        // - If server returns { queue: [...], status: { ... } } handle both parts.
-        // - If server returns an array, treat it as the queue for the current lane.
+        // Normalize payload
         let deviceQueue = [];
         let deviceStatus = null;
         if (Array.isArray(deviceQueueRaw)) {
@@ -2412,56 +2409,104 @@ async function reconcileQueueWithDevice() {
             if (Array.isArray(deviceQueueRaw.queue)) deviceQueue = deviceQueueRaw.queue;
             else if (Array.isArray(deviceQueueRaw.items)) deviceQueue = deviceQueueRaw.items;
             else if (Array.isArray(deviceQueueRaw.entries)) deviceQueue = deviceQueueRaw.entries;
-            else if (deviceQueueRaw.length) deviceQueue = deviceQueueRaw; // fallback
+            else if (Array.isArray(deviceQueueRaw)) deviceQueue = deviceQueueRaw;
             if (deviceQueueRaw.status) deviceStatus = deviceQueueRaw.status;
         }
 
-        // Build quick lookup structures for device entries: by clientTempId and by signature
+        // Build quick lookup tables for device entries (restricted to our lane if device provides lane)
+        const deviceById = new Map();
         const deviceByClientTemp = new Map();
-        const deviceSignatures = [];
+        const deviceBySignature = new Map(); // signature -> first matching device entry
+
         for (let i = 0; i < deviceQueue.length; i++) {
             const d = deviceQueue[i];
-            // If server includes lane, only consider entries for our lane
             if (d.lane !== undefined && Number(d.lane) !== Number(lane)) continue;
+            if (d.id !== undefined && d.id !== null) deviceById.set(String(d.id), d);
             if (d.clientTempId !== undefined && d.clientTempId !== null && String(d.clientTempId) !== '0' && String(d.clientTempId) !== '') {
                 deviceByClientTemp.set(String(d.clientTempId), d);
             }
-            const sig = `${Number(d.swimSeconds).toFixed(0)}|${d.restSeconds}|${d.rounds}|${Number(d.swimDistance).toFixed(0)}`;
-            deviceSignatures.push(sig);
+            // Build tolerant signature: prefer swimSeconds/swimTime, restSeconds/restTime, rounds/numRounds, swimDistance/distance
+            const swimSec = Number(d.swimSeconds ?? d.swimTime ?? 0).toFixed(0);
+            const restSec = Number(d.restSeconds ?? d.restTime ?? 0).toFixed(0);
+            const rounds = Number(d.rounds ?? d.numRounds ?? 0).toFixed(0);
+            const dist = Number(d.swimDistance ?? d.distance ?? 0).toFixed(0);
+            const sig = `${swimSec}|${restSec}|${rounds}|${dist}`;
+            if (!deviceBySignature.has(sig)) deviceBySignature.set(sig, d);
         }
 
-        // Iterate local queue and mark swim sets as synced when their clientTempId or signature appears
+        // Ensure swimSetQueues[lane] exists
+        swimSetQueues[lane] = swimSetQueues[lane] || [];
+
+        // Try to reconcile local entries in-place using best-known matches
         for (let i = 0; i < swimSetQueues[lane].length; i++) {
             const local = swimSetQueues[lane][i];
-            // Skip pending deletions so we don't re-sync deleted items
-            if (local.deletedPending) continue;
-            if (local.type === 'rest' || local.type === 'action') continue;
+            if (!local) continue;
 
-            if (local.clientTempId) {
-                const d = deviceByClientTemp.get(String(local.clientTempId));
-                if (d) {
-                    local.synced = true;
-                    if (d.id !== undefined) local.id = d.id;
-                    // Update completed flag if device indicates it
-                    if (d.completed !== undefined) local.completed = !!d.completed;
-                    continue;
+            // Skip items we intentionally flagged as pending delete (do not re-sync them back)
+            if (local.deletedPending) continue;
+
+            // 1) Match by server id if present
+            let matchedDevice = null;
+            if (local.id !== undefined && local.id !== null && String(local.id) !== '0') {
+                matchedDevice = deviceById.get(String(local.id));
+            }
+
+            // 2) Match by clientTempId (stable client-generated identifier)
+            if (!matchedDevice && local.clientTempId) {
+                matchedDevice = deviceByClientTemp.get(String(local.clientTempId));
+            }
+
+            // 3) Match by tolerant signature (best-effort)
+            if (!matchedDevice) {
+                const sigLocal = `${Math.round(local.settings?.swimTime ?? local.swimSeconds ?? 0).toFixed(0)}|${Number(local.settings?.restTime ?? local.restSeconds ?? 0).toFixed(0)}|${Number(local.settings?.numRounds ?? local.rounds ?? 0).toFixed(0)}|${Number(local.settings?.swimDistance ?? local.swimDistance ?? 0).toFixed(0)}`;
+                matchedDevice = deviceBySignature.get(sigLocal);
+            }
+
+            // 4) If still not matched, attempt tolerant field match (numbers equal or within small tolerance)
+            if (!matchedDevice) {
+                for (const [k, d] of deviceById.entries()) {
+                    try {
+                        const dObj = (typeof d === 'object') ? d : null;
+                        if (!dObj) continue;
+                        const dSwim = Number(dObj.swimSeconds ?? dObj.swimTime ?? 0);
+                        const lSwim = Number(local.settings?.swimTime ?? local.swimSeconds ?? 0);
+                        const dRest = Number(dObj.restSeconds ?? dObj.restTime ?? 0);
+                        const lRest = Number(local.settings?.restTime ?? local.restSeconds ?? 0);
+                        const dRounds = Number(dObj.rounds ?? dObj.numRounds ?? 0);
+                        const lRounds = Number(local.settings?.numRounds ?? local.rounds ?? 0);
+                        const dDist = Number(dObj.swimDistance ?? dObj.distance ?? 0);
+                        const lDist = Number(local.settings?.swimDistance ?? local.swimDistance ?? 0);
+                        if (Math.abs(dSwim - lSwim) <= 1 && Math.abs(dRest - lRest) <= 1 && dRounds === lRounds && Math.abs(dDist - lDist) <= 1) {
+                            matchedDevice = dObj;
+                            break;
+                        }
+                    } catch (e) { continue; }
                 }
             }
 
-            const sig = `${Math.round(local.settings.swimTime)}|${local.settings.restTime}|${local.settings.numRounds}|${Number(local.settings.swimDistance).toFixed(0)}`;
-            const idx = deviceSignatures.indexOf(sig);
-            if (idx !== -1) {
-                const d = deviceQueue[idx];
+            // Merge authoritative fields from device when matched
+            if (matchedDevice) {
                 local.synced = true;
-                if (d.id !== undefined) local.id = d.id;
-                if (d.completed !== undefined) local.completed = !!d.completed;
+                if (matchedDevice.id !== undefined) local.id = matchedDevice.id;
+                if (matchedDevice.clientTempId !== undefined) local.clientTempId = String(matchedDevice.clientTempId);
+                if (matchedDevice.completed !== undefined) local.completed = !!matchedDevice.completed;
+                // Accept server-side per-item status if present (preferred)
+                if (matchedDevice.status) {
+                    local.status = matchedDevice.status;
+                    if (matchedDevice.statusDetail) local.statusDetail = matchedDevice.statusDetail;
+                    local.statusUpdatedAt = matchedDevice.statusUpdatedAt || new Date().toISOString();
+                }
+                // Merge runtime progress fields if provided
+                if (matchedDevice.currentRound !== undefined) local.currentRound = Number(matchedDevice.currentRound);
+                if (matchedDevice.startedAt) local.startedAt = matchedDevice.startedAt;
+                if (matchedDevice.completedAt) local.completedAt = matchedDevice.completedAt;
             }
         }
 
-        // If the server provided an explicit status block, apply it to client state
+        // Persist latest deviceStatus snapshot and timestamp for UI preference
         if (deviceStatus && typeof deviceStatus === 'object') {
             try {
-                // laneRunning: could be boolean or an array per-lane
+                // laneRunning block
                 if (deviceStatus.laneRunning !== undefined) {
                     if (Array.isArray(deviceStatus.laneRunning)) {
                         for (let li = 0; li < deviceStatus.laneRunning.length && li < laneRunning.length; li++) {
@@ -2472,7 +2517,7 @@ async function reconcileQueueWithDevice() {
                     }
                 }
 
-                // active index per lane or single value
+                // activeIndex block (per-lane)
                 if (deviceStatus.activeIndex !== undefined) {
                     if (Array.isArray(deviceStatus.activeIndex)) {
                         for (let li = 0; li < deviceStatus.activeIndex.length && li < activeSwimSetIndex.length; li++) {
@@ -2483,7 +2528,7 @@ async function reconcileQueueWithDevice() {
                     }
                 }
 
-                // current rounds per lane or single value
+                // currentRounds block (per-lane)
                 if (deviceStatus.currentRounds !== undefined) {
                     if (Array.isArray(deviceStatus.currentRounds)) {
                         for (let li = 0; li < deviceStatus.currentRounds.length && li < currentRounds.length; li++) {
@@ -2494,29 +2539,39 @@ async function reconcileQueueWithDevice() {
                     }
                 }
 
-                // If server supplies which set is active or isRunning, mirror it in currentSettings.isRunning
+                // isRunning field
                 if (deviceStatus.isRunning !== undefined) {
                     if (Array.isArray(deviceStatus.isRunning)) {
                         for (let li = 0; li < deviceStatus.isRunning.length && li < laneRunning.length; li++) {
-                            currentSettings.isRunning = !!deviceStatus.isRunning[li];
+                            // coerce and store
+                            laneRunning[li] = !!deviceStatus.isRunning[li];
                         }
                     } else {
                         currentSettings.isRunning = !!deviceStatus.isRunning;
                     }
                 }
+
+                // Persist snapshot for UI fallback/use
+                lastDeviceStatus = deviceStatus;
+                lastDeviceStatusAt = Date.now();
             } catch (e) {
                 console.warn('Failed to apply device status block:', e);
             }
+        } else {
+            // No explicit status block: still record empty snapshot time so client knows it's stale
+            lastDeviceStatus = null;
+            lastDeviceStatusAt = 0;
         }
 
-        // Reflect any changes in the UI
+        // Reflect changes in the UI
         updateQueueDisplay();
         updateStatus();
         updatePacerButtons();
     } catch (e) {
-        // ignore network errors
+        // ignore network errors but log for debugging
+        console.warn('reconcileQueueWithDevice error:', e);
     } finally {
-        // Kick off retry of pending deletes/updates (best-effort)
+        // Retry pending deletes/updates (best-effort)
         retryPendingDeletes().catch(()=>{});
         retryPendingUpdates().catch(()=>{});
     }
