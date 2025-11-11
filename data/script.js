@@ -1112,17 +1112,6 @@ function initializePacerStatus() {
     const currentLane = currentSettings.currentLane;
     const runningData = getRunningSettings();
 
-    // Safely update elements (check if they exist first)
-    const currentRoundEl = document.getElementById('currentRound');
-    if (currentRoundEl) {
-        currentRoundEl.textContent = currentRounds[currentLane];
-    }
-
-    const totalRoundsEl = document.getElementById('totalRounds');
-    if (totalRoundsEl) {
-        totalRoundsEl.textContent = runningData.numRounds;
-    }
-
     // Initialize round timing display using running settings
     const swimSeconds = runningData.swimTime;
     const restSeconds = runningData.restTime;
@@ -1132,13 +1121,6 @@ function initializePacerStatus() {
     const lastSwimmerStartDelay = (runningData.swimmerInterval || 0) + ((runningData.numSwimmers - 1) * (runningData.swimmerInterval || 0));
     const totalSetTimePerSwimmer = runningData.numRounds * totalRoundTime;
     const totalSetDuration = lastSwimmerStartDelay + totalSetTimePerSwimmer; // seconds
-    const totalSetMinutes = Math.floor(totalSetDuration / 60);
-    const totalSetSecondsOnly = Math.floor(totalSetDuration % 60);
-    const totalSetStr = `${totalSetMinutes}:${totalSetSecondsOnly.toString().padStart(2, '0')}`;
-    const setTotalEl = document.getElementById('setTotalTiming');
-    if (setTotalEl) setTotalEl.textContent = `0:00 / ${totalSetStr}`;
-
-    // Active swimmers/next event/current phase UI removed — skip updating them
 
     // Update set basics display using running settings
     const swimDistance = runningData.swimDistance;
@@ -1151,8 +1133,6 @@ function initializePacerStatus() {
     // Show initial delay countdown using running settings
     // Use swimmerInterval as the initial delay for the first swimmer
     const initialDelayDisplay = runningData.swimmerInterval || 0;
-    // nextEvent, currentPhase, and elapsedTime elements were removed from the UI.
-    // We intentionally do not update them here.
 }
 
 function startStatusUpdates() {
@@ -1171,6 +1151,8 @@ function updatePacerStatus() {
 
     const currentLane = currentSettings.currentLane;
     const runningData = getRunningSettings();
+    if (!runningData) return;
+
     const elapsedSeconds = Math.floor((Date.now() - pacerStartTimes[currentLane]) / 1000);
 
     // Account for initial delay using running settings
@@ -1179,47 +1161,19 @@ function updatePacerStatus() {
 
     // Check if we're still in the initial delay period
     if (timeAfterInitialDelay < 0) {
-        // Still in initial delay phase — update round timing and round number only
-        const swimSeconds = runningData.swimTime;
-        const restSeconds = runningData.restTime;
-
-        // Compute totalSetStr locally and update set total timing to show elapsed 0
-        const totalRoundTime_loc = swimSeconds + restSeconds;
-        const lastSwimmerStartDelay_loc = (runningData.swimmerInterval || 0) + ((runningData.numSwimmers - 1) * (runningData.swimmerInterval || 0));
-        const totalSetTimePerSwimmer_loc = runningData.numRounds * totalRoundTime_loc;
-        const totalSetDuration_loc = lastSwimmerStartDelay_loc + totalSetTimePerSwimmer_loc;
-        const totalSetMinutes_loc = Math.floor(totalSetDuration_loc / 60);
-        const totalSetSecondsOnly_loc = Math.floor(totalSetDuration_loc % 60);
-        const totalSetStr_loc = `${totalSetMinutes_loc}:${totalSetSecondsOnly_loc.toString().padStart(2, '0')}`;
-        const setTotalEl2 = document.getElementById('setTotalTiming');
-        if (setTotalEl2) setTotalEl2.textContent = `0:00 / ${totalSetStr_loc}`;
         return;
     }
 
-    // Calculate current phase and progress (after initial delay) using running settings
+    // Calculate current phase and progress (after initial delay)
     const swimSeconds = runningData.swimTime;
     const restSeconds = runningData.restTime;
     const totalRoundTime = swimSeconds + restSeconds;
 
-    // Update current round (after initial delay)
+    // Update current round (logical state only; UI reflects via updateQueueDisplay)
     const calculatedRound = Math.floor(timeAfterInitialDelay / totalRoundTime) + 1;
     if (calculatedRound !== currentRounds[currentLane] && calculatedRound <= runningData.numRounds) {
         currentRounds[currentLane] = calculatedRound;
-        document.getElementById('currentRound').textContent = currentRounds[currentLane];
-    }
-
-    // Update set total timing: elapsed since pacerStartTimes (including initial delay) vs totalSetDuration
-    const lastSwimmerStartDelay2 = (runningData.swimmerInterval || 0) + ((runningData.numSwimmers - 1) * (runningData.swimmerInterval || 0));
-    const totalSetTimePerSwimmer2 = runningData.numRounds * totalRoundTime;
-    const totalSetDuration2 = lastSwimmerStartDelay2 + totalSetTimePerSwimmer2;
-    const totalSetMinutes2 = Math.floor(totalSetDuration2 / 60);
-    const totalSetSecondsOnly2 = Math.floor(totalSetDuration2 % 60);
-    const totalSetStr2 = `${totalSetMinutes2}:${totalSetSecondsOnly2.toString().padStart(2, '0')}`;
-    const elapsedSinceStart = elapsedSeconds; // includes initial delay
-    const setTotalEl3 = document.getElementById('setTotalTiming');
-    if (setTotalEl3) {
-        const elapsedStr = formatSecondsToMmSs(elapsedSinceStart);
-        setTotalEl3.textContent = `${elapsedStr} / ${totalSetStr2}`;
+        updateQueueDisplay();
     }
 
     // Check if ALL swimmers have completed the set
@@ -1230,10 +1184,6 @@ function updatePacerStatus() {
 
     // Check if the entire set is complete (all swimmers finished)
     if (elapsedSeconds >= lastSwimmerFinishTime) {
-    // Set complete — update currentRound only
-    const currentRoundEl = document.getElementById('currentRound');
-    if (currentRoundEl) currentRoundEl.textContent = runningData.numRounds;
-
         // Handle queue completion (only once)
         if (activeSwimSets[currentLane] && !completionHandled[currentLane]) {
             completionHandled[currentLane] = true;
@@ -1620,7 +1570,7 @@ function updateQueueDisplay() {
             // Provide Stop control (stops lane execution). Do not allow Edit/Delete while running.
             const stopBtn = document.createElement('button');
             stopBtn.textContent = 'Stop';
-            stopBtn.onclick = () => { stopQueue(); };
+            stopBtn.onclick = () => { stopPacerExecution().catch(()=>{}); };
             actions.appendChild(stopBtn);
 
             // Optional: allow "Force Remove" with confirmation (disabled by default)
@@ -2082,52 +2032,6 @@ function handleDrop(evt, targetIndex) {
     });
 }
 
-function startQueue() {
-    const currentLane = currentSettings.currentLane;
-
-    if (swimSetQueues[currentLane].length === 0) return;
-
-    // Find the first non-completed swim set in current lane's queue
-    const nextSwimSet = swimSetQueues[currentLane].find(set => !set.completed);
-    if (!nextSwimSet) return; // No pending sets to start
-
-    // Start the next non-completed swim set
-    activeSwimSets[currentLane] = nextSwimSet;
-
-    // Track the active set index so only that queued item shows runtime details
-    activeSwimSetIndex[currentLane] = swimSetQueues[currentLane].indexOf(nextSwimSet);
-
-    // Load the active set into the pacer system
-    loadSwimSetForExecution(activeSwimSets[currentLane]);
-
-    // Start the pacer
-    startPacerExecution();
-
-    // Update displays (this creates the DOM elements)
-    updateQueueDisplay();
-    updatePacerButtons();
-
-    // Initialize pacer status display AFTER DOM elements are created
-    setTimeout(() => {
-        initializePacerStatus();
-    }, 10); // Small delay to ensure DOM is updated
-}
-
-function stopQueue() {
-    const currentLane = currentSettings.currentLane;
-
-    // Stop current execution
-    stopPacerExecution();
-
-    // Clear active set for current lane
-    activeSwimSets[currentLane] = null;
-    activeSwimSetIndex[currentLane] = -1;
-
-    // Update displays
-    updateQueueDisplay();
-    updatePacerButtons();
-}
-
 function loadSwimSetForExecution(swimSet) {
     console.log('Loading swim set for execution:', swimSet);
     // Set the current lane
@@ -2159,88 +2063,151 @@ function loadSwimSetForExecution(swimSet) {
     updateLaneSelector();
 }
 
-function startPacerExecution() {
-    // Use existing pacer start logic
-    const currentLane = currentSettings.currentLane;
-    const currentSet = getCurrentSwimmerSet();
+// Server-first start: request device to start the head (or specific index) and only on success call startLocalExecution.
+// Returns Promise<boolean>
+async function runSwimSetNow(requestedIndex) {
+    const lane = getCurrentLaneFromUI();
+    const queue = swimSetQueues[lane] || [];
 
-    if (currentSet.length === 0) {
-        alert('No swimmers configured for this lane');
-        return;
+    // choose head or requested index (first non-completed)
+    let headIndex = -1;
+    if (typeof requestedIndex === 'number' && requestedIndex >= 0 && requestedIndex < queue.length && !queue[requestedIndex].completed) {
+        headIndex = requestedIndex;
+    } else {
+        headIndex = queue.findIndex(s => !s.completed);
     }
-
-    // Create immutable copies for running state
-    runningSets[currentLane] = JSON.parse(JSON.stringify(currentSet));
-    runningSettings[currentLane] = JSON.parse(JSON.stringify(currentSettings));
-
-    // Start the pacer for this lane
-    laneRunning[currentLane] = true;
-    currentSettings.isRunning = true;
-
-    // Reset completion tracking for this lane
-    completionHandled[currentLane] = false;
-
-    // Initialize timing - always reset for new queue start
-    pacerStartTimes[currentLane] = Date.now();
-
-    // Send start command to ESP32
-    // Send the swim set to the device and request immediate start
-    const created = createdSwimSets[currentLane] || {
-        id: Date.now(),
-        lane: currentLane,
-        swimmers: runningSets[currentLane] || [],
-        settings: runningSettings[currentLane] || currentSettings,
-        summary: ''
-    };
-
-    // If we have a created swim set with specific rounds, update runningSettings
-    if (created && created.settings && created.settings.numRounds !== undefined) {
-        runningSettings[currentLane].numRounds = created.settings.numRounds;
+    if (headIndex === -1) {
+        console.warn('runSwimSetNow: no pending swim set to start');
+        return false;
     }
+    const head = queue[headIndex];
 
-    const payload = buildMinimalSwimSetPayload(created);
-    // Include lane so device starts the set for the correct lane
-    payload.lane = created.lane || currentLane;
-    fetch('/runSwimSetNow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    }).then(() => {
-        console.log('runSwimSetNow sent');
-    }).catch(() => {
-        // fallback to old toggle when device not reachable
-        sendStartCommand();
-    });
+    head.startingPending = true;
+    updateQueueDisplay();
 
-    // Start status updates (timer display)
-    startStatusUpdates();
+    const payload = { lane };
+    if (head.id && head.id !== 0) payload.matchId = Number(head.id);
+    else if (head.clientTempId) payload.matchClientTempId = String(head.clientTempId);
+    payload.set = { settings: head.settings || {}, swimmers: head.swimmers || [] };
 
-    // Update status display
-    updateStatus();
+    const controller = new AbortController();
+    const to = setTimeout(() => controller.abort(), 7000);
+    try {
+        const resp = await fetch('/runSwimSetNow', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        });
+        clearTimeout(to);
+        head.startingPending = false;
+        updateQueueDisplay();
+
+        if (!resp.ok) {
+            const txt = await resp.text().catch(()=>null);
+            console.warn('Device rejected start:', resp.status, txt);
+            return false;
+        }
+        const json = await resp.json().catch(()=>null);
+        if (json && json.startedId) head.id = json.startedId;
+        if (json && json.clientTempId) head.clientTempId = String(json.clientTempId);
+
+        startLocalExecution(lane, headIndex);
+        return true;
+    } catch (e) {
+        clearTimeout(to);
+        head.startingPending = false;
+        updateQueueDisplay();
+        console.warn('runSwimSetNow failed (no server confirmation)', e && e.message ? e.message : e);
+        return false;
+    }
 }
 
-function stopPacerExecution() {
-    const currentLane = currentSettings.currentLane;
+function startLocalExecution(lane, index) {
+    // Defaults
+    lane = (typeof lane === 'number') ? lane : getCurrentLaneFromUI();
+    const queue = swimSetQueues[lane] || [];
 
-    // Stop the pacer for this lane
-    laneRunning[currentLane] = false;
-    currentSettings.isRunning = false;
+    // If index not provided, prefer activeSwimSetIndex or first non-completed
+    if (typeof index !== 'number' || index < 0) {
+        if (typeof activeSwimSetIndex[lane] === 'number' && activeSwimSetIndex[lane] >= 0) {
+            index = activeSwimSetIndex[lane];
+        } else {
+            index = queue.findIndex(s => !s.completed);
+        }
+    }
 
-    // Stop status updates (timer display)
-    stopStatusUpdates();
+    if (index < 0 || index >= queue.length) {
+        console.warn('startLocalExecution: invalid index', lane, index);
+        return false;
+    }
 
-    // Clear running state
-    runningSets[currentLane] = null;
-    runningSettings[currentLane] = null;
+    const setToRun = queue[index];
 
-    // Clear timing state to ensure fresh start next time
-    pacerStartTimes[currentLane] = 0;
+    // Create immutable running copies so UI/timers don't mutate the queued object
+    runningSets[lane] = JSON.parse(JSON.stringify(setToRun.swimmers || []));
+    runningSettings[lane] = JSON.parse(JSON.stringify(setToRun.settings || currentSettings));
 
-    // Update visual status indicators (border color)
+    // Mark active set and local running state
+    activeSwimSets[lane] = setToRun;
+    activeSwimSetIndex[lane] = index;
+    laneRunning[lane] = true;
+    currentSettings.isRunning = true;
+    completionHandled[lane] = false;
+    pacerStartTimes[lane] = Date.now();
+
+    // Initialize current round for the lane (logical state only)
+    currentRounds[lane] = 1;
+
+    // Load into UI (doesn't POST) and start periodic status updates
+    try { loadSwimSetForExecution(setToRun); } catch (e) { /* ignore */ }
+    try { initializePacerStatus(); } catch (e) { /* ignore */ }
+    startStatusUpdates();
+
+    // Refresh UI
+    updateQueueDisplay();
+    updatePacerButtons();
     updateStatus();
 
-    // Send stop command to ESP32
-    sendStopCommand();
+    return true;
+}
+
+// Server-first stop: ask device to stop, then clear local running state on confirmation
+async function stopPacerExecution() {
+    const lane = getCurrentLaneFromUI();
+    // Ask server to stop this lane
+    const controller = new AbortController();
+    const to = setTimeout(() => controller.abort(), 5000);
+    try {
+        const resp = await fetch('/stopLane', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lane }),
+            signal: controller.signal
+        });
+        clearTimeout(to);
+        if (!resp.ok) {
+            console.warn('Device stop request failed', resp.status);
+            return false;
+        }
+        // Server confirmed stop — clear local running state
+        laneRunning[lane] = false;
+        currentSettings.isRunning = false;
+        runningSets[lane] = null;
+        runningSettings[lane] = null;
+        pacerStartTimes[lane] = 0;
+        activeSwimSets[lane] = null;
+        activeSwimSetIndex[lane] = -1;
+        stopStatusUpdates();
+        updateQueueDisplay();
+        updatePacerButtons();
+        updateStatus();
+        return true;
+    } catch (e) {
+        clearTimeout(to);
+        console.warn('stopPacerExecution failed (no server confirmation)', e && e.message ? e.message : e);
+        return false;
+    }
 }
 
 function sendStopCommand() {
@@ -2597,7 +2564,7 @@ function handleSetCompletion() {
     if (remainingSets.length > 0) {
         // Auto-advance to next non-completed set after a brief pause
         setTimeout(() => {
-            startQueue(); // No more alert - just auto-start
+            runSwimSetNow().catch(()=>{});
         }, 1500);
     } else {
         // No more sets, update displays
@@ -2661,6 +2628,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     } catch (e) {
         // ignore if localStorage unavailable
         setCreateTab('swimmers', true);
+    }
+
+    // Attach start/stop handlers that call server-first functions directly
+    try {
+        const startBtn = document.getElementById('startBtn');
+        if (startBtn) {
+            startBtn.addEventListener('click', () => {
+                // runSwimSetNow returns a Promise<boolean>
+                runSwimSetNow().then(ok => {
+                    if (!ok) console.warn('Device did not confirm start');
+                }).catch(err => console.error('run start error', err));
+            });
+        }
+
+        const stopBtn = document.getElementById('stopBtn');
+        if (stopBtn) {
+            stopBtn.addEventListener('click', () => {
+                stopPacerExecution().then(ok => {
+                    if (!ok) console.warn('Device did not confirm stop');
+                }).catch(err => console.error('stop error', err));
+            });
+        }
+    } catch (e) {
+        console.warn('Failed to attach start/stop listeners', e);
     }
 });
 

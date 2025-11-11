@@ -133,6 +133,9 @@ int swimSetQueueCount[MAX_LANES_SUPPORTED] = {0,0,0,0};
 // Device-assigned swimset ID counter (monotonic)
 uint32_t nextSwimSetId = 0;
 
+// track the queue index (0 = head) of the set currently started for each lane
+int laneActiveQueueIndex[MAX_LANES_SUPPORTED] = {-1, -1, -1, -1};
+
 // Forward declarations for functions used below
 float convertPoolToMeters(float distanceInPoolUnits);
 void recalculateValues();
@@ -394,7 +397,12 @@ void applySwimSetToSettings(const SwimSet &s) {
     swimmers[currentLane][i].cachedSpeedMPS = speedMPS;
     swimmers[currentLane][i].cachedRestSeconds = s.restSeconds;
     swimmers[currentLane][i].activeSwimSetId = s.id;
-    swimmers[currentLane][i].queueIndex = 0;  // Starting with first set in queue
+
+    // set queue index: use laneActiveQueueIndex if set, otherwise 0
+    int qidx = -1;
+    if (currentLane >= 0 && currentLane < MAX_LANES_SUPPORTED) qidx = laneActiveQueueIndex[currentLane];
+    if (qidx < 0) qidx = 0;
+    swimmers[currentLane][i].queueIndex = qidx;
   }
 
   // Debug: dump swimmer state for current lane after initialization (first 6 swimmers)
@@ -955,19 +963,93 @@ void setupWebServer() {
   server.on("/runSwimSetNow", HTTP_POST, []() {
     Serial.println("/runSwimSetNow ENTER");
     String body = server.arg("plain");
-    SwimSet s;
-    s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
-    s.swimDistance = (uint16_t)extractJsonLong(body, "swimDistance", swimSetSettings.swimSetDistance);
-    s.swimSeconds = (uint16_t)extractJsonLong(body, "swimSeconds", swimSetSettings.swimTimeSeconds);
-    s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
-    s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
-    s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
-    s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
 
-    // Apply and start immediately
+    // Determine lane (optional in body, otherwise use currentLane)
+    int lane = (int)extractJsonLong(body, "lane", currentLane);
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid lane\"}");
+      return;
+    }
+
+    // If client specified matchId or matchClientTempId, try to find that entry in the lane queue.
+    long matchId = extractJsonLong(body, "matchId", 0);
+    String matchClientTemp = extractJsonString(body, "matchClientTempId", "");
+
+    SwimSet s;
+    bool haveSet = false;
+    int matchedQueueIndex = -1; // relative to head (0 = head)
+
+    if (matchId != 0 || matchClientTemp.length() > 0) {
+      // Search queue for matching entry
+      for (int i = 0; i < swimSetQueueCount[lane]; i++) {
+        int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
+        SwimSet &entry = swimSetQueue[lane][idx];
+        if (matchId != 0 && entry.id == (uint32_t)matchId) {
+          s = entry;
+          haveSet = true;
+          matchedQueueIndex = i;
+          break;
+        }
+        if (matchClientTemp.length() > 0) {
+          unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
+          if (parsed != 0 && entry.clientTempId == parsed) {
+            s = entry;
+            haveSet = true;
+            matchedQueueIndex = i;
+            break;
+          }
+        }
+      }
+    }
+
+    // If no identifiers provided or not found, and the client provided a full JSON payload, use that.
+    // TODO: We should probably remove this, or first add this swim set to the queue, reconcile it
+    // and then run it from the queue.
+    if (!haveSet && body.length() > 0) {
+      s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
+      s.swimDistance = (uint16_t)extractJsonLong(body, "swimDistance", swimSetSettings.swimSetDistance);
+      s.swimSeconds = (uint16_t)extractJsonLong(body, "swimSeconds", swimSetSettings.swimTimeSeconds);
+      s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
+      s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
+      s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
+      s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
+      s.id = (uint32_t)extractJsonLong(body, "id", 0);
+      String clientTempStr = extractJsonString(body, "clientTempId", "");
+      if (clientTempStr.length() > 0) s.clientTempId = (unsigned long long)strtoull(clientTempStr.c_str(), NULL, 16);
+      haveSet = true;
+    }
+
+    // If still no set, fall back to the head-of-queue for this lane (if any)
+    if (!haveSet) {
+      if (swimSetQueueCount[lane] > 0) {
+        int idx = swimSetQueueHead[lane] % SWIMSET_QUEUE_MAX;
+        s = swimSetQueue[lane][idx];
+        haveSet = true;
+        matchedQueueIndex = 0;
+      }
+    }
+
+    if (!haveSet) {
+      server.send(404, "application/json", "{\"ok\":false,\"error\":\"no swim set available\"}");
+      return;
+    }
+
+    // record which queue index we started (will be used by applySwimSetToSettings)
+    laneActiveQueueIndex[lane] = matchedQueueIndex;
+    // Now apply set (applySwimSetToSettings will consult laneActiveQueueIndex)
+    int oldLane = currentLane;
+    currentLane = lane; // ensure apply affects intended lane
     Serial.println("/runSwimSetNow: calling applySwimSetToSettings()");
     applySwimSetToSettings(s);
-    server.send(200, "text/plain", "Started");
+    currentLane = oldLane;
+
+    // Respond with canonical id (if any) so client can reconcile
+    String resp = "{";
+    resp += "\"ok\":true,";
+    resp += "\"startedId\":" + String(s.id) + ",";
+    resp += "\"clientTempId\":\"" + String((unsigned long long)s.clientTempId) + "\"";
+    resp += "}";
+    server.send(200, "application/json", resp);
   });
 
   server.on("/getSwimQueue", HTTP_GET, []() {
@@ -991,7 +1073,60 @@ void setupWebServer() {
       json += "}";
     }
     json += "]";
-    server.send(200, "application/json", json);
+
+    // Build status info per-lane so client can render running/completed/active state
+    String status = "{";
+
+    // global running state
+    status += String("\"isRunning\":") + String(globalConfigSettings.isRunning ? "true" : "false") + ",";
+
+    // laneRunning array
+    status += "\"laneRunning\":[";
+    for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
+      status += String(globalConfigSettings.laneRunning[li] ? "true" : "false");
+      if (li < MAX_LANES_SUPPORTED - 1) status += ",";
+    }
+    status += "],";
+
+    // activeIndex per lane: use laneActiveQueueIndex (0=head) or -1
+    status += "\"activeIndex\":[";
+    for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
+      int activeIdx = -1;
+      if (li >= 0 && li < MAX_LANES_SUPPORTED) activeIdx = laneActiveQueueIndex[li];
+      status += String(activeIdx);
+      if (li < MAX_LANES_SUPPORTED - 1) status += ",";
+    }
+    status += "],";
+
+    // currentRounds per lane (use representative swimmer[0] if started, otherwise 0)
+    status += "\"currentRounds\":[";
+    for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
+      int rounds = 0;
+      if (swimmers[li][0].hasStarted) rounds = swimmers[li][0].currentRound;
+      status += String(rounds);
+      if (li < MAX_LANES_SUPPORTED - 1) status += ",";
+    }
+    status += "]";
+
+    status += "}";
+
+    // Combine into one payload for client reconciliation: include queue and status
+    String out = "{";
+    out += "\"queue\":";
+    out += json;
+    out += ",";
+    out += "\"status\":";
+    out += status;
+    out += "}";
+
+    // Debug print
+    if (DEBUG_ENABLED) {
+      Serial.println(" getSwimQueue -> payload:");
+      Serial.println(out);
+    }
+
+    // Return combined payload { queue: [...], status: {...} }
+    server.send(200, "application/json", out);
   });
 
   // Reorder swim queue for a lane. Expects form-encoded: lane=<n>&order=<id1,id2,...>
@@ -2099,6 +2234,13 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             swimmer->activeSwimSetId = nextSet.id;
             swimmer->queueIndex++;  // Move to next index in queue
 
+            // --- KEEP laneActiveQueueIndex IN SYNC WITH FIRST SWIMMER ADVANCE ---
+            // When any swimmer advances to the next queue index, make the lane's active
+            // queue index reflect that new value so client status (activeIndex) stays accurate.
+            laneActiveQueueIndex[laneIndex] = swimmer->queueIndex;
+            // Optionally persist running flag / global state consistency
+            // (do not force-stop lane here; clearing is handled below when all swimmers finish)
+
             // Reset swimmer state for new set
             swimmer->currentRound = 1;
             swimmer->currentLap = 1;
@@ -2127,6 +2269,26 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               Serial.print(" completed all ");
               Serial.print(swimmer->queueIndex + 1);
               Serial.println(" sets!");
+            }
+
+            // If this was the last swimmer for the lane (all swimmers finished),
+            // clear the laneActiveQueueIndex and mark lane not running.
+            int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[laneIndex];
+            if (laneSwimmerCount < 1) laneSwimmerCount = 1;
+            if (laneSwimmerCount > 6) laneSwimmerCount = 6;
+            bool allFinished = true;
+            for (int si = 0; si < laneSwimmerCount; si++) {
+              if (!swimmers[laneIndex][si].finished) { allFinished = false; break; }
+            }
+            if (allFinished) {
+              laneActiveQueueIndex[laneIndex] = -1;
+              globalConfigSettings.laneRunning[laneIndex] = false;
+              // Update global isRunning if any lane remains running
+              globalConfigSettings.isRunning = false;
+              for (int li = 0; li < globalConfigSettings.numLanes; li++) {
+                if (globalConfigSettings.laneRunning[li]) { globalConfigSettings.isRunning = true; break; }
+              }
+              saveGlobalConfigSettings();
             }
           }
         }
