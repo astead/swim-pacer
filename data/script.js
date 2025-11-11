@@ -753,7 +753,10 @@ function updateNumSwimmers() {
 function updateNumRounds() {
     const numRounds = document.getElementById('numRounds').value;
     currentSettings.numRounds = parseInt(numRounds);
-    sendNumRounds(currentSettings.numRounds);
+    // Fire-and-forget but swallow network errors (avoids uncaught AbortError)
+    sendNumRounds(currentSettings.numRounds).catch(err => {
+        console.debug('sendNumRounds failed (ignored):', err && err.message ? err.message : err);
+    });
     // Rebuild current swimmer set so UI and created set reflect the new rounds immediately
     console.log('Num rounds updated - Skipping updating swimmer set from config');
     //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
@@ -2426,13 +2429,33 @@ async function reconcileQueueWithDevice() {
         console.log('reconcileQueueWithDevice calling /getSwimQueue');
         const res = await fetch('/getSwimQueue');
         if (!res.ok) return;
-        const deviceQueue = await res.json();
+        const deviceQueueRaw = await res.json();
+
+        // DEBUG: always log the raw payload so you can verify what the server sends
+        console.log('reconcileQueueWithDevice: device payload:', deviceQueueRaw);
+
+        // Normalize device queue payloads:
+        // - If server returns { queue: [...], status: { ... } } handle both parts.
+        // - If server returns an array, treat it as the queue for the current lane.
+        let deviceQueue = [];
+        let deviceStatus = null;
+        if (Array.isArray(deviceQueueRaw)) {
+            deviceQueue = deviceQueueRaw;
+        } else if (deviceQueueRaw && typeof deviceQueueRaw === 'object') {
+            if (Array.isArray(deviceQueueRaw.queue)) deviceQueue = deviceQueueRaw.queue;
+            else if (Array.isArray(deviceQueueRaw.items)) deviceQueue = deviceQueueRaw.items;
+            else if (Array.isArray(deviceQueueRaw.entries)) deviceQueue = deviceQueueRaw.entries;
+            else if (deviceQueueRaw.length) deviceQueue = deviceQueueRaw; // fallback
+            if (deviceQueueRaw.status) deviceStatus = deviceQueueRaw.status;
+        }
 
         // Build quick lookup structures for device entries: by clientTempId and by signature
         const deviceByClientTemp = new Map();
         const deviceSignatures = [];
         for (let i = 0; i < deviceQueue.length; i++) {
             const d = deviceQueue[i];
+            // If server includes lane, only consider entries for our lane
+            if (d.lane !== undefined && Number(d.lane) !== Number(lane)) continue;
             if (d.clientTempId !== undefined && d.clientTempId !== null && String(d.clientTempId) !== '0' && String(d.clientTempId) !== '') {
                 deviceByClientTemp.set(String(d.clientTempId), d);
             }
@@ -2452,6 +2475,8 @@ async function reconcileQueueWithDevice() {
                 if (d) {
                     local.synced = true;
                     if (d.id !== undefined) local.id = d.id;
+                    // Update completed flag if device indicates it
+                    if (d.completed !== undefined) local.completed = !!d.completed;
                     continue;
                 }
             }
@@ -2462,14 +2487,69 @@ async function reconcileQueueWithDevice() {
                 const d = deviceQueue[idx];
                 local.synced = true;
                 if (d.id !== undefined) local.id = d.id;
+                if (d.completed !== undefined) local.completed = !!d.completed;
             }
         }
 
+        // If the server provided an explicit status block, apply it to client state
+        if (deviceStatus && typeof deviceStatus === 'object') {
+            try {
+                // laneRunning: could be boolean or an array per-lane
+                if (deviceStatus.laneRunning !== undefined) {
+                    if (Array.isArray(deviceStatus.laneRunning)) {
+                        for (let li = 0; li < deviceStatus.laneRunning.length && li < laneRunning.length; li++) {
+                            laneRunning[li] = !!deviceStatus.laneRunning[li];
+                        }
+                    } else {
+                        laneRunning[lane] = !!deviceStatus.laneRunning;
+                    }
+                }
+
+                // active index per lane or single value
+                if (deviceStatus.activeIndex !== undefined) {
+                    if (Array.isArray(deviceStatus.activeIndex)) {
+                        for (let li = 0; li < deviceStatus.activeIndex.length && li < activeSwimSetIndex.length; li++) {
+                            activeSwimSetIndex[li] = Number(deviceStatus.activeIndex[li]);
+                        }
+                    } else {
+                        activeSwimSetIndex[lane] = Number(deviceStatus.activeIndex);
+                    }
+                }
+
+                // current rounds per lane or single value
+                if (deviceStatus.currentRounds !== undefined) {
+                    if (Array.isArray(deviceStatus.currentRounds)) {
+                        for (let li = 0; li < deviceStatus.currentRounds.length && li < currentRounds.length; li++) {
+                            currentRounds[li] = Number(deviceStatus.currentRounds[li]);
+                        }
+                    } else {
+                        currentRounds[lane] = Number(deviceStatus.currentRounds);
+                    }
+                }
+
+                // If server supplies which set is active or isRunning, mirror it in currentSettings.isRunning
+                if (deviceStatus.isRunning !== undefined) {
+                    if (Array.isArray(deviceStatus.isRunning)) {
+                        for (let li = 0; li < deviceStatus.isRunning.length && li < laneRunning.length; li++) {
+                            currentSettings.isRunning = !!deviceStatus.isRunning[li];
+                        }
+                    } else {
+                        currentSettings.isRunning = !!deviceStatus.isRunning;
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to apply device status block:', e);
+            }
+        }
+
+        // Reflect any changes in the UI
         updateQueueDisplay();
+        updateStatus();
+        updatePacerButtons();
     } catch (e) {
         // ignore network errors
     } finally {
-        // Kick off retry of pending deletes (best-effort)
+        // Kick off retry of pending deletes/updates (best-effort)
         retryPendingDeletes().catch(()=>{});
         retryPendingUpdates().catch(()=>{});
     }
