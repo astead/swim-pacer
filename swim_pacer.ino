@@ -29,6 +29,7 @@
 #include <Preferences.h>
 #include <SPIFFS.h>
 #include <new>
+#include <ArduinoJson.h>
 // ESP-IDF Bluetooth control (only needed on ESP32 builds)
 #ifdef ARDUINO_ARCH_ESP32
 #include "esp_bt.h"
@@ -110,15 +111,24 @@ SwimSetSettings swimSetSettings;
 // ----- Swim set queue types and storage -----
 enum SwimSetType { SWIMSET_TYPE = 0, REST_TYPE = 1, LOOP_TYPE = 2, MOVE_TYPE = 3 };
 
+// ----- Swim set status bit mask -----
+enum SwimSetStatus {
+  SWIMSET_STATUS_PENDING    = 0x0 << 0,
+  SWIMSET_STATUS_SYNCHED    = 0x1 << 0,
+  SWIMSET_STATUS_ACTIVE     = 0x1 << 1,
+  SWIMSET_STATUS_COMPLETED  = 0x1 << 2,
+};
+
 struct SwimSet {
-  uint8_t rounds;          // number of rounds
-  uint16_t swimDistance;   // distance in pool's native units (no units attached)
-  uint16_t swimSeconds;    // seconds to swim the 'length'
-  uint16_t restSeconds;    // rest time between rounds
+  uint8_t rounds;           // number of rounds
+  uint16_t swimDistance;    // distance in pool's native units (no units attached)
+  uint16_t swimSeconds;     // seconds to swim the 'length'
+  uint16_t restSeconds;     // rest time between rounds
   uint16_t swimmerInterval; // interval between swimmers (seconds)
-  uint8_t type;            // SwimSetType
-  uint8_t repeat;          // repeat metadata for LOOP_TYPE
-  uint32_t id;             // device-assigned canonical id (0 = not assigned)
+  uint8_t status;           // status flags (bitmask)
+  uint8_t type;             // SwimSetType
+  uint8_t repeat;           // repeat metadata for LOOP_TYPE
+  uint32_t id;              // device-assigned canonical id (0 = not assigned)
   unsigned long long clientTempId; // client-supplied temporary id for reconciliation (0 = none)
 };
 
@@ -435,6 +445,16 @@ void applySwimSetToSettings(const SwimSet &s) {
     }
   }
 
+  // s is a const reference (may be a temporary or payload); don't modify it.
+  // If this swim set came from the lane queue, mark the corresponding queue entry ACTIVE.
+  if (currentLane >= 0 && currentLane < MAX_LANES_SUPPORTED) {
+    int qidx = laneActiveQueueIndex[currentLane];
+    if (qidx >= 0 && qidx < swimSetQueueCount[currentLane]) {
+      int actualIdx = (swimSetQueueHead[currentLane] + qidx) % SWIMSET_QUEUE_MAX;
+      swimSetQueue[currentLane][actualIdx].status |= SWIMSET_STATUS_ACTIVE;
+    }
+  }
+
   // Start the current lane pacer
   globalConfigSettings.laneRunning[currentLane] = true;
   // Update global isRunning if any lane is running
@@ -666,6 +686,7 @@ void setupWebServer() {
     s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
     s.id = 0;
     s.clientTempId = 0ULL;
+    s.status = SWIMSET_STATUS_PENDING;
 
     // Optional clientTempId support: client may send a numeric clientTempId or a hex string
     String clientTempStr = extractJsonString(body, "clientTempId", "");
@@ -1054,72 +1075,82 @@ void setupWebServer() {
 
   server.on("/getSwimQueue", HTTP_GET, []() {
     Serial.println("/getSwimQueue ENTER");
-    int lane = currentLane;
-    String json = "[";
+
+    // Use ArduinoJson to build the response to avoid any string-concatenation bugs.
+    // Adjust the DynamicJsonDocument size if you have very large queues.
+    const size_t DOC_SIZE = 16 * 1024;
+    DynamicJsonDocument doc(DOC_SIZE);
+
+    int lane = currentLane; // currentLane is expected to be set earlier
+
+    // Build queue array for the current lane
+    JsonArray q = doc.createNestedArray("queue");
     for (int i = 0; i < swimSetQueueCount[lane]; i++) {
       int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
       SwimSet &s = swimSetQueue[lane][idx];
-      if (i) json += ",";
-      json += "{";
-      json += String("\"id\":") + String(s.id) + ",";
-      json += String("\"clientTempId\":\"") + String((unsigned long long)s.clientTempId) + String("\",");
-      json += String("\"rounds\":") + String(s.rounds) + ",";
-      json += String("\"swimDistance\":") + String(s.swimDistance) + ",";
-      json += String("\"swimSeconds\":") + String(s.swimSeconds, 2) + ",";
-      json += String("\"restSeconds\":") + String(s.restSeconds, 2) + ",";
-      json += String("\"swimmerInterval\":") + String(s.swimmerInterval, 2) + ",";
-      json += String("\"type\":") + String(s.type) + ",";
-      json += String("\"repeat\":") + String(s.repeat);
-      json += "}";
+      JsonObject item = q.createNestedObject();
+      item["id"] = (unsigned long)s.id;
+      // send clientTempId as hex string if non-zero, else empty string
+      if (s.clientTempId != 0) {
+        // represent as decimal string (cast to unsigned long long may be large)
+        item["clientTempId"] = String((unsigned long long)s.clientTempId);
+      } else {
+        item["clientTempId"] = String("");
+      }
+      item["rounds"] = s.rounds;
+      item["swimDistance"] = s.swimDistance;
+      item["swimSeconds"] = s.swimSeconds;
+      item["restSeconds"] = s.restSeconds;
+      item["swimmerInterval"] = s.swimmerInterval;
+      item["type"] = s.type;
+      item["repeat"] = s.repeat;
+      // numeric status bitmask
+      item["status"] = (int)s.status;
+
+      // representative currentRound: prefer swimmer whose queueIndex == i
+      int repCurrentRound = 0;
+      int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[lane];
+      if (laneSwimmerCount < 1) laneSwimmerCount = 1;
+      if (laneSwimmerCount > 6) laneSwimmerCount = 6;
+      for (int si = 0; si < laneSwimmerCount; si++) {
+        if (swimmers[lane][si].queueIndex == i && swimmers[lane][si].hasStarted) {
+          repCurrentRound = swimmers[lane][si].currentRound;
+          break;
+        }
+      }
+      item["currentRound"] = repCurrentRound;
     }
-    json += "]";
 
-    // Build status info per-lane so client can render running/completed/active state
-    String status = "{";
-
-    // global running state
-    status += String("\"isRunning\":") + String(globalConfigSettings.isRunning ? "true" : "false") + ",";
+    // Build status object
+    JsonObject status = doc.createNestedObject("status");
+    status["isRunning"] = globalConfigSettings.isRunning ? true : false;
 
     // laneRunning array
-    status += "\"laneRunning\":[";
+    JsonArray laneRunningArr = status.createNestedArray("laneRunning");
     for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
-      status += String(globalConfigSettings.laneRunning[li] ? "true" : "false");
-      if (li < MAX_LANES_SUPPORTED - 1) status += ",";
+      laneRunningArr.add(globalConfigSettings.laneRunning[li] ? true : false);
     }
-    status += "],";
 
-    // activeIndex per lane: use laneActiveQueueIndex (0=head) or -1
-    status += "\"activeIndex\":[";
+    // activeIndex per lane (use laneActiveQueueIndex or -1)
+    JsonArray activeIdxArr = status.createNestedArray("activeIndex");
     for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
       int activeIdx = -1;
       if (li >= 0 && li < MAX_LANES_SUPPORTED) activeIdx = laneActiveQueueIndex[li];
-      status += String(activeIdx);
-      if (li < MAX_LANES_SUPPORTED - 1) status += ",";
+      activeIdxArr.add(activeIdx);
     }
-    status += "],";
 
-    // currentRounds per lane (use representative swimmer[0] if started, otherwise 0)
-    status += "\"currentRounds\":[";
+    // currentRounds per lane (prefer swimmer[0] if started else 0)
+    JsonArray curRoundsArr = status.createNestedArray("currentRounds");
     for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
       int rounds = 0;
       if (swimmers[li][0].hasStarted) rounds = swimmers[li][0].currentRound;
-      status += String(rounds);
-      if (li < MAX_LANES_SUPPORTED - 1) status += ",";
+      curRoundsArr.add(rounds);
     }
-    status += "]";
 
-    status += "}";
+    // Serialize and send
+    String out;
+    serializeJson(doc, out);
 
-    // Combine into one payload for client reconciliation: include queue and status
-    String out = "{";
-    out += "\"queue\":";
-    out += json;
-    out += ",";
-    out += "\"status\":";
-    out += status;
-    out += "}";
-
-    // Debug print
     if (DEBUG_ENABLED) {
       Serial.println(" getSwimQueue -> payload:");
       Serial.println(out);
@@ -2202,6 +2233,28 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             Serial.println(")");
           }
 
+          // If this was the last swimmer for the lane,
+          // we can mark this swim set as complete for the lane.
+          // However, we still need to check if there are more sets in the queue.
+          int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[laneIndex];
+          if (swimmerIndex >= laneSwimmerCount - 1) {
+            if (DEBUG_ENABLED) {
+              Serial.print("    Swimmer ");
+              Serial.print(swimmerIndex);
+              Serial.println(" is the last swimmer in the lane");
+              Serial.print("    Marking swim set ID ");
+              Serial.print(swimmer->activeSwimSetId);
+              Serial.println(" as complete for the lane");
+            }
+            // Mark the queue entry (by this swimmer's queueIndex) as completed.
+            int qidx = swimmer->queueIndex;
+            if (qidx >= 0 && qidx < swimSetQueueCount[laneIndex]) {
+              int actualIdx = (swimSetQueueHead[laneIndex] + qidx) % SWIMSET_QUEUE_MAX;
+              swimSetQueue[laneIndex][actualIdx].status |= SWIMSET_STATUS_COMPLETED;
+            }
+            // Here we could implement any lane-level completion logic if needed
+          }
+
           // Try to get the next swim set in queue (queueIndex + 1)
           SwimSet nextSet;
           if (getSwimSetByIndex(nextSet, laneIndex, swimmer->queueIndex + 1)) {
@@ -2218,7 +2271,9 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               Serial.print(", swim seconds: ");
               Serial.print(nextSet.swimSeconds);
               Serial.print(", rest seconds: ");
-              Serial.println(nextSet.restSeconds);
+              Serial.print(nextSet.restSeconds);
+              Serial.print(", status: ");
+              Serial.println(nextSet.status);
             }
 
             // Calculate new settings for the next set

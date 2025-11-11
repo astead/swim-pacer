@@ -41,6 +41,12 @@ let runningSets = [null, null, null, null]; // Immutable copies of sets when pac
 let runningSettings = [null, null, null, null]; // Settings snapshot when pacer starts
 let currentSwimmerIndex = -1; // Track which swimmer is being edited
 
+// Enum for swim set status bit mask
+const SWIMSET_STATUS_PENDING    = 0x0 << 0;
+const SWIMSET_STATUS_SYNCHED    = 0x1 << 0;
+const SWIMSET_STATUS_ACTIVE     = 0x1 << 1;
+const SWIMSET_STATUS_COMPLETED  = 0x1 << 2;
+
 // Swim Set Queue Management - now lane-specific
 let swimSetQueues = [[], [], [], []]; // Array of queued swim sets for each lane
 let activeSwimSets = [null, null, null, null]; // Currently running swim set for each lane
@@ -475,8 +481,8 @@ function updateSwimTime() {
 
     // Rebuild swimmer set so UI reflects the new rest time immediately
     // TODO: Why are we doing this?
-    console.log('Swim time updated - Skipping updating swimmer set from config');
-    //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
+    console.log('Swim time updated - calling create or updating swimmer set from config');
+    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 function updateRestTime() {
@@ -490,8 +496,8 @@ function updateRestTime() {
         console.debug('sendRestTime failed (ignored):', err && err.message ? err.message : err);
     });
     // Rebuild swimmer set so UI reflects the new rest time immediately
-    console.log('Rest time updated - Skipping updating swimmer set from config');
-    //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
+    console.log('Rest time updated - calling create or updating swimmer set from config');
+    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 
@@ -507,8 +513,8 @@ function updateSwimmerInterval() {
         console.debug('sendSwimmerInterval failed (ignored):', err && err.message ? err.message : err);
     });
     // Rebuild swimmer set so UI reflects the new swimmer interval immediately
-    console.log('Swimmer interval updated - Skipping updating swimmer set from config');
-    //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
+    console.log('Swimmer interval updated - calling create or updating swimmer set from config');
+    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 function updateDelayIndicatorsEnabled() {
@@ -758,8 +764,8 @@ function updateNumRounds() {
         console.debug('sendNumRounds failed (ignored):', err && err.message ? err.message : err);
     });
     // Rebuild current swimmer set so UI and created set reflect the new rounds immediately
-    console.log('Num rounds updated - Skipping updating swimmer set from config');
-    //try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
+    console.log('Num rounds updated - calling create or updating swimmer set from config');
+    try { createOrUpdateSwimmerSetFromConfig(false); } catch (e) {}
 }
 
 function updateColorMode() {
@@ -1511,12 +1517,14 @@ function updateQueueDisplay() {
         const row = document.createElement('div');
         row.className = 'queue-item';
 
-        // Determine running state for this entry
-        const isLaneRunning = !!laneRunning[lane];
-        const isEntryRunning = isLaneRunning && activeSwimSetIndex[lane] === idx;
+        // Status is a number (bitmask)
+        const statusVal = entry.status;
+        const isCompleted = !!(statusVal & SWIMSET_STATUS_COMPLETED);
+        const isActive = !!(statusVal & SWIMSET_STATUS_ACTIVE);
+        const isDeletedPending = !!entry.deletedPending;
 
-        // Completed entry rendering
-        if (entry.completed) {
+        // Completed
+        if (isCompleted && !isActive) {
             row.classList.add('completed');
             const label = document.createElement('span');
             label.className = 'queue-label';
@@ -1544,20 +1552,19 @@ function updateQueueDisplay() {
             return;
         }
 
-        // Running entry rendering (not editable)
-        if (isEntryRunning) {
+        // Running / Active
+        if (isActive) {
             row.classList.add('running');
             const label = document.createElement('span');
             label.className = 'queue-label';
             label.textContent = (entry.summary || (`${entry.rounds} x ${entry.swimDistance}'s`)) + ' — Running';
             row.appendChild(label);
 
-            const status = document.createElement('span');
-            status.className = 'queue-status';
-            // show current round info if available
-            const roundInfo = currentRounds[lane] ? `Round ${currentRounds[lane]} / ${entry.settings?.numRounds || entry.rounds}` : 'In progress';
-            status.textContent = roundInfo;
-            row.appendChild(status);
+            const statusSpan = document.createElement('span');
+            statusSpan.className = 'queue-status';
+            const roundText = (entry.currentRound !== undefined) ? `Round ${entry.currentRound} / ${entry.settings?.numRounds || entry.rounds}` : (currentRounds[lane] ? `Round ${currentRounds[lane]} / ${entry.settings?.numRounds || entry.rounds}` : 'In progress');
+            statusSpan.textContent = roundText;
+            row.appendChild(statusSpan);
 
             const spinner = document.createElement('span');
             spinner.className = 'spinner';
@@ -2305,7 +2312,7 @@ function updateSwimmerSwimTime(swimmerIndex, newSwimTime) {
 function buildMinimalSwimSetPayload(createdSet) {
     // createdSet: { id, lane, swimmers, settings, summary }
     const settings = createdSet.settings || {};
-    return {
+    const newSet = {
         rounds: Number(settings.numRounds || currentSettings.numRounds),
         swimDistance: Number(settings.swimDistance || currentSettings.swimDistance),
         swimSeconds: Number(settings.swimTime || currentSettings.swimTime),
@@ -2314,6 +2321,8 @@ function buildMinimalSwimSetPayload(createdSet) {
         type: 0,
         repeat: 0
     };
+    console.log('buildMinimalSwimSetPayload generated payload:', newSet);
+    return newSet;
 }
 
 // Helper function to update all UI elements from settings
@@ -2396,36 +2405,32 @@ async function reconcileQueueWithDevice() {
         console.log('reconcileQueueWithDevice calling /getSwimQueue');
         const res = await fetch('/getSwimQueue');
         if (!res.ok) return;
-        const deviceQueueRaw = await res.json();
-
-        console.log('reconcileQueueWithDevice: device payload:', deviceQueueRaw);
+        console.log('reconcileQueueWithDevice received response:', res);
+        const payload = await res.json();
+        console.log('reconcileQueueWithDevice received payload:', payload);
 
         // Normalize payload
-        let deviceQueue = [];
-        let deviceStatus = null;
-        if (Array.isArray(deviceQueueRaw)) {
-            deviceQueue = deviceQueueRaw;
-        } else if (deviceQueueRaw && typeof deviceQueueRaw === 'object') {
-            if (Array.isArray(deviceQueueRaw.queue)) deviceQueue = deviceQueueRaw.queue;
-            else if (Array.isArray(deviceQueueRaw.items)) deviceQueue = deviceQueueRaw.items;
-            else if (Array.isArray(deviceQueueRaw.entries)) deviceQueue = deviceQueueRaw.entries;
-            else if (Array.isArray(deviceQueueRaw)) deviceQueue = deviceQueueRaw;
-            if (deviceQueueRaw.status) deviceStatus = deviceQueueRaw.status;
-        }
+        const deviceQueue = Array.isArray(payload) ? payload : (Array.isArray(payload.queue) ? payload.queue : []);
+        const deviceStatus = payload && payload.status ? payload.status : null;
+
+        // Debug output show device queue and status
+        console.log('Device swim queue for reconciliation:', deviceQueue);
+        console.log('Device status for reconciliation:', deviceStatus);
 
         // Build quick lookup tables for device entries (restricted to our lane if device provides lane)
         const deviceById = new Map();
-        const deviceByClientTemp = new Map();
+        const deviceByClient = new Map();
         const deviceBySignature = new Map(); // signature -> first matching device entry
 
         for (let i = 0; i < deviceQueue.length; i++) {
             const d = deviceQueue[i];
+            // filter by lane if device provides lane
             if (d.lane !== undefined && Number(d.lane) !== Number(lane)) continue;
             if (d.id !== undefined && d.id !== null) deviceById.set(String(d.id), d);
             if (d.clientTempId !== undefined && d.clientTempId !== null && String(d.clientTempId) !== '0' && String(d.clientTempId) !== '') {
-                deviceByClientTemp.set(String(d.clientTempId), d);
+                deviceByClient.set(String(d.clientTempId), d);
             }
-            // Build tolerant signature: prefer swimSeconds/swimTime, restSeconds/restTime, rounds/numRounds, swimDistance/distance
+            // tolerant signature for best-effort match
             const swimSec = Number(d.swimSeconds ?? d.swimTime ?? 0).toFixed(0);
             const restSec = Number(d.restSeconds ?? d.restTime ?? 0).toFixed(0);
             const rounds = Number(d.rounds ?? d.numRounds ?? 0).toFixed(0);
@@ -2448,22 +2453,35 @@ async function reconcileQueueWithDevice() {
             // 1) Match by server id if present
             let matchedDevice = null;
             if (local.id !== undefined && local.id !== null && String(local.id) !== '0') {
+                console.log('Attempting match by id for local swim set:', local);
                 matchedDevice = deviceById.get(String(local.id));
+                if (matchedDevice) {
+                    console.log('Successfully matched by id:', matchedDevice);
+                }
             }
 
             // 2) Match by clientTempId (stable client-generated identifier)
             if (!matchedDevice && local.clientTempId) {
-                matchedDevice = deviceByClientTemp.get(String(local.clientTempId));
+                console.log('Attempting match by clientTempId for local swim set:', local);
+                matchedDevice = deviceByClient.get(String(local.clientTempId));
+                if (matchedDevice) {
+                    console.log('Successfully matched by clientTempId:', matchedDevice);
+                }
             }
 
             // 3) Match by tolerant signature (best-effort)
             if (!matchedDevice) {
+                console.log('Attempting signature match for local swim set:', local);
                 const sigLocal = `${Math.round(local.settings?.swimTime ?? local.swimSeconds ?? 0).toFixed(0)}|${Number(local.settings?.restTime ?? local.restSeconds ?? 0).toFixed(0)}|${Number(local.settings?.numRounds ?? local.rounds ?? 0).toFixed(0)}|${Number(local.settings?.swimDistance ?? local.swimDistance ?? 0).toFixed(0)}`;
                 matchedDevice = deviceBySignature.get(sigLocal);
+                if (matchedDevice) {
+                    console.log('Successfully matched by signature:', matchedDevice);
+                }
             }
 
             // 4) If still not matched, attempt tolerant field match (numbers equal or within small tolerance)
             if (!matchedDevice) {
+                console.log('Attempting tolerant field match for local swim set:', local);
                 for (const [k, d] of deviceById.entries()) {
                     try {
                         const dObj = (typeof d === 'object') ? d : null;
@@ -2482,24 +2500,31 @@ async function reconcileQueueWithDevice() {
                         }
                     } catch (e) { continue; }
                 }
+                if (matchedDevice) {
+                    console.log('Successfully matched by tolerant field comparison:', matchedDevice);
+                }
             }
 
             // Merge authoritative fields from device when matched
             if (matchedDevice) {
+                console.log('Merging fields from matched device:', matchedDevice);
                 local.synced = true;
                 if (matchedDevice.id !== undefined) local.id = matchedDevice.id;
                 if (matchedDevice.clientTempId !== undefined) local.clientTempId = String(matchedDevice.clientTempId);
                 if (matchedDevice.completed !== undefined) local.completed = !!matchedDevice.completed;
-                // Accept server-side per-item status if present (preferred)
-                if (matchedDevice.status) {
-                    local.status = matchedDevice.status;
-                    if (matchedDevice.statusDetail) local.statusDetail = matchedDevice.statusDetail;
-                    local.statusUpdatedAt = matchedDevice.statusUpdatedAt || new Date().toISOString();
-                }
+                // Accept server-side status if present (could be numeric bitmask or string)
+                if (matchedDevice.status !== undefined) local.status = matchedDevice.status;
                 // Merge runtime progress fields if provided
                 if (matchedDevice.currentRound !== undefined) local.currentRound = Number(matchedDevice.currentRound);
                 if (matchedDevice.startedAt) local.startedAt = matchedDevice.startedAt;
                 if (matchedDevice.completedAt) local.completedAt = matchedDevice.completedAt;
+
+                //debug output
+                console.log('Reconciled local swim set with device entry:', local, matchedDevice);
+            } else {
+                console.log('No matching device found for local swim set:', local);
+                // Not matched: keep local optimistic flags and leave unsynced
+                local.synced = !!local.synced;
             }
         }
 
