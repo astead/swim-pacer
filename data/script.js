@@ -1047,6 +1047,7 @@ function updateStatus() {
         const lane = currentSettings.currentLane || 0;
         const isLaneRunning = (laneRunning && laneRunning[lane]) ? true : false;
         const running = isLaneRunning || currentSettings.isRunning;
+        console.log(`Updating status display: lane ${lane}, laneRunning=${laneRunning}, laneRunning[lane]=${laneRunning[lane]}, isLaneRunning=${isLaneRunning}, currentSettings.isRunning=${currentSettings.isRunning}, effective running=${running}`);
         if (running) {
             // Running: green border
             queueDisplay.style.borderLeft = '4px solid #28a745';
@@ -2540,6 +2541,13 @@ async function reconcileQueueWithDevice() {
                     } else {
                         laneRunning[lane] = !!deviceStatus.laneRunning;
                     }
+                    if (!laneRunning[lane]) {
+                        // Call main stop handler to clear local state
+                        stopPacerExecution().catch(()=>{});
+                    } else {
+                        // assume it was started, if we force start it, not sure if we will
+                        // overwrite any local state incorrectly
+                    }
                 }
 
                 // activeIndex block (per-lane)
@@ -2575,17 +2583,9 @@ async function reconcileQueueWithDevice() {
                         currentSettings.isRunning = !!deviceStatus.isRunning;
                     }
                 }
-
-                // Persist snapshot for UI fallback/use
-                lastDeviceStatus = deviceStatus;
-                lastDeviceStatusAt = Date.now();
             } catch (e) {
                 console.warn('Failed to apply device status block:', e);
             }
-        } else {
-            // No explicit status block: still record empty snapshot time so client knows it's stale
-            lastDeviceStatus = null;
-            lastDeviceStatusAt = 0;
         }
 
         // Reflect changes in the UI
