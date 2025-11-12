@@ -1131,14 +1131,6 @@ void setupWebServer() {
       activeIdxArr.add(activeIdx);
     }
 
-    // currentRounds per lane (prefer swimmer[0] if started else 0)
-    JsonArray curRoundsArr = status.createNestedArray("currentRounds");
-    for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
-      int rounds = 0;
-      if (swimmers[li][0].hasStarted) rounds = swimmers[li][0].currentRound;
-      curRoundsArr.add(rounds);
-    }
-
     // Serialize and send
     String out;
     serializeJson(doc, out);

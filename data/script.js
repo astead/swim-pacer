@@ -1025,7 +1025,6 @@ function updateSwimmerColor() {
 
 // Pacer status tracking variables - now lane-specific
 let pacerStartTimes = [0, 0, 0, 0]; // Start time for each lane
-let currentRounds = [1, 1, 1, 1]; // Current round for each lane
 let completionHandled = [false, false, false, false]; // Track if completion has been handled for each lane
 let statusUpdateInterval = null;
 let currentColorContext = null; // Track which color picker context we're in
@@ -1073,7 +1072,6 @@ function togglePacer() {
     if (laneRunning[currentLane]) {
         // Starting pacer for current lane - create immutable copies
         pacerStartTimes[currentLane] = Date.now();
-        currentRounds[currentLane] = 1;
 
         // Create immutable copies of current set and settings
         runningSets[currentLane] = JSON.parse(JSON.stringify(getCurrentSwimmerSet()));
@@ -1173,13 +1171,6 @@ function updatePacerStatus() {
     const swimSeconds = runningData.swimTime;
     const restSeconds = runningData.restTime;
     const totalRoundTime = swimSeconds + restSeconds;
-
-    // Update current round (logical state only; UI reflects via updateQueueDisplay)
-    const calculatedRound = Math.floor(timeAfterInitialDelay / totalRoundTime) + 1;
-    if (calculatedRound !== currentRounds[currentLane] && calculatedRound <= runningData.numRounds) {
-        currentRounds[currentLane] = calculatedRound;
-        updateQueueDisplay();
-    }
 
     // Check if ALL swimmers have completed the set
     // Calculate when the last swimmer finishes
@@ -1583,7 +1574,7 @@ function updateQueueDisplay() {
 
             const statusSpan = document.createElement('span');
             statusSpan.className = 'queue-status';
-            const roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : (currentRounds[lane] ? `Round ${currentRounds[lane]} / ${entry.numRounds}` : 'In progress');
+            const roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : 'In progress';
             statusSpan.textContent = roundText;
             row.appendChild(statusSpan);
 
@@ -2163,9 +2154,6 @@ function startLocalExecution(lane, index) {
     completionHandled[lane] = false;
     pacerStartTimes[lane] = Date.now();
 
-    // Initialize current round for the lane (logical state only)
-    currentRounds[lane] = 1;
-
     // Load into UI (doesn't POST) and start periodic status updates
     try { loadSwimSetForExecution(setToRun); } catch (e) { /* ignore */ }
     try { initializePacerStatus(); } catch (e) { /* ignore */ }
@@ -2564,17 +2552,6 @@ async function reconcileQueueWithDevice() {
                         }
                     } else {
                         activeSwimSetIndex[lane] = Number(deviceStatus.activeIndex);
-                    }
-                }
-
-                // currentRounds block (per-lane)
-                if (deviceStatus.currentRounds !== undefined) {
-                    if (Array.isArray(deviceStatus.currentRounds)) {
-                        for (let li = 0; li < deviceStatus.currentRounds.length && li < currentRounds.length; li++) {
-                            currentRounds[li] = Number(deviceStatus.currentRounds[li]);
-                        }
-                    } else {
-                        currentRounds[lane] = Number(deviceStatus.currentRounds);
                     }
                 }
             } catch (e) {
