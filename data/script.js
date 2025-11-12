@@ -1556,9 +1556,7 @@ function updateQueueDisplay() {
 
             const info = document.createElement('span');
             info.className = 'queue-info';
-            // Prefer entry.completedAt if present, else show a generic completed marker
-            const completedAt = entry.completedAt ? new Date(entry.completedAt).toLocaleString() : null;
-            info.textContent = completedAt ? `Completed: ${completedAt}` : 'Completed';
+            info.textContent = 'Completed';
             row.appendChild(info);
 
             const actions = document.createElement('span');
@@ -1589,11 +1587,6 @@ function updateQueueDisplay() {
             statusSpan.textContent = roundText;
             row.appendChild(statusSpan);
 
-            const spinner = document.createElement('span');
-            spinner.className = 'spinner';
-            spinner.innerHTML = 'Running...';
-            row.appendChild(spinner);
-
             listEl.appendChild(row);
             return;
         }
@@ -1610,11 +1603,6 @@ function updateQueueDisplay() {
             status.className = 'queue-status';
             status.textContent = 'Deleting...';
             row.appendChild(status);
-
-            const spinner = document.createElement('span');
-            spinner.className = 'spinner';
-            spinner.innerHTML = 'Loading ... ';
-            row.appendChild(spinner);
 
             // Disabled controls placeholder so layout doesn't shift
             const btnArea = document.createElement('span');
