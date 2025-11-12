@@ -52,9 +52,13 @@
 // Maximum supported LEDs by FastLED for this project
 #define MAX_LEDS 150
 
+const int SWIMSET_QUEUE_MAX = 12;
+const int MAX_LANES_SUPPORTED = 4;
+const int MAX_SWIMMERS_SUPPORTED = 10;
+
 // GPIO pins for multiple LED strips (lanes)
 // Lane 1: GPIO 18, Lane 2: GPIO 19, Lane 3: GPIO 21, Lane 4: GPIO 2
-const int LED_PINS[4] = {18, 19, 21, 2}; // GPIO pins for lanes 1-4
+const int LED_PINS[MAX_LANES_SUPPORTED] = {18, 19, 21, 2}; // GPIO pins for lanes 1-4
 
 // Debug control - set to true to enable detailed debug output
 const bool DEBUG_ENABLED = true;
@@ -78,7 +82,7 @@ struct GlobalConfigSettings {
   int numLanes = 1;                          // Number of LED strips/lanes connected
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   bool delayIndicatorsEnabled = true;        // Whether to show delay countdown indicators
-  int numSwimmersPerLane[4] = {              // Per-lane swimmer counts (preferred)
+  int numSwimmersPerLane[MAX_LANES_SUPPORTED] = {              // Per-lane swimmer counts (preferred)
     DEFAULT_NUM_SWIMMERS,
     DEFAULT_NUM_SWIMMERS,
     DEFAULT_NUM_SWIMMERS,
@@ -89,7 +93,7 @@ struct GlobalConfigSettings {
   uint8_t colorBlue = 255;
   uint8_t brightness = 196;                  // Overall brightness (0-255)
   bool isRunning = false;                    // Whether the effect is active (default: stopped)
-  bool laneRunning[4] = {false, false, false, false}; // Per-lane running states
+  bool laneRunning[MAX_LANES_SUPPORTED] = {false, false, false, false}; // Per-lane running states
   bool sameColorMode = false;                // Whether all swimmers use the same color (true) or individual colors (false)
   bool underwatersEnabled = false;           // Whether underwater indicators are enabled
   float firstUnderwaterDistanceFeet = 5.0;   // First underwater distance in feet
@@ -139,9 +143,6 @@ struct SwimSet {
 };
 
 // Simple fixed-size in-memory per-lane queues
-const int SWIMSET_QUEUE_MAX = 12;
-const int MAX_LANES_SUPPORTED = 4;
-const int MAX_SWIMMERS_SUPPORTED = 10;
 SwimSet swimSetQueue[MAX_LANES_SUPPORTED][SWIMSET_QUEUE_MAX];
 int swimSetQueueHead[MAX_LANES_SUPPORTED] = {0,0,0,0};
 int swimSetQueueTail[MAX_LANES_SUPPORTED] = {0,0,0,0};
@@ -172,7 +173,7 @@ int delayMS;                      // Delay between LED updates
 float poolToStripRatio;           // Ratio of pool to strip length
 
 // ========== GLOBAL VARIABLES ==========
-CRGB* leds[4] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for up to 4 lanes
+CRGB* leds[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
 int currentPosition = 0;
 int direction = 1;
 unsigned long lastUpdate = 0;
@@ -308,7 +309,7 @@ struct Swimmer {
   int queueIndex;              // Index in the lane's queue that this swimmer is currently executing (0-based)
 };
 
-Swimmer swimmers[4][6]; // Support up to 6 swimmers per lane, for up to 4 lanes
+Swimmer swimmers[MAX_LANES_SUPPORTED][MAX_SWIMMERS_SUPPORTED];
 CRGB swimmerColors[] = {
   CRGB::Red,
   CRGB::Green,
@@ -368,7 +369,7 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
   }
 
   // Initialize swimmers for the current lane to start fresh
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
     //swimmers[lane][i].position = 0; This should continue from previous position
     //swimmers[lane][i].direction = 1; This should continue from previous direction
     swimmers[lane][i].hasStarted = false;  // Initialize as not started
@@ -410,10 +411,10 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
     swimmers[lane][i].queueIndex = qidx;
   }
 
-  // Debug: dump swimmer state for current lane after initialization (first 6 swimmers)
+  // Debug: dump swimmer state for current lane after initialization (first 3 swimmers)
   if (DEBUG_ENABLED) {
     Serial.println("  swimmer state after applying the swim set:");
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 3; i++) {
       Swimmer &sw = swimmers[lane][i];
       Serial.print("  swimmer="); Serial.print(i);
       Serial.print(" pos="); Serial.print(sw.position);
@@ -554,7 +555,7 @@ void setupLEDs() {
   }
 
   // Initialize unused lanes to nullptr
-  for (int lane = globalConfigSettings.numLanes; lane < 4; lane++) {
+  for (int lane = globalConfigSettings.numLanes; lane < MAX_LANES_SUPPORTED; lane++) {
     if (leds[lane] != nullptr) {
       delete[] leds[lane];
       leds[lane] = nullptr;
@@ -961,7 +962,7 @@ void setupWebServer() {
     }
 
     // Reset swimmers for this lane
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
       swimmers[lane][i].position = 0;
       swimmers[lane][i].direction = 1; // point towards far wall
       swimmers[lane][i].hasStarted = false;
@@ -1159,7 +1160,7 @@ void setupWebServer() {
     String orderStr = "";
     if (body.indexOf("order=") >= 0) {
       int idx = body.indexOf("order=");
-      int start = idx + 6;
+      int start = idx + 6; // TODO: What does this 6 represent? No MAGIC NUMBERS
       orderStr = body.substring(start);
       // Trim trailing ampersand if present
       int amp = orderStr.indexOf('&');
@@ -1308,9 +1309,9 @@ void handleGetSettings() {
   json += "\"numLanes\":" + String(globalConfigSettings.numLanes) + ",";
   // Build array for per-lane swimmer counts
   json += "\"numSwimmersPerLane\": [";
-  for (int li = 0; li < 4; li++) {
+  for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     json += String(globalConfigSettings.numSwimmersPerLane[li]);
-    if (li < 3) json += ",";
+    if (li < MAX_LANES_SUPPORTED - 1) json += ",";
   }
   json += "],";
   json += "\"poolLength\":" + String(globalConfigSettings.poolLength, 2) + ",";
@@ -1563,8 +1564,8 @@ void handleSetColorMode() {
     saveGlobalConfigSettings();
 
     // Update ALL swimmer colors based on new mode (without resetting position/timing)
-    for (int lane = 0; lane < 4; lane++) {
-      for (int i = 0; i < 6; i++) {
+    for (int lane = 0; lane < MAX_LANES_SUPPORTED; lane++) {
+      for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
         if (globalConfigSettings.sameColorMode) {
           // Same mode: all swimmers get the default color
           swimmers[lane][i].color = CRGB(globalConfigSettings.colorRed, globalConfigSettings.colorGreen, globalConfigSettings.colorBlue);
@@ -1593,8 +1594,8 @@ void handleSetSwimmerColor() {
     // If in "same color" mode, update ALL swimmers to use this color
     if (globalConfigSettings.sameColorMode) {
       CRGB newColor = CRGB(r, g, b);
-      for (int lane = 0; lane < 4; lane++) {
-        for (int i = 0; i < 6; i++) {
+      for (int lane = 0; lane < MAX_LANES_SUPPORTED; lane++) {
+        for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
           swimmers[lane][i].color = newColor;
         }
       }
@@ -1612,7 +1613,7 @@ void handleSetSwimmerColors() {
     int colorIndex = 0;
     int startIndex = 0;
 
-    for (int i = 0; i <= colorsString.length() && colorIndex < 6; i++) {
+    for (int i = 0; i <= colorsString.length() && colorIndex < MAX_SWIMMERS_SUPPORTED; i++) {
       if (i == colorsString.length() || colorsString.charAt(i) == ',') {
         String hexColor = colorsString.substring(startIndex, i);
         hexColor.trim();
@@ -1623,8 +1624,8 @@ void handleSetSwimmerColors() {
 
           // Update this specific swimmer's color for all lanes (just the color, not position/timing)
           CRGB newColor = CRGB(r, g, b);
-          for (int lane = 0; lane < 4; lane++) {
-            if (colorIndex < 6) {
+          for (int lane = 0; lane < MAX_LANES_SUPPORTED; lane++) {
+            if (colorIndex < MAX_SWIMMERS_SUPPORTED) {
               swimmers[lane][colorIndex].color = newColor;
             }
           }
@@ -1683,7 +1684,7 @@ void saveGlobalConfigSettings() {
   preferences.putFloat("stripLengthM", globalConfigSettings.stripLengthMeters);
   preferences.putInt("ledsPerMeter", globalConfigSettings.ledsPerMeter);
   preferences.putFloat("pulseWidthFeet", globalConfigSettings.pulseWidthFeet);
-  for (int li = 0; li < 4; li++) {
+  for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     String key = String("swimLane") + String(li);
     preferences.putInt(key.c_str(), globalConfigSettings.numSwimmersPerLane[li]);
   }
@@ -1704,7 +1705,10 @@ void saveSwimSetSettings() {
   preferences.putInt("swimSetDistance", swimSetSettings.swimSetDistance);
   // Sanitize swimmer interval before persisting to avoid storing invalid (<=0) values
   int si = swimSetSettings.swimmerIntervalSeconds;
-  if (si <= 0) si = 4; // enforce safe default
+  if (si <= 0) {
+    Serial.println("saveSwimSetSettings: invalid swimmerIntervalSeconds <= 0, resetting to 4");
+    si = 4; // enforce safe default
+  }
   preferences.putInt("swimmerInterval", si);
   preferences.putInt("numRounds", swimSetSettings.numRounds);
 }
@@ -1722,7 +1726,7 @@ void loadGlobalConfigSettings() {
   globalConfigSettings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
   // Keep preference fallbacks consistent with struct defaults
   // Load per-lane counts if present (key changed to "swimLaneX" to fit 15-char NVS limit)
-  for (int li = 0; li < 4; li++) {
+  for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     String key = String("swimLane") + String(li);
     globalConfigSettings.numSwimmersPerLane[li] = preferences.getInt(key.c_str(), DEFAULT_NUM_SWIMMERS);
   }
@@ -1796,10 +1800,11 @@ void recalculateValues() {
 
 // ----- Targeted swimmer update helpers -----
 // Update lapsPerRound for all swimmers when pool length or swimSet distance changes
+// TODO BUG FIX: Who is calling this? This should be lane and swim set specific
 void updateSwimmersLapsPerRound() {
   int lapsPerRound = (int)ceil((float)swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
-  for (int lane = 0; lane < 4; lane++) {
-    for (int i = 0; i < 6; i++) {
+  for (int lane = 0; lane < MAX_LANES_SUPPORTED; lane++) {
+    for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
       swimmers[lane][i].lapsPerRound = lapsPerRound;
       // Ensure currentLap is valid
       // TODO: Rather than just reset this to 1, we should probably
@@ -1834,7 +1839,7 @@ void updateLEDEffect() {
       // Only animate if this lane is running
       if (globalConfigSettings.laneRunning[lane]) {
         // Update and draw each active swimmer for this lane FIRST (higher priority)
-        // Use per-lane swimmer count (clamped to 6)
+        // Use per-lane swimmer count (clamped to max swimmers)
         int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[lane];
         if (laneSwimmerCount < 1) laneSwimmerCount = 1;
         if (laneSwimmerCount > MAX_SWIMMERS_SUPPORTED) laneSwimmerCount = MAX_SWIMMERS_SUPPORTED;
@@ -1883,7 +1888,7 @@ void drawDelayIndicators(int laneIndex) {
 
   int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[laneIndex];
   if (laneSwimmerCount < 1) laneSwimmerCount = 1;
-  if (laneSwimmerCount > 6) laneSwimmerCount = 6;
+  if (laneSwimmerCount > MAX_SWIMMERS_SUPPORTED) laneSwimmerCount = MAX_SWIMMERS_SUPPORTED;
   for (int i = 0; i < laneSwimmerCount; i++) {
     Swimmer* swimmer = &swimmers[laneIndex][i];
 
@@ -1960,8 +1965,8 @@ void initializeSwimmers() {
     Serial.println("\n========== INITIALIZING SWIMMERS ==========");
   }
 
-  for (int lane = 0; lane < 4; lane++) {
-  for (int i = 0; i < 6; i++) {
+  for (int lane = 0; lane < MAX_LANES_SUPPORTED; lane++) {
+  for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
       swimmers[lane][i].position = 0;
       swimmers[lane][i].direction = 1;
       swimmers[lane][i].hasStarted = false;  // Initialize as not started
@@ -2005,8 +2010,8 @@ void initializeSwimmers() {
 
 void updateSwimmerColors() {
   // Update swimmer colors without resetting position/timing
-  for (int lane = 0; lane < 4; lane++) {
-    for (int i = 0; i < 6; i++) {
+  for (int lane = 0; lane < MAX_LANES_SUPPORTED; lane++) {
+    for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
       // Use web interface color for all swimmers in same color mode, predefined colors for individual mode
       if (globalConfigSettings.sameColorMode) {
         swimmers[lane][i].color = CRGB(globalConfigSettings.colorRed, globalConfigSettings.colorGreen, globalConfigSettings.colorBlue);
@@ -2153,6 +2158,9 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
 
     if (calculatedLap > swimmer->currentLap) {
       float overshoot = swimmer->totalDistance - (swimmer->currentLap * globalConfigSettings.poolLength);
+      int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[laneIndex];
+      if (laneSwimmerCount < 1) laneSwimmerCount = 1;
+      if (laneSwimmerCount > MAX_SWIMMERS_SUPPORTED) laneSwimmerCount = MAX_SWIMMERS_SUPPORTED;
 
       if (DEBUG_ENABLED) {
         Serial.println("  *** WALL TURN ***");
@@ -2225,8 +2233,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           // If this was the last swimmer for the lane,
           // we can mark this swim set as complete for the lane.
           // However, we still need to check if there are more sets in the queue.
-          int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[laneIndex];
-          if (swimmerIndex >= laneSwimmerCount - 1) {
+                    if (swimmerIndex >= laneSwimmerCount - 1) {
             if (DEBUG_ENABLED) {
               Serial.print("    Swimmer ");
               Serial.print(swimmerIndex);
@@ -2245,8 +2252,15 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               swimSetQueue[laneIndex][actualIdx].status &= ~SWIMSET_STATUS_ACTIVE;
             }
             // Here we could implement any lane-level completion logic if needed
-            // TODO: move all the remaining non-active swimmers to the same position
+            // Move all the remaining non-active swimmers to the same position
             // as this last swimmer.
+            for (int si = swimmerIndex + 1; si < laneSwimmerCount; si++) {
+              swimmers[laneIndex][si].finished = true;
+              swimmers[laneIndex][si].lapDirection *= -1;
+              swimmers[laneIndex][si].currentLap = 1;
+              swimmers[laneIndex][si].totalDistance = 0.0;
+
+            }
           }
 
           // Try to get the next swim set in queue (queueIndex + 1)
@@ -2311,6 +2325,26 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               Serial.print(swimmerIndex);
               Serial.println(" starting rest before next set");
             }
+
+            // If this was the last swimmer for the lane,
+            // Setup any remaining non-active swimmers so they are in the right place.
+            if (swimmerIndex >= laneSwimmerCount - 1) {
+              for (int si = swimmerIndex + 1; si < laneSwimmerCount; si++) {
+                swimmers[laneIndex][si].cachedNumRounds = nextSet.rounds;
+                swimmers[laneIndex][si].cachedLapsPerRound = lapsPerRound;
+                swimmers[laneIndex][si].cachedSpeedMPS = speedMPS;
+                swimmers[laneIndex][si].cachedRestSeconds = nextSet.restSeconds;
+                swimmers[laneIndex][si].activeSwimSetId = nextSet.id;
+                swimmers[laneIndex][si].queueIndex++;  // Move to next index in queue
+                swimmers[laneIndex][si].currentRound = 1;
+                swimmers[laneIndex][si].currentLap = 1;
+                swimmers[laneIndex][si].lapsPerRound = lapsPerRound;
+                swimmers[laneIndex][si].isResting = true;
+                swimmers[laneIndex][si].restStartTime = currentTime;
+                swimmers[laneIndex][si].totalDistance = 0.0;
+                swimmers[laneIndex][si].finished = false;
+              }
+            }
           } else {
             // No more sets in queue - swimmer is done
             // Mark swimmer as finished so we stop further updates
@@ -2329,9 +2363,6 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
 
             // If this was the last swimmer for the lane (all swimmers finished),
             // clear the laneActiveQueueIndex and mark lane not running.
-            int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[laneIndex];
-            if (laneSwimmerCount < 1) laneSwimmerCount = 1;
-            if (laneSwimmerCount > 6) laneSwimmerCount = 6;
             bool allFinished = true;
             for (int si = 0; si < laneSwimmerCount; si++) {
               if (!swimmers[laneIndex][si].finished) { allFinished = false; break; }
@@ -2344,8 +2375,14 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               for (int li = 0; li < globalConfigSettings.numLanes; li++) {
                 if (globalConfigSettings.laneRunning[li]) { globalConfigSettings.isRunning = true; break; }
               }
-              // TODO: move all the remaining non-active swimmers to the same position
+              // Move all the remaining non-active swimmers to the same position
               // as this last swimmer.
+              for (int si = swimmerIndex + 1; si < laneSwimmerCount; si++) {
+                swimmers[laneIndex][si].finished = true;
+                swimmers[laneIndex][si].isResting = true;
+                swimmers[laneIndex][si].hasStarted = false;
+                swimmers[laneIndex][si].restStartTime = currentTime;
+              }
               saveGlobalConfigSettings();
             }
           }
@@ -2379,6 +2416,12 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
           float ledPosition = floor((poolLengthInMeters * globalConfigSettings.ledsPerMeter)-1) - overshootLEDs;
           swimmer->position = ledPosition;
+        }
+        // If this is the last swimmer, move any remaining swimmers to same position
+        if (swimmerIndex >= laneSwimmerCount - 1) {
+          for (int si = swimmerIndex + 1; si < laneSwimmerCount; si++) {
+            swimmers[laneIndex][si].position = swimmer->position;
+          }
         }
       }
     } else {
@@ -2475,7 +2518,7 @@ void printPeriodicStatus() {
         Serial.println(":");
         int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[lane];
         if (laneSwimmerCount < 1) laneSwimmerCount = 1;
-        if (laneSwimmerCount > 6) laneSwimmerCount = 6;
+        if (laneSwimmerCount > MAX_SWIMMERS_SUPPORTED) laneSwimmerCount = MAX_SWIMMERS_SUPPORTED;
         for (int i = 0; i < laneSwimmerCount; i++) {
           Swimmer* s = &swimmers[lane][i];
           Serial.print("  Swimmer ");

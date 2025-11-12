@@ -1247,7 +1247,8 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
     if (!currentSet || currentSet.length === 0) {
         console.log('Creating new swimmer set from config');
         const newSet = [];
-        for (let i = 0; i < currentSettings.numSwimmersPerLane[currentLane]; i++) {
+        //for (let i = 0; i < currentSettings.numSwimmersPerLane[currentLane]; i++) {
+        for (let i = 0; i < max_swimmers_per_lane; i++) {
             let swimmerColor;
             if (currentSettings.colorMode === 'same') {
                 swimmerColor = currentSettings.swimmerColor;
@@ -1272,44 +1273,18 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
         createdSwimSets[currentSettings.currentLane] = {
             id: Date.now(),
             lane: currentSettings.currentLane,
-            //laneName: currentSettings.laneNames[currentSettings.currentLane],
             swimmers: JSON.parse(JSON.stringify(newSet)),
             numRounds: currentSettings.numRounds,
             swimDistance: currentSettings.swimDistance,
             swimTime: currentSettings.swimTime,
             restTime: currentSettings.restTime,
             swimmerInterval: currentSettings.swimmerInterval,
-            //numSwimmers: currentSettings.numSwimmersPerLane[currentSettings.currentLane],
-
-            //settings: { ...currentSettings, swimTime: currentSettings.swimTime },
             summary: generateSetSummary(newSet, currentSettings)
         };
 
         console.log('New swim set created:', createdSwimSets[currentSettings.currentLane]);
     } else {
         console.log('Updating existing swimmer set from config');
-        // Update existing set in-place
-        // Resize if number of swimmers changed
-        if (currentSettings.numSwimmersPerLane[currentSettings.currentLane] < currentSet.length) {
-            currentSet = currentSet.slice(0, currentSettings.numSwimmersPerLane[currentSettings.currentLane]);
-        } else if (currentSettings.numSwimmersPerLane[currentSettings.currentLane] > currentSet.length) {
-            for (let i = currentSet.length; i < currentSettings.numSwimmersPerLane[currentSettings.currentLane]; i++) {
-                let swimmerColor;
-                if (currentSettings.colorMode === 'same') {
-                    swimmerColor = currentSettings.swimmerColor;
-                } else {
-                    swimmerColor = colorHex[swimmerColors[i]];
-                }
-                currentSet.push({
-                    id: i + 1,
-                    color: swimmerColor,
-                    swimTime: currentSettings.swimTime,
-                    interval: (i + 1) * currentSettings.swimmerInterval,
-                    lane: currentSettings.currentLane
-                });
-            }
-        }
-
         // If swim time changed and we must reset per-swimmer customizations, overwrite swim time
         if (resetSwimTimes) {
             for (let i = 0; i < currentSet.length; i++) {
@@ -1335,15 +1310,12 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
         createdSwimSets[currentSettings.currentLane] = {
             id: createdSwimSets[currentSettings.currentLane] ? createdSwimSets[currentSettings.currentLane].id : Date.now(),
             lane: currentSettings.currentLane,
-            //laneName: currentSettings.laneNames[currentSettings.currentLane],
             swimmers: JSON.parse(JSON.stringify(currentSet)),
             numRounds: currentSettings.numRounds,
             swimDistance: currentSettings.swimDistance,
             swimTime: currentSettings.swimTime,
             restTime: currentSettings.restTime,
             swimmerInterval: currentSettings.swimmerInterval,
-            //numSwimmers: currentSettings.numSwimmersPerLane[currentSettings.currentLane],
-            //settings: { ...currentSettings, swimTime: currentSettings.swimTime },
             summary: generateSetSummary(currentSet, currentSettings)
         };
         console.log('Existing swim set updated:', createdSwimSets[currentSettings.currentLane]);
@@ -1361,53 +1333,6 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
     // Record per-lane count in settings
     currentSettings.numSwimmersPerLane[lane] = deviceNumSwimmers;
     console.log(`Migrated (from device) swimmer count for lane ${lane}: ${deviceNumSwimmers}`);
-
-    // Resize swimmerSets[lane]
-    let set = swimmerSets[lane] || [];
-    if (deviceNumSwimmers < set.length) {
-        set = set.slice(0, deviceNumSwimmers);
-    } else if (deviceNumSwimmers > set.length) {
-        for (let i = set.length; i < deviceNumSwimmers; i++) {
-            set.push({
-                id: i + 1,
-                color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]],
-                swimTime: (parseTimeInput(document.getElementById('swimTime').value) || 30),
-                interval: (i + 1) * currentSettings.swimmerInterval,
-                lane: lane
-            });
-        }
-    }
-    swimmerSets[lane] = set;
-
-    // Resize createdSwimSets if present
-    const created = createdSwimSets[lane];
-    if (created && created.swimmers) {
-        let cs = created.swimmers;
-        if (deviceNumSwimmers < cs.length) cs = cs.slice(0, deviceNumSwimmers);
-        else if (deviceNumSwimmers > cs.length) {
-            for (let i = cs.length; i < deviceNumSwimmers; i++) {
-                cs.push({
-                    id: i + 1,
-                    color: (currentSettings.colorMode === 'same') ? currentSettings.swimmerColor : colorHex[swimmerColors[i]],
-                    swimTime: created.settings ? (created.settings.swimTime || parseTimeInput(document.getElementById('swimTime').value)) : parseTimeInput(document.getElementById('swimTime').value),
-                    interval: (i + 1) * (created.settings ? created.settings.swimmerInterval || currentSettings.swimmerInterval : currentSettings.swimmerInterval),
-                    lane: lane
-                });
-            }
-        }
-        created.swimmers = cs;
-        console.log('migrateSwimmerCountsToDeviceForLane: calling generateSetSummary with swimmers:', created.swimmers, 'and settings:', created.settings || currentSettings);
-
-        //created.settings = created.settings || {};
-        created.numRounds = created.numRounds || currentSettings.numRounds;
-        created.swimDistance = created.swimDistance || currentSettings.swimDistance;
-        created.swimTime = created.swimTime || currentSettings.swimTime;
-        created.restTime = created.restTime || currentSettings.restTime;
-        created.swimmerInterval = created.swimmerInterval || currentSettings.swimmerInterval;
-        created.settings.numSwimmers = deviceNumSwimmers;
-        created.summary = generateSetSummary(created.swimmers, created.settings || currentSettings);
-        createdSwimSets[lane] = created;
-    }
 
     // If this is the currently selected lane, update UI controls
     if (currentSettings.currentLane === lane) {
