@@ -2543,17 +2543,6 @@ async function reconcileQueueWithDevice() {
                         // overwrite any local state incorrectly
                     }
                 }
-
-                // activeIndex block (per-lane)
-                if (deviceStatus.activeIndex !== undefined) {
-                    if (Array.isArray(deviceStatus.activeIndex)) {
-                        for (let li = 0; li < deviceStatus.activeIndex.length && li < activeSwimSetIndex.length; li++) {
-                            activeSwimSetIndex[li] = Number(deviceStatus.activeIndex[li]);
-                        }
-                    } else {
-                        activeSwimSetIndex[lane] = Number(deviceStatus.activeIndex);
-                    }
-                }
             } catch (e) {
                 console.warn('Failed to apply device status block:', e);
             }

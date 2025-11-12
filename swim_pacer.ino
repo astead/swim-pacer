@@ -1123,14 +1123,6 @@ void setupWebServer() {
       laneRunningArr.add(globalConfigSettings.laneRunning[li] ? true : false);
     }
 
-    // activeIndex per lane (use laneActiveQueueIndex or -1)
-    JsonArray activeIdxArr = status.createNestedArray("activeIndex");
-    for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
-      int activeIdx = -1;
-      if (li >= 0 && li < MAX_LANES_SUPPORTED) activeIdx = laneActiveQueueIndex[li];
-      activeIdxArr.add(activeIdx);
-    }
-
     // Serialize and send
     String out;
     serializeJson(doc, out);
@@ -2282,11 +2274,6 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             swimmer->activeSwimSetId = nextSet.id;
             swimmer->queueIndex++;  // Move to next index in queue
 
-            // --- KEEP laneActiveQueueIndex IN SYNC WITH FIRST SWIMMER ADVANCE ---
-            // When any swimmer advances to the next queue index, make the lane's active
-            // queue index reflect that new value so client status (activeIndex) stays accurate.
-            laneActiveQueueIndex[laneIndex] = swimmer->queueIndex;
-            // Optionally persist running flag / global state consistency
             // (do not force-stop lane here; clearing is handled below when all swimmers finish)
 
             // Set the swim set status to active
