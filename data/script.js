@@ -1594,23 +1594,6 @@ function updateQueueDisplay() {
             spinner.innerHTML = 'Running...';
             row.appendChild(spinner);
 
-            const actions = document.createElement('span');
-            actions.className = 'queue-actions';
-
-            // Provide Stop control (stops lane execution). Do not allow Edit/Delete while running.
-            const stopBtn = document.createElement('button');
-            stopBtn.textContent = 'Stop';
-            stopBtn.onclick = () => { stopPacerExecution().catch(()=>{}); };
-            actions.appendChild(stopBtn);
-
-            // Optional: allow "Force Remove" with confirmation (disabled by default)
-            const forceRemoveBtn = document.createElement('button');
-            forceRemoveBtn.textContent = 'Remove (force)';
-            forceRemoveBtn.title = 'Force remove (not recommended while running)';
-            forceRemoveBtn.disabled = true; // keep disabled to avoid accidental removal
-            actions.appendChild(forceRemoveBtn);
-
-            row.appendChild(actions);
             listEl.appendChild(row);
             return;
         }
