@@ -1084,7 +1084,7 @@ function togglePacer() {
             numRounds: currentSettings.numRounds,
             swimmerInterval: currentSettings.swimmerInterval,
             numSwimmers: currentSettings.numSwimmersPerLane[currentLane],
-            laneName: currentSettings.laneNames[currentLane]
+            //laneName: currentSettings.laneNames[currentLane]
         };
 
         initializePacerStatus();
@@ -1265,9 +1265,16 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
         createdSwimSets[currentSettings.currentLane] = {
             id: Date.now(),
             lane: currentSettings.currentLane,
-            laneName: currentSettings.laneNames[currentSettings.currentLane],
+            //laneName: currentSettings.laneNames[currentSettings.currentLane],
             swimmers: JSON.parse(JSON.stringify(newSet)),
-            settings: { ...currentSettings, swimTime: currentSettings.swimTime },
+            numRounds: currentSettings.numRounds,
+            swimDistance: currentSettings.swimDistance,
+            swimTime: currentSettings.swimTime,
+            restTime: currentSettings.restTime,
+            swimmerInterval: currentSettings.swimmerInterval,
+            //numSwimmers: currentSettings.numSwimmersPerLane[currentSettings.currentLane],
+
+            //settings: { ...currentSettings, swimTime: currentSettings.swimTime },
             summary: generateSetSummary(newSet, currentSettings)
         };
 
@@ -1320,9 +1327,15 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
         createdSwimSets[currentSettings.currentLane] = {
             id: createdSwimSets[currentSettings.currentLane] ? createdSwimSets[currentSettings.currentLane].id : Date.now(),
             lane: currentSettings.currentLane,
-            laneName: currentSettings.laneNames[currentSettings.currentLane],
+            //laneName: currentSettings.laneNames[currentSettings.currentLane],
             swimmers: JSON.parse(JSON.stringify(currentSet)),
-            settings: { ...currentSettings, swimTime: currentSettings.swimTime },
+            numRounds: currentSettings.numRounds,
+            swimDistance: currentSettings.swimDistance,
+            swimTime: currentSettings.swimTime,
+            restTime: currentSettings.restTime,
+            swimmerInterval: currentSettings.swimmerInterval,
+            //numSwimmers: currentSettings.numSwimmersPerLane[currentSettings.currentLane],
+            //settings: { ...currentSettings, swimTime: currentSettings.swimTime },
             summary: generateSetSummary(currentSet, currentSettings)
         };
         console.log('Existing swim set updated:', createdSwimSets[currentSettings.currentLane]);
@@ -1375,7 +1388,12 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
             }
         }
         created.swimmers = cs;
-        created.settings = created.settings || {};
+        //created.settings = created.settings || {};
+        created.numRounds = created.numRounds || currentSettings.numRounds;
+        created.swimDistance = created.swimDistance || currentSettings.swimDistance;
+        created.swimTime = created.swimTime || currentSettings.swimTime;
+        created.restTime = created.restTime || currentSettings.restTime;
+        created.swimmerInterval = created.swimmerInterval || currentSettings.swimmerInterval;
         created.settings.numSwimmers = deviceNumSwimmers;
         created.summary = generateSetSummary(created.swimmers, created.settings || currentSettings);
         createdSwimSets[lane] = created;
@@ -1523,7 +1541,7 @@ function updateQueueDisplay() {
             row.classList.add('completed');
             const label = document.createElement('span');
             label.className = 'queue-label';
-            label.textContent = (entry.summary || (`${entry.rounds} x ${entry.swimDistance}'s`)) + ' — Completed';
+            label.textContent = (entry.summary || (`${entry.rounds} x ${entry.swimDistance}'s`));
             row.appendChild(label);
 
             const info = document.createElement('span');
@@ -1557,7 +1575,7 @@ function updateQueueDisplay() {
 
             const statusSpan = document.createElement('span');
             statusSpan.className = 'queue-status';
-            const roundText = (entry.currentRound !== undefined) ? `Round ${entry.currentRound} / ${entry.settings?.numRounds || entry.rounds}` : (currentRounds[lane] ? `Round ${currentRounds[lane]} / ${entry.settings?.numRounds || entry.rounds}` : 'In progress');
+            const roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : (currentRounds[lane] ? `Round ${currentRounds[lane]} / ${entry.numRounds}` : 'In progress');
             statusSpan.textContent = roundText;
             row.appendChild(statusSpan);
 
@@ -1743,7 +1761,12 @@ function saveSwimSet() {
     const existing = swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] || {};
     const newEntry = JSON.parse(JSON.stringify(existing));
     newEntry.swimmers = JSON.parse(JSON.stringify(currentSet));
-    newEntry.settings = JSON.parse(JSON.stringify(currentSettings));
+    //newEntry.settings = JSON.parse(JSON.stringify(currentSettings));
+    newEntry.numRounds = currentSet.numRounds;
+    newEntry.swimDistance = currentSet.swimDistance;
+    newEntry.swimTime = currentSet.swimTime;
+    newEntry.restTime = currentSet.restTime;
+    newEntry.swimmerInterval = currentSet.swimmerInterval;
     newEntry.summary = generateSetSummary(newEntry.swimmers, newEntry.settings);
 
     // Prepare payload for update endpoint
@@ -2068,6 +2091,7 @@ function loadSwimSetForExecution(swimSet) {
 // Server-first start: request device to start the head (or specific index) and only on success call startLocalExecution.
 // Returns Promise<boolean>
 async function runSwimSetNow(requestedIndex) {
+    // TODO: Why doesn't this just call toggle?
     const lane = getCurrentLaneFromUI();
     const queue = swimSetQueues[lane] || [];
 
@@ -2180,7 +2204,7 @@ async function stopPacerExecution() {
     const controller = new AbortController();
     const to = setTimeout(() => controller.abort(), 5000);
     try {
-        const resp = await fetch('/stopLane', {
+        const resp = await fetch('/toggle', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ lane }),
