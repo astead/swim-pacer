@@ -1335,7 +1335,6 @@ void handleGetSettings() {
   json += "\"poolLengthUnits\":\"" + String(globalConfigSettings.poolUnitsYards ? "yards" : "meters") + "\",";
   json += "\"underwatersEnabled\":" + String(globalConfigSettings.underwatersEnabled ? "true" : "false") + ",";
   json += "\"delayIndicatorsEnabled\":" + String(globalConfigSettings.delayIndicatorsEnabled ? "true" : "false") + ",";
-  json += "\"isRunning\":" + String(globalConfigSettings.laneRunning[currentLane] ? "true" : "false") + ",";
   json += "\"currentLane\":" + String(currentLane) + ",";
 
   // Include underwater colors stored in Preferences as hex strings (fallbacks match drawUnderwaterZone())
