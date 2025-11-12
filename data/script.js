@@ -23,7 +23,6 @@ let currentSettings = {
     numLanes: 2,
     currentLane: 0,
     laneNames: ['Lane 1', 'Lane 2', 'Lane 3', 'Lane 4'],
-    isRunning: false,
     underwatersEnabled: false,
     lightSize: 1.0,
     firstUnderwaterDistance: 20,
@@ -323,9 +322,6 @@ function updateCurrentLane() {
     const newLane = parseInt(document.getElementById('currentLane').value);
     currentSettings.currentLane = newLane;
 
-    // Update isRunning to reflect the new lane's state
-    currentSettings.isRunning = laneRunning[newLane];
-
     // Get elements for swimmer set management
     const swimmerSetDiv = document.getElementById('swimmerSet');
     const configControls = document.getElementById('configControls');
@@ -366,7 +362,7 @@ function updateCurrentLane() {
     updatePacerButtons();
 
     // If the new lane is running, start status updates
-    if (currentSettings.isRunning) {
+    if (laneRunning[currentSettings.currentLane]) {
         initializePacerStatus();
         startStatusUpdates();
     } else {
@@ -376,7 +372,7 @@ function updateCurrentLane() {
     // Enable/disable reset positions button depending on running state
     try {
         const btn = document.getElementById('resetPositionsBtn');
-        if (btn) btn.disabled = !!currentSettings.isRunning;
+        if (btn) btn.disabled = !!laneRunning[currentSettings.currentLane];
     } catch (e) {}
 }
 
@@ -384,7 +380,7 @@ function updateCurrentLane() {
 function resetLanePositions() {
     const lane = currentSettings.currentLane || 0;
     // Only allow when not running
-    if (currentSettings.isRunning) {
+    if (laneRunning[lane]) {
         alert('Cannot reset positions while lane is running');
         return;
     }
@@ -1045,9 +1041,8 @@ function updateStatus() {
     if (queueDisplay) {
         // Prefer the per-lane running state so the border reflects the lane's actual status.
         const lane = currentSettings.currentLane || 0;
-        const isLaneRunning = (laneRunning && laneRunning[lane]) ? true : false;
-        const running = isLaneRunning || currentSettings.isRunning;
-        console.log(`Updating status display: lane ${lane}, laneRunning=${laneRunning}, laneRunning[lane]=${laneRunning[lane]}, isLaneRunning=${isLaneRunning}, currentSettings.isRunning=${currentSettings.isRunning}, effective running=${running}`);
+        const running = (laneRunning && laneRunning[lane]) ? true : false;
+        console.log(`Updating status display: lane ${lane}, laneRunning=${laneRunning}, laneRunning[lane]=${laneRunning[lane]}, effective running=${running}`);
         if (running) {
             // Running: green border
             queueDisplay.style.borderLeft = '4px solid #28a745';
@@ -1061,7 +1056,7 @@ function updateStatus() {
 
     // toggleBtn doesn't exist in queue-based interface, so check first
     if (toggleBtnElement) {
-        toggleBtnElement.textContent = currentSettings.isRunning ? 'Stop Pacer' : 'Start Pacer';
+        toggleBtnElement.textContent = laneRunning[currentSettings.currentLane] ? 'Stop Pacer' : 'Start Pacer';
     }
 }
 
@@ -1069,14 +1064,13 @@ function togglePacer() {
     // Toggle the running state for the current lane
     const currentLane = currentSettings.currentLane;
     laneRunning[currentLane] = !laneRunning[currentLane];
-    currentSettings.isRunning = laneRunning[currentLane];
 
     // Update UI immediately for better responsiveness
     updateStatus();
 
     // Handle detailed status display
     const detailedStatus = document.getElementById('detailedStatus');
-    if (currentSettings.isRunning) {
+    if (laneRunning[currentLane]) {
         // Starting pacer for current lane - create immutable copies
         pacerStartTimes[currentLane] = Date.now();
         currentRounds[currentLane] = 1;
@@ -1154,7 +1148,7 @@ function stopStatusUpdates() {
 }
 
 function updatePacerStatus() {
-    if (!currentSettings.isRunning) return;
+    if (!laneRunning[currentSettings.currentLane]) return;
 
     const currentLane = currentSettings.currentLane;
     const runningData = getRunningSettings();
@@ -2160,7 +2154,6 @@ function startLocalExecution(lane, index) {
     activeSwimSets[lane] = setToRun;
     activeSwimSetIndex[lane] = index;
     laneRunning[lane] = true;
-    currentSettings.isRunning = true;
     completionHandled[lane] = false;
     pacerStartTimes[lane] = Date.now();
 
@@ -2200,7 +2193,6 @@ async function stopPacerExecution() {
         }
         // Server confirmed stop — clear local running state
         laneRunning[lane] = false;
-        currentSettings.isRunning = false;
         runningSets[lane] = null;
         runningSettings[lane] = null;
         pacerStartTimes[lane] = 0;
@@ -2569,18 +2561,6 @@ async function reconcileQueueWithDevice() {
                         }
                     } else {
                         currentRounds[lane] = Number(deviceStatus.currentRounds);
-                    }
-                }
-
-                // isRunning field
-                if (deviceStatus.isRunning !== undefined) {
-                    if (Array.isArray(deviceStatus.isRunning)) {
-                        for (let li = 0; li < deviceStatus.isRunning.length && li < laneRunning.length; li++) {
-                            // coerce and store
-                            laneRunning[li] = !!deviceStatus.isRunning[li];
-                        }
-                    } else {
-                        currentSettings.isRunning = !!deviceStatus.isRunning;
                     }
                 }
             } catch (e) {
@@ -2994,11 +2974,6 @@ async function fetchDeviceSettingsAndApply() {
         } catch (e) {
             // Non-fatal
             console.log('Palette sync skipped:', e);
-        }
-
-        // isRunning
-        if (dev.isRunning !== undefined) {
-            currentSettings.isRunning = (dev.isRunning === 'true' || dev.isRunning === true);
         }
 
         // After merging, update full UI
