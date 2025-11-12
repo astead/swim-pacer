@@ -166,7 +166,6 @@ float poolToStripRatio;           // Ratio of pool to strip length
 
 // ========== GLOBAL VARIABLES ==========
 CRGB* leds[4] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for up to 4 lanes
-int currentLane = 0;              // Currently selected lane for configuration
 int currentPosition = 0;
 int direction = 1;
 unsigned long lastUpdate = 0;
@@ -178,12 +177,24 @@ bool needsRecalculation = true;
 // (previously declared earlier; moved so globals are grouped together)
 // Note: queue storage is sized by SWIMSET_QUEUE_MAX and accessed via enqueue/dequeue functions
 
+// Helper: parse lane from POST JSON body (returns -1 when missing)
+static int parseLaneFromBody(const String &body) {
+  // extractJsonLong is already in your codebase; fallback to -1 if missing
+  long v = extractJsonLong(body.c_str(), "lane", -1);
+  return (int)v;
+}
+
 // The queue arrays are declared earlier but we define the helpers here for readability.
-bool enqueueSwimSet(const SwimSet &s) {
-  // For backward compatibility, if s.type encodes lane in an extended field it
-  // is ignored. Require callers to supply swim-set payloads per-lane via
-  // the HTTP endpoint which passes the lane separately. Here use currentLane.
-  int lane = currentLane;
+bool enqueueSwimSet(const SwimSet &s, int lane) {
+  if (DEBUG_ENABLED) Serial.println("enqueueSwimSet(): called");
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+    if (DEBUG_ENABLED) Serial.println("  invalid lane, rejecting set");
+    return false;
+  }
+  if (swimSetQueueCount[lane] >= SWIMSET_QUEUE_MAX) {
+    if (DEBUG_ENABLED) Serial.println("  queue full, rejecting set");
+    return false;
+  }
   if (DEBUG_ENABLED) {
     Serial.print("enqueueSwimSet(): received set for lane:");
     Serial.println(lane);
@@ -198,35 +209,12 @@ bool enqueueSwimSet(const SwimSet &s) {
     Serial.print("  swimmerInterval=");
     Serial.println(s.swimmerInterval);
   }
-  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
-  if (swimSetQueueCount[lane] >= SWIMSET_QUEUE_MAX) {
-    if (DEBUG_ENABLED) Serial.println("  queue full, rejecting set");
-    return false;
-  }
   swimSetQueue[lane][swimSetQueueTail[lane]] = s;
   swimSetQueueTail[lane] = (swimSetQueueTail[lane] + 1) % SWIMSET_QUEUE_MAX;
   swimSetQueueCount[lane]++;
   if (DEBUG_ENABLED) {
     Serial.print("  Queue Count After Insert="); Serial.println(swimSetQueueCount[lane]);
   }
-  return true;
-}
-
-bool dequeueSwimSet(SwimSet &out) {
-  int lane = currentLane;
-  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
-  if (swimSetQueueCount[lane] == 0) return false;
-  out = swimSetQueue[lane][swimSetQueueHead[lane]];
-  swimSetQueueHead[lane] = (swimSetQueueHead[lane] + 1) % SWIMSET_QUEUE_MAX;
-  swimSetQueueCount[lane]--;
-  return true;
-}
-
-// Peek at the next swim set in queue without removing it
-bool peekSwimSet(SwimSet &out, int lane) {
-  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
-  if (swimSetQueueCount[lane] == 0) return false;
-  out = swimSetQueue[lane][swimSetQueueHead[lane]];
   return true;
 }
 
@@ -324,7 +312,7 @@ CRGB swimmerColors[] = {
 };
 
 // Apply the swim set to current swimSetSettings and start the set on current lane
-void applySwimSetToSettings(const SwimSet &s) {
+void applySwimSetToSettings(const SwimSet &s, int lane) {
   // Compute speed (m/s) from swimDistance (in pool units) and swimSeconds
   // convert swimDistance to meters using current pool units
   float swimDistanceMeters = convertPoolToMeters((float)s.swimDistance);
@@ -343,7 +331,7 @@ void applySwimSetToSettings(const SwimSet &s) {
   // Debug: print swim set being applied
   if (DEBUG_ENABLED) {
     Serial.println("applySwimSetToSettings(): applying set:");
-    Serial.print("  currentLane="); Serial.println(currentLane);
+    Serial.print("  lane="); Serial.println(lane);
     Serial.print("  rounds="); Serial.println(s.rounds);
     Serial.print("  swimDistance="); Serial.println(s.swimDistance);
     Serial.print("  swimSeconds="); Serial.println(s.swimSeconds);
@@ -374,52 +362,52 @@ void applySwimSetToSettings(const SwimSet &s) {
 
   // Initialize swimmers for the current lane to start fresh
   for (int i = 0; i < 6; i++) {
-    //swimmers[currentLane][i].position = 0; This should continue from previous position
-    //swimmers[currentLane][i].direction = 1; This should continue from previous direction
-    swimmers[currentLane][i].hasStarted = false;  // Initialize as not started
-    swimmers[currentLane][i].lastUpdate = millis();
+    //swimmers[lane][i].position = 0; This should continue from previous position
+    //swimmers[lane][i].direction = 1; This should continue from previous direction
+    swimmers[lane][i].hasStarted = false;  // Initialize as not started
+    swimmers[lane][i].lastUpdate = millis();
 
     // Initialize round and rest tracking
-    swimmers[currentLane][i].currentRound = 1;
-    swimmers[currentLane][i].currentLap = 1;
-    swimmers[currentLane][i].lapsPerRound = ceil(swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
-    swimmers[currentLane][i].isResting = true;
-    swimmers[currentLane][i].finished = false;
+    swimmers[lane][i].currentRound = 1;
+    swimmers[lane][i].currentLap = 1;
+    swimmers[lane][i].lapsPerRound = ceil(swimSetSettings.swimSetDistance / globalConfigSettings.poolLength);
+    swimmers[lane][i].isResting = true;
+    swimmers[lane][i].finished = false;
     // Start rest timer now so swimmerInterval-based stagger will be honored
-    swimmers[currentLane][i].restStartTime = millis();
+    swimmers[lane][i].restStartTime = millis();
     // Total distance should start at 0 for the new set
-    swimmers[currentLane][i].totalDistance = 0.0;
-    //swimmers[currentLane][i].lapDirection = 1;  This should continue from previous direction
+    swimmers[lane][i].totalDistance = 0.0;
+    //swimmers[lane][i].lapDirection = 1;  This should continue from previous direction
 
     // Initialize underwater tracking
-    swimmers[currentLane][i].underwaterActive = globalConfigSettings.underwatersEnabled;
-    swimmers[currentLane][i].inSurfacePhase = false;
-    swimmers[currentLane][i].distanceTraveled = 0.0;
-    swimmers[currentLane][i].hideTimerStart = 0;
+    swimmers[lane][i].underwaterActive = globalConfigSettings.underwatersEnabled;
+    swimmers[lane][i].inSurfacePhase = false;
+    swimmers[lane][i].distanceTraveled = 0.0;
+    swimmers[lane][i].hideTimerStart = 0;
 
     // Initialize debug tracking
-    swimmers[currentLane][i].debugRestingPrinted = false;
-    swimmers[currentLane][i].debugSwimmingPrinted = false;
+    swimmers[lane][i].debugRestingPrinted = false;
+    swimmers[lane][i].debugSwimmingPrinted = false;
 
     // Cache swim set settings for this swimmer (enables independent progression through queue)
-    swimmers[currentLane][i].cachedNumRounds = s.rounds;
-    swimmers[currentLane][i].cachedLapsPerRound = ceil(s.swimDistance / globalConfigSettings.poolLength);
-    swimmers[currentLane][i].cachedSpeedMPS = speedMPS;
-    swimmers[currentLane][i].cachedRestSeconds = s.restSeconds;
-    swimmers[currentLane][i].activeSwimSetId = s.id;
+    swimmers[lane][i].cachedNumRounds = s.rounds;
+    swimmers[lane][i].cachedLapsPerRound = ceil(s.swimDistance / globalConfigSettings.poolLength);
+    swimmers[lane][i].cachedSpeedMPS = speedMPS;
+    swimmers[lane][i].cachedRestSeconds = s.restSeconds;
+    swimmers[lane][i].activeSwimSetId = s.id;
 
     // set queue index: use laneActiveQueueIndex if set, otherwise 0
     int qidx = -1;
-    if (currentLane >= 0 && currentLane < MAX_LANES_SUPPORTED) qidx = laneActiveQueueIndex[currentLane];
+    if (lane >= 0 && lane < MAX_LANES_SUPPORTED) qidx = laneActiveQueueIndex[lane];
     if (qidx < 0) qidx = 0;
-    swimmers[currentLane][i].queueIndex = qidx;
+    swimmers[lane][i].queueIndex = qidx;
   }
 
   // Debug: dump swimmer state for current lane after initialization (first 6 swimmers)
   if (DEBUG_ENABLED) {
     Serial.println("  swimmer state after applying the swim set:");
     for (int i = 0; i < 6; i++) {
-      Swimmer &sw = swimmers[currentLane][i];
+      Swimmer &sw = swimmers[lane][i];
       Serial.print("  swimmer="); Serial.print(i);
       Serial.print(" pos="); Serial.print(sw.position);
       Serial.print(" dir="); Serial.print(sw.direction);
@@ -447,16 +435,16 @@ void applySwimSetToSettings(const SwimSet &s) {
 
   // s is a const reference (may be a temporary or payload); don't modify it.
   // If this swim set came from the lane queue, mark the corresponding queue entry ACTIVE.
-  if (currentLane >= 0 && currentLane < MAX_LANES_SUPPORTED) {
-    int qidx = laneActiveQueueIndex[currentLane];
-    if (qidx >= 0 && qidx < swimSetQueueCount[currentLane]) {
-      int actualIdx = (swimSetQueueHead[currentLane] + qidx) % SWIMSET_QUEUE_MAX;
-      swimSetQueue[currentLane][actualIdx].status |= SWIMSET_STATUS_ACTIVE;
+  if (lane >= 0 && lane < MAX_LANES_SUPPORTED) {
+    int qidx = laneActiveQueueIndex[lane];
+    if (qidx >= 0 && qidx < swimSetQueueCount[lane]) {
+      int actualIdx = (swimSetQueueHead[lane] + qidx) % SWIMSET_QUEUE_MAX;
+      swimSetQueue[lane][actualIdx].status |= SWIMSET_STATUS_ACTIVE;
     }
   }
 
   // Start the current lane pacer
-  globalConfigSettings.laneRunning[currentLane] = true;
+  globalConfigSettings.laneRunning[lane] = true;
   // Update global isRunning if any lane is running
   globalConfigSettings.isRunning = false;
   for (int i = 0; i < globalConfigSettings.numLanes; i++) {
@@ -638,7 +626,6 @@ void setupWebServer() {
 
   // Handle getting current globalConfigSettings (for dynamic updates)
   server.on("/globalConfigSettings", HTTP_GET, handleGetSettings);
-  server.on("/currentLane", HTTP_GET, handleGetCurrentLane);
 
   // API Units and persistence notes:
   // - Speed: stored and returned as meters per second (m/s). Client should POST /setSpeed with m/s.
@@ -676,6 +663,11 @@ void setupWebServer() {
     Serial.println("/enqueueSwimSet ENTER");
     // Read raw body
     String body = server.arg("plain");
+    int lane = parseLaneFromBody(body);
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+      return;
+    }
     SwimSet s;
     s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
     s.swimDistance = (uint16_t)extractJsonLong(body, "swimDistance", swimSetSettings.swimSetDistance);
@@ -706,22 +698,16 @@ void setupWebServer() {
       if (parsedOk) s.clientTempId = parsed;
     }
 
-    int lane = (int)extractJsonLong(body, "lane", currentLane);
-    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-      server.send(400, "text/plain", "Invalid lane");
-      return;
-    }
-    int oldLane = currentLane;
-    currentLane = lane;
     // Assign a device canonical id on enqueue (non-zero)
     if (s.id == 0) {
       nextSwimSetId++;
       if (nextSwimSetId == 0) nextSwimSetId = 1;
       s.id = nextSwimSetId;
     }
-    bool ok = enqueueSwimSet(s);
+    bool ok = enqueueSwimSet(s, lane);
     Serial.println(" Enqueue result: " + String(ok ? "OK" : "FAILED"));
     Serial.println("  Enqueued swim set: ");
+    Serial.println("   lane=" + String(lane));
     Serial.println("   rounds=" + String(s.rounds));
     Serial.println("   swimDistance=" + String(s.swimDistance));
     Serial.println("   swimSeconds=" + String(s.swimSeconds));
@@ -731,7 +717,7 @@ void setupWebServer() {
     Serial.println("   repeat=" + String(s.repeat));
     Serial.println("   id=" + String(s.id));
     Serial.println("   clientTempId=" + String((unsigned long long)s.clientTempId));
-    currentLane = oldLane;
+
     if (ok) {
       int qCount = swimSetQueueCount[lane];
       String json = "{";
@@ -754,6 +740,11 @@ void setupWebServer() {
   server.on("/updateSwimSet", HTTP_POST, []() {
     Serial.println("/updateSwimSet ENTER");
     String body = server.arg("plain");
+    int lane = parseLaneFromBody(body);
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+      return;
+    }
     Serial.println(" Raw body:");
     Serial.println(body);
 
@@ -770,7 +761,6 @@ void setupWebServer() {
     long matchId = extractJsonLong(body, "matchId", 0);
     String matchClientTemp = extractJsonString(body, "matchClientTempId", "");
     String newClientTemp = extractJsonString(body, "clientTempId", "");
-    int lane = (int)extractJsonLong(body, "lane", currentLane);
 
     Serial.print("  lane="); Serial.println(lane);
     Serial.print("  matchId="); Serial.println(matchId);
@@ -878,6 +868,11 @@ void setupWebServer() {
   server.on("/deleteSwimSet", HTTP_POST, []() {
     Serial.println("/deleteSwimSet ENTER");
     String body = server.arg("plain");
+    int lane = parseLaneFromBody(body);
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+      return;
+    }
     Serial.println(" Received raw body: " + body);
 
     // Expect application/json body
@@ -887,7 +882,6 @@ void setupWebServer() {
     }
     long matchId = extractJsonLong(body, "matchId", 0);
     String matchClientTemp = extractJsonString(body, "matchClientTempId", "");
-    int lane = (int)extractJsonLong(body, "lane", currentLane);
 
     // Validate lane...
     if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
@@ -953,9 +947,9 @@ void setupWebServer() {
   // Reset swimmers for a given lane to starting wall (position=0, direction=1)
   server.on("/resetLane", HTTP_POST, []() {
     String body = server.arg("plain");
-    int lane = (int)extractJsonLong(body, "lane", currentLane);
+    int lane = parseLaneFromBody(body);
     if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-      server.send(400, "text/plain", "Invalid lane");
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
       return;
     }
 
@@ -984,11 +978,9 @@ void setupWebServer() {
   server.on("/runSwimSetNow", HTTP_POST, []() {
     Serial.println("/runSwimSetNow ENTER");
     String body = server.arg("plain");
-
-    // Determine lane (optional in body, otherwise use currentLane)
-    int lane = (int)extractJsonLong(body, "lane", currentLane);
+    int lane = parseLaneFromBody(body);
     if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-      server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid lane\"}");
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
       return;
     }
 
@@ -1057,12 +1049,8 @@ void setupWebServer() {
 
     // record which queue index we started (will be used by applySwimSetToSettings)
     laneActiveQueueIndex[lane] = matchedQueueIndex;
-    // Now apply set (applySwimSetToSettings will consult laneActiveQueueIndex)
-    int oldLane = currentLane;
-    currentLane = lane; // ensure apply affects intended lane
     Serial.println("/runSwimSetNow: calling applySwimSetToSettings()");
-    applySwimSetToSettings(s);
-    currentLane = oldLane;
+    applySwimSetToSettings(s, lane);
 
     // Respond with canonical id (if any) so client can reconcile
     String resp = "{";
@@ -1073,15 +1061,19 @@ void setupWebServer() {
     server.send(200, "application/json", resp);
   });
 
-  server.on("/getSwimQueue", HTTP_GET, []() {
+  server.on("/getSwimQueue", HTTP_POST, []() {
     Serial.println("/getSwimQueue ENTER");
+    String body = server.arg("plain");
+    int lane = parseLaneFromBody(body);
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+      return;
+    }
 
     // Use ArduinoJson to build the response to avoid any string-concatenation bugs.
     // Adjust the DynamicJsonDocument size if you have very large queues.
     const size_t DOC_SIZE = 16 * 1024;
     DynamicJsonDocument doc(DOC_SIZE);
-
-    int lane = currentLane; // currentLane is expected to be set earlier
 
     // Build queue array for the current lane
     JsonArray q = doc.createNestedArray("queue");
@@ -1166,9 +1158,9 @@ void setupWebServer() {
   server.on("/reorderSwimQueue", HTTP_POST, []() {
     Serial.println("/reorderSwimQueue ENTER");
     String body = server.arg("plain");
-    int lane = (int)extractJsonLong(body, "lane", currentLane);
+    int lane = parseLaneFromBody(body);
     if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-      server.send(400, "text/plain", "Invalid lane");
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
       return;
     }
 
@@ -1335,7 +1327,6 @@ void handleGetSettings() {
   json += "\"poolLengthUnits\":\"" + String(globalConfigSettings.poolUnitsYards ? "yards" : "meters") + "\",";
   json += "\"underwatersEnabled\":" + String(globalConfigSettings.underwatersEnabled ? "true" : "false") + ",";
   json += "\"delayIndicatorsEnabled\":" + String(globalConfigSettings.delayIndicatorsEnabled ? "true" : "false") + ",";
-  json += "\"currentLane\":" + String(currentLane) + ",";
 
   // Include underwater colors stored in Preferences as hex strings (fallbacks match drawUnderwaterZone())
   String underwaterHex = preferences.getString("underwaterColor", "#0066CC");
@@ -1346,17 +1337,25 @@ void handleGetSettings() {
   server.send(200, "application/json", json);
 }
 
-void handleGetCurrentLane() {
-  String json = "{";
-  json += "\"currentLane\":" + String(currentLane);
-  json += "}";
+void handleToggle() {// determine lane from query/form or JSON body
+  int lane = -1;
+  if (server.hasArg("lane")) {
+      // query param or form-encoded POST
+      lane = server.arg("lane").toInt();
+  } else {
+      // attempt to parse JSON body: {"lane":N}
+      String body = server.arg("plain");
+      if (body.length() > 0) {
+          lane = (int)extractJsonLong(body, "lane", -1);
+      }
+  }
 
-  server.send(200, "application/json", json);
-}
-
-void handleToggle() {
-  // Toggle the current lane's running state
-  globalConfigSettings.laneRunning[currentLane] = !globalConfigSettings.laneRunning[currentLane];
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+      return;
+  }
+  // Toggle the specified lane's running state
+  globalConfigSettings.laneRunning[lane] = !globalConfigSettings.laneRunning[lane];
 
   // Update global running state (true if any lane is running)
   globalConfigSettings.isRunning = false;
@@ -1369,7 +1368,7 @@ void handleToggle() {
 
   saveGlobalConfigSettings();
 
-  String status = globalConfigSettings.laneRunning[currentLane] ? "Lane Pacer Started" : "Lane Pacer Stopped";
+  String status = globalConfigSettings.laneRunning[lane] ? "Lane " + String(lane) + " Started" : "Lane " + String(lane) + " Stopped";
   server.send(200, "text/plain", status);
 }
 

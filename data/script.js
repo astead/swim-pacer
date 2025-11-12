@@ -392,7 +392,7 @@ function resetLanePositions() {
     fetch('/resetLane', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `lane=${lane}`
+        body:  JSON.stringify({ lane }),
     }).then(resp => {
         if (!resp.ok) throw new Error('reset failed');
         // On success, reconcile queue and refresh status/UI
@@ -1097,16 +1097,20 @@ function togglePacer() {
     }
 
     // Try to notify server (will fail gracefully in standalone mode)
-    fetch('/toggle', { method: 'POST' })
-    .then(response => response.text())
-    .then(result => {
-        // Server responded - status is already updated via updateStatus()
-        console.log('Server response:', result);
+    fetch('/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body:  JSON.stringify({ lane: currentLane }),
     })
-    .catch(error => {
-        // Server not available (standalone mode), keep local status
-        console.log('Running in standalone mode - server not available');
-    });
+        .then(response => response.text())
+        .then(result => {
+            // Server responded - status is already updated via updateStatus()
+            console.log('Server response:', result);
+        })
+        .catch(error => {
+            // Server not available (standalone mode), keep local status
+            console.log('Running in standalone mode - server not available');
+        });
 }
 
 function initializePacerStatus() {
@@ -1262,6 +1266,8 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
         setCurrentSwimmerSet(newSet);
 
         // Also store as createdSwimSets so the rest of the UI expects a created set
+        console.log('CreateOrUpdateSwimmerSetFromConfig-A: calling generateSetSummary with swimmers:', newSet, 'and settings:', currentSettings);
+
         createdSwimSets[currentSettings.currentLane] = {
             id: Date.now(),
             lane: currentSettings.currentLane,
@@ -1322,6 +1328,7 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
         }
 
         setCurrentSwimmerSet(currentSet);
+        console.log('CreateOrUpdateSwimmerSetFromConfig-B: calling generateSetSummary with swimmers:', currentSet, 'and settings:', currentSettings);
 
         // Keep createdSwimSets in sync so queuing/start paths can use it
         createdSwimSets[currentSettings.currentLane] = {
@@ -1388,6 +1395,8 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
             }
         }
         created.swimmers = cs;
+        console.log('migrateSwimmerCountsToDeviceForLane: calling generateSetSummary with swimmers:', created.swimmers, 'and settings:', created.settings || currentSettings);
+
         //created.settings = created.settings || {};
         created.numRounds = created.numRounds || currentSettings.numRounds;
         created.swimDistance = created.swimDistance || currentSettings.swimDistance;
@@ -1413,6 +1422,7 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
 
 
 function generateSetSummary(swimmers, settings) {
+    console.log('Generating set summary with swimmers:', swimmers, 'and settings:', settings);
     const swimDistance = settings.swimDistance;
     const swimTime = swimmers[0].swimTime;
     const restTime = settings.restTime;
@@ -1767,7 +1777,8 @@ function saveSwimSet() {
     newEntry.swimTime = currentSet.swimTime;
     newEntry.restTime = currentSet.restTime;
     newEntry.swimmerInterval = currentSet.swimmerInterval;
-    newEntry.summary = generateSetSummary(newEntry.swimmers, newEntry.settings);
+    console.log('saveSwimSet: calling generateSetSummary with swimmers:', newEntry.swimmers, 'and settings:', currentSettings);
+    newEntry.summary = generateSetSummary(newEntry.swimmers, currentSettings);
 
     // Prepare payload for update endpoint
     const payload = buildMinimalSwimSetPayload(newEntry);
@@ -2235,14 +2246,18 @@ async function stopPacerExecution() {
 }
 
 function sendStopCommand() {
-    fetch('/toggle', { method: 'POST' })
-    .then(response => response.text())
-    .then(result => {
-        console.log('Stop command sent:', result);
+    fetch('/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body:  JSON.stringify({ lane: currentLane }),
     })
-    .catch(error => {
-        console.log('Running in standalone mode - stop command not sent');
-    });
+        .then(response => response.text())
+        .then(result => {
+            console.log('Stop command sent:', result);
+        })
+        .catch(error => {
+            console.log('Running in standalone mode - stop command not sent');
+        });
 }
 
 // Update the original createSet function to call the new workflow
@@ -2420,7 +2435,11 @@ async function reconcileQueueWithDevice() {
     const lane = currentSettings.currentLane;
     try {
         console.log('reconcileQueueWithDevice calling /getSwimQueue');
-        const res = await fetch('/getSwimQueue');
+        const res = await fetch('/getSwimQueue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lane }),
+        });
         if (!res.ok) return;
         console.log('reconcileQueueWithDevice received response:', res);
         const payload = await res.json();
@@ -2885,17 +2904,6 @@ async function fetchDeviceSettingsAndApply() {
     suppressSettingsWrites = true;
 
     try {
-        // Ensure we have the current lane first
-        console.log("Fetching currentLane");
-        const laneRes = await fetch('/currentLane');
-        if (laneRes.ok) {
-            const laneJson = await laneRes.json();
-            console.log("Received currentLane");
-            if (laneJson.currentLane !== undefined) {
-                currentSettings.currentLane = Number(laneJson.currentLane);
-            }
-        }
-
         console.log("Fetching globalConfigSettings");
         const res = await fetch('/globalConfigSettings');
         if (!res.ok) return;
@@ -3168,7 +3176,11 @@ async function sendStartCommand() {
     ]);
 
     // Finally, request the device to toggle/start. Do not block on this.
-    fetch('/toggle', { method: 'POST' })
+    fetch('/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body:  JSON.stringify({ lane: currentLane }),
+    })
         .then(response => response.text())
         .then(result => {
             console.log('Start command issued, server response:', result);
