@@ -1,7 +1,8 @@
 ﻿// Detect if running in standalone mode (file:// protocol)
 const isStandaloneMode = window.location.protocol === 'file:';
 
-
+const max_swimmers_per_lane = 10;
+const default_swimmers_per_lane = 3;
 let currentSettings = {
     color: 'red',
     brightness: 196,
@@ -11,8 +12,12 @@ let currentSettings = {
     swimDistance: 50,
     swimmerInterval: 4,
     delayIndicatorsEnabled: true,
-    maxSwimmersPerLane: 10,
-    numSwimmersPerLane: [3,3,3,3],
+    maxSwimmersPerLane: max_swimmers_per_lane,
+    numSwimmersPerLane: [
+        default_swimmers_per_lane,
+        default_swimmers_per_lane,
+        default_swimmers_per_lane,
+        default_swimmers_per_lane],
     numRounds: 10,
     colorMode: 'individual',
     swimmerColor: '#0000ff',
@@ -52,7 +57,7 @@ let activeSwimSets = [null, null, null, null]; // Currently running swim set for
 let activeSwimSetIndex = [-1, -1, -1, -1]; // Index of the active swim set within swimSetQueues for each lane
 let editingSwimSetIndexes = [-1, -1, -1, -1]; // Index of swim set being edited for each lane (-1 if creating new)
 let createdSwimSets = [null, null, null, null]; // Temporarily holds created set before queuing for each lane
-const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan'];
+const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan', 'red', 'green', 'blue', 'yellow'];
 const colorHex = {
     'red': '#ff0000',
     'green': '#00ff00',
@@ -60,11 +65,16 @@ const colorHex = {
     'yellow': '#ffff00',
     'purple': '#800080',
     'cyan': '#00ffff',
-    'custom': '#0000ff' // Default custom color
+    'red': '#ff0000',
+    'green': '#00ff00',
+    'blue': '#0000ff',
+    'yellow': '#ffff00',
+    'custom': '#0000ff', // Default custom color
 };
 
 // Lane identification system
 let laneIdentificationMode = false;
+// TODO: Just re-use the swimmer colors array?
 const laneIdentificationColors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00']; // Red, Green, Blue, Yellow
 
 // Convert hex color to color name for swimmer assignment

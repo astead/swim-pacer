@@ -69,6 +69,7 @@ IPAddress gateway(192, 168, 4, 1);          // Gateway IP
 IPAddress subnet(255, 255, 255, 0);         // Subnet mask
 
 // ========== DEFAULT SETTINGS ==========
+const int DEFAULT_NUM_SWIMMERS = 3;
 struct GlobalConfigSettings {
   float poolLength = 25.0;                   // Pool length (in poolUnits - yards or meters)
   bool poolUnitsYards = true;                // true = yards, false = meters
@@ -77,7 +78,12 @@ struct GlobalConfigSettings {
   int numLanes = 1;                          // Number of LED strips/lanes connected
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   bool delayIndicatorsEnabled = true;        // Whether to show delay countdown indicators
-  int numSwimmersPerLane[4] = {3,3,3,3};    // Per-lane swimmer counts (preferred)
+  int numSwimmersPerLane[4] = {              // Per-lane swimmer counts (preferred)
+    DEFAULT_NUM_SWIMMERS,
+    DEFAULT_NUM_SWIMMERS,
+    DEFAULT_NUM_SWIMMERS,
+    DEFAULT_NUM_SWIMMERS
+  };
   uint8_t colorRed = 0;                      // RGB color values - default to blue
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
@@ -135,6 +141,7 @@ struct SwimSet {
 // Simple fixed-size in-memory per-lane queues
 const int SWIMSET_QUEUE_MAX = 12;
 const int MAX_LANES_SUPPORTED = 4;
+const int MAX_SWIMMERS_SUPPORTED = 10;
 SwimSet swimSetQueue[MAX_LANES_SUPPORTED][SWIMSET_QUEUE_MAX];
 int swimSetQueueHead[MAX_LANES_SUPPORTED] = {0,0,0,0};
 int swimSetQueueTail[MAX_LANES_SUPPORTED] = {0,0,0,0};
@@ -1103,7 +1110,7 @@ void setupWebServer() {
       int repCurrentRound = 0;
       int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[lane];
       if (laneSwimmerCount < 1) laneSwimmerCount = 1;
-      if (laneSwimmerCount > 6) laneSwimmerCount = 6;
+      if (laneSwimmerCount > MAX_SWIMMERS_SUPPORTED) laneSwimmerCount = MAX_SWIMMERS_SUPPORTED;
       for (int si = 0; si < laneSwimmerCount; si++) {
         if (swimmers[lane][si].queueIndex == i && swimmers[lane][si].hasStarted) {
           repCurrentRound = swimmers[lane][si].currentRound;
@@ -1717,7 +1724,7 @@ void loadGlobalConfigSettings() {
   // Load per-lane counts if present (key changed to "swimLaneX" to fit 15-char NVS limit)
   for (int li = 0; li < 4; li++) {
     String key = String("swimLane") + String(li);
-    globalConfigSettings.numSwimmersPerLane[li] = preferences.getInt(key.c_str(), 3);
+    globalConfigSettings.numSwimmersPerLane[li] = preferences.getInt(key.c_str(), DEFAULT_NUM_SWIMMERS);
   }
   globalConfigSettings.colorRed = preferences.getUChar("colorRed", 0);      // Default to blue
   globalConfigSettings.colorGreen = preferences.getUChar("colorGreen", 0);
@@ -1830,7 +1837,7 @@ void updateLEDEffect() {
         // Use per-lane swimmer count (clamped to 6)
         int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[lane];
         if (laneSwimmerCount < 1) laneSwimmerCount = 1;
-        if (laneSwimmerCount > 6) laneSwimmerCount = 6;
+        if (laneSwimmerCount > MAX_SWIMMERS_SUPPORTED) laneSwimmerCount = MAX_SWIMMERS_SUPPORTED;
         for (int i = 0; i < laneSwimmerCount; i++) {
           updateSwimmer(i, lane);
           drawSwimmerPulse(i, lane);
@@ -2238,6 +2245,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               swimSetQueue[laneIndex][actualIdx].status &= ~SWIMSET_STATUS_ACTIVE;
             }
             // Here we could implement any lane-level completion logic if needed
+            // TODO: move all the remaining non-active swimmers to the same position
+            // as this last swimmer.
           }
 
           // Try to get the next swim set in queue (queueIndex + 1)
@@ -2335,6 +2344,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               for (int li = 0; li < globalConfigSettings.numLanes; li++) {
                 if (globalConfigSettings.laneRunning[li]) { globalConfigSettings.isRunning = true; break; }
               }
+              // TODO: move all the remaining non-active swimmers to the same position
+              // as this last swimmer.
               saveGlobalConfigSettings();
             }
           }
