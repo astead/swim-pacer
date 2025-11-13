@@ -2268,7 +2268,6 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               swimmers[laneIndex][si].lapDirection *= -1;
               swimmers[laneIndex][si].currentLap = 1;
               swimmers[laneIndex][si].totalDistance = 0.0;
-
             }
           }
 
