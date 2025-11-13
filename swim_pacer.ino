@@ -47,6 +47,7 @@
 
 // ========== HARDWARE CONFIGURATION ==========
 #define LED_TYPE        WS2812B     // LED strip type
+//#define LED_TYPE        WS2815
 #define COLOR_ORDER     GRB         // Color order (may need adjustment)
 
 // Maximum supported LEDs by FastLED for this project
@@ -91,7 +92,7 @@ struct GlobalConfigSettings {
   uint8_t colorRed = 0;                      // RGB color values - default to blue
   uint8_t colorGreen = 0;
   uint8_t colorBlue = 255;
-  uint8_t brightness = 196;                  // Overall brightness (0-255)
+  uint8_t brightness = 100;                  // Overall brightness (0-255)
   bool isRunning = false;                    // Whether the effect is active (default: stopped)
   bool laneRunning[MAX_LANES_SUPPORTED] = {false, false, false, false}; // Per-lane running states
   bool sameColorMode = false;                // Whether all swimmers use the same color (true) or individual colors (false)

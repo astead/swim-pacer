@@ -5,7 +5,7 @@ const max_swimmers_per_lane = 10;
 const default_swimmers_per_lane = 3;
 let currentSettings = {
     color: 'red',
-    brightness: 196,
+    brightness: 100,
     pulseWidth: 1.0,
     restTime: 5,
     swimTime: 30,
