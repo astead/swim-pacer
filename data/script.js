@@ -1045,33 +1045,6 @@ function updateStatus() {
     }
 }
 
-function togglePacer() {
-    // Toggle the running state for the current lane
-    const currentLane = currentSettings.currentLane;
-    laneRunning[currentLane] = !laneRunning[currentLane];
-
-    // Update UI immediately for better responsiveness
-    updateStatus();
-
-
-    // Try to notify server (will fail gracefully in standalone mode)
-    fetch('/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body:  JSON.stringify({ lane: currentLane }),
-    })
-        .then(response => response.text())
-        .then(result => {
-            // Server responded - status is already updated via updateStatus()
-            console.log('Server response:', result);
-        })
-        .catch(error => {
-            // Server not available (standalone mode), keep local status
-            console.log('Running in standalone mode - server not available');
-        });
-}
-
-
 // Create or update the current lane's swimmer set from the configuration controls.
 // If resetSwimTimes is true, any per-swimmer custom swim time values are overwritten with the
 // current swim time input value (useful when the user changes the swim time).
@@ -1430,7 +1403,7 @@ function updateQueueDisplay() {
 
         const runBtn = document.createElement('button');
         runBtn.textContent = 'Run';
-        runBtn.onclick = () => { runSwimSetNow(idx); };
+        runBtn.onclick = () => { startSwimSet(idx); };
         actions.appendChild(runBtn);
 
         const delBtn = document.createElement('button');
@@ -1868,44 +1841,43 @@ function loadSwimSetForExecution(swimSet) {
 // Server-first start: request device to start the head (or specific index)
 // Returns Promise<boolean>
 // TODO Why is this so big, why not just call toggle?
-async function runSwimSetNow(requestedIndex) {
+async function startSwimSet(requestedIndex) {
     // TODO: Why doesn't this just call toggle?
     const lane = getCurrentLaneFromUI();
     const queue = swimSetQueues[lane] || [];
 
     // choose head or requested index (first non-completed)
     let headIndex = -1;
-    if (typeof requestedIndex === 'number' && requestedIndex >= 0 && requestedIndex < queue.length && !queue[requestedIndex].completed) {
+    if (typeof requestedIndex === 'number' && requestedIndex >= 0 && requestedIndex < queue.length) {
         headIndex = requestedIndex;
     } else {
-        headIndex = queue.findIndex(s => !s.completed);
+        // use the status bit mask to find the first non-completed set
+        headIndex = queue.findIndex(s => !(s.status & SWIMSET_STATUS_COMPLETED));
     }
     if (headIndex === -1) {
-        console.warn('runSwimSetNow: no pending swim set to start');
+        console.warn('startSwimSet: no pending swim set to start');
         return false;
     }
     const head = queue[headIndex];
 
-    head.startingPending = true;
-    updateQueueDisplay();
-
     const payload = { lane };
     if (head.id && head.id !== 0) payload.matchId = Number(head.id);
     else if (head.clientTempId) payload.matchClientTempId = String(head.clientTempId);
-    payload.set = { settings: head.settings || {}, swimmers: head.swimmers || [] };
 
     const controller = new AbortController();
     const to = setTimeout(() => controller.abort(), 7000);
     try {
-        const resp = await fetch('/runSwimSetNow', {
+        const resp = await fetch('/startSwimSet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
             signal: controller.signal
         });
+        laneRunning[lane] = true;
         clearTimeout(to);
-        head.startingPending = false;
         updateQueueDisplay();
+        updatePacerButtons();
+        updateStatus();
 
         if (!resp.ok) {
             const txt = await resp.text().catch(()=>null);
@@ -1919,21 +1891,20 @@ async function runSwimSetNow(requestedIndex) {
         return true;
     } catch (e) {
         clearTimeout(to);
-        head.startingPending = false;
         updateQueueDisplay();
-        console.warn('runSwimSetNow failed (no server confirmation)', e && e.message ? e.message : e);
+        console.warn('startSwimSet failed (no server confirmation)', e && e.message ? e.message : e);
         return false;
     }
 }
 
 // Server-first stop: ask device to stop, then clear local running state on confirmation
-async function stopPacerExecution() {
+async function stopSwimSet() {
     const lane = getCurrentLaneFromUI();
     // Ask server to stop this lane
     const controller = new AbortController();
     const to = setTimeout(() => controller.abort(), 5000);
     try {
-        const resp = await fetch('/toggle', {
+        const resp = await fetch('/stopSwimSet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ lane }),
@@ -1952,30 +1923,9 @@ async function stopPacerExecution() {
         return true;
     } catch (e) {
         clearTimeout(to);
-        console.warn('stopPacerExecution failed (no server confirmation)', e && e.message ? e.message : e);
+        console.warn('stopSwimSet failed (no server confirmation)', e && e.message ? e.message : e);
         return false;
     }
-}
-
-function sendStopCommand() {
-    fetch('/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body:  JSON.stringify({ lane: currentLane }),
-    })
-        .then(response => response.text())
-        .then(result => {
-            console.log('Stop command sent:', result);
-        })
-        .catch(error => {
-            console.log('Running in standalone mode - stop command not sent');
-        });
-}
-
-// Update the original createSet function to call the new workflow
-function createSet() {
-    // Redirect to new workflow
-    createWorkSet();
 }
 
 function displaySwimmerSet() {
@@ -2276,31 +2226,6 @@ async function reconcileQueueWithDevice() {
             }
         }
 
-        // Persist latest deviceStatus snapshot and timestamp for UI preference
-        if (deviceStatus && typeof deviceStatus === 'object') {
-            try {
-                // laneRunning block
-                if (deviceStatus.laneRunning !== undefined) {
-                    if (Array.isArray(deviceStatus.laneRunning)) {
-                        for (let li = 0; li < deviceStatus.laneRunning.length && li < laneRunning.length; li++) {
-                            laneRunning[li] = !!deviceStatus.laneRunning[li];
-                        }
-                    } else {
-                        laneRunning[lane] = !!deviceStatus.laneRunning;
-                    }
-                    if (!laneRunning[lane]) {
-                        // Call main stop handler to clear local state
-                        stopPacerExecution().catch(()=>{});
-                    } else {
-                        // assume it was started, if we force start it, not sure if we will
-                        // overwrite any local state incorrectly
-                    }
-                }
-            } catch (e) {
-                console.warn('Failed to apply device status block:', e);
-            }
-        }
-
         // Reflect changes in the UI
         updateQueueDisplay();
         updateStatus();
@@ -2380,8 +2305,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         const startBtn = document.getElementById('startBtn');
         if (startBtn) {
             startBtn.addEventListener('click', () => {
-                // runSwimSetNow returns a Promise<boolean>
-                runSwimSetNow().then(ok => {
+                // startSwimSet returns a Promise<boolean>
+                startSwimSet().then(ok => {
                     if (!ok) console.warn('Device did not confirm start');
                 }).catch(err => console.error('run start error', err));
             });
@@ -2390,7 +2315,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const stopBtn = document.getElementById('stopBtn');
         if (stopBtn) {
             stopBtn.addEventListener('click', () => {
-                stopPacerExecution().then(ok => {
+                stopSwimSet().then(ok => {
                     if (!ok) console.warn('Device did not confirm stop');
                 }).catch(err => console.error('stop error', err));
             });
@@ -2758,76 +2683,4 @@ function sendRestTime(restSeconds) {
 
 function sendSwimmerInterval(intervalSeconds) {
     return postForm('/setSwimmerInterval', `swimmerInterval=${encodeURIComponent(Number(intervalSeconds))}`);
-}
-
-// Replace the old timeout-based start with a promise-based sequence. We will
-// wait for a short period for the individual setting posts to settle, but not
-// indefinitely. Use Promise.allSettled and race it with a timeout fallback.
-async function sendStartCommand() {
-    // Collect promises from each targeted send helper
-    const promises = [];
-
-    // Geometry and LED mapping
-    promises.push(sendPoolLength(currentSettings.poolLength, currentSettings.poolLengthUnits));
-    promises.push(sendStripLength(currentSettings.stripLength));
-    promises.push(sendLedsPerMeter(currentSettings.ledsPerMeter));
-
-    // Visual settings
-    try {
-        const brightnessPercent = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
-        promises.push(sendBrightness(brightnessPercent));
-    } catch (e) {
-        // ignore if conversion fails
-    }
-    promises.push(sendPulseWidth(currentSettings.pulseWidth));
-
-    // Lane and swimmer counts
-    promises.push(sendNumLanes(currentSettings.numLanes));
-    promises.push(sendNumSwimmers(currentSettings.currentLane, currentSettings.numSwimmersPerLane[currentSettings.currentLane]));
-    promises.push(sendNumRounds(currentSettings.numRounds));
-
-    // Swim set-related
-    promises.push(sendSwimDistance(currentSettings.swimDistance));
-    promises.push(sendSwimTime(currentSettings.swimTime));
-    promises.push(sendRestTime(currentSettings.restTime));
-    promises.push(sendSwimmerInterval(currentSettings.swimmerInterval));
-
-    // Indicators and underwater config
-    promises.push(sendDelayIndicators(currentSettings.delayIndicatorsEnabled));
-    promises.push(sendUnderwaterSettings());
-
-    // Color configuration
-    if (currentSettings.colorMode === 'individual') {
-        const set = getCurrentSwimmerSet();
-        const colors = [];
-        for (let i = 0; i < currentSettings.numSwimmersPerLane[currentSettings.currentLane]; i++) {
-            if (set && set[i] && set[i].color) colors.push(set[i].color);
-            else colors.push(currentSettings.swimmerColor);
-        }
-        promises.push(sendSwimmerColors(colors.join(',')));
-    } else {
-        promises.push(sendSwimmerColor(currentSettings.swimmerColor));
-    }
-
-    // Wait for all posts to settle, but cap wait time by racing with a timeout.
-    const waitMs = 1000; // maximum time to wait for all sends
-    const allSettledPromise = Promise.allSettled(promises.map(p => p || Promise.resolve()));
-    await Promise.race([
-        allSettledPromise,
-        new Promise(resolve => setTimeout(resolve, waitMs))
-    ]);
-
-    // Finally, request the device to toggle/start. Do not block on this.
-    fetch('/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body:  JSON.stringify({ lane: currentLane }),
-    })
-        .then(response => response.text())
-        .then(result => {
-            console.log('Start command issued, server response:', result);
-        })
-        .catch(err => {
-            console.log('Start command failed (standalone mode)');
-        });
 }

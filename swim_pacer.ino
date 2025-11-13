@@ -645,7 +645,7 @@ void setupWebServer() {
   // - Colors: swimmer default color stored as three bytes colorRed/colorGreen/colorBlue; client uses hex (#rrggbb)
 
   // handlers for the swimmer interface
-  server.on("/toggle", HTTP_POST, handleToggle);
+  server.on("/stopSwimSet", HTTP_POST, handleStopSwimSet);
   server.on("/setBrightness", HTTP_POST, handleSetBrightness);
   server.on("/setPulseWidth", HTTP_POST, handleSetPulseWidth);
   server.on("/setStripLength", HTTP_POST, handleSetStripLength);
@@ -983,8 +983,8 @@ void setupWebServer() {
     server.send(200, "text/plain", "OK");
   });
 
-  server.on("/runSwimSetNow", HTTP_POST, []() {
-    Serial.println("/runSwimSetNow ENTER");
+  server.on("/startSwimSet", HTTP_POST, []() {
+    Serial.println("/startSwimSet ENTER");
     String body = server.arg("plain");
     int lane = parseLaneFromBody(body);
     if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
@@ -1023,23 +1023,6 @@ void setupWebServer() {
       }
     }
 
-    // If no identifiers provided or not found, and the client provided a full JSON payload, use that.
-    // TODO: We should probably remove this, or first add this swim set to the queue, reconcile it
-    // and then run it from the queue.
-    if (!haveSet && body.length() > 0) {
-      s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
-      s.swimDistance = (uint16_t)extractJsonLong(body, "swimDistance", swimSetSettings.swimSetDistance);
-      s.swimSeconds = (uint16_t)extractJsonLong(body, "swimSeconds", swimSetSettings.swimTimeSeconds);
-      s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
-      s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
-      s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
-      s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
-      s.id = (uint32_t)extractJsonLong(body, "id", 0);
-      String clientTempStr = extractJsonString(body, "clientTempId", "");
-      if (clientTempStr.length() > 0) s.clientTempId = (unsigned long long)strtoull(clientTempStr.c_str(), NULL, 16);
-      haveSet = true;
-    }
-
     // If still no set, fall back to the head-of-queue for this lane (if any)
     if (!haveSet) {
       if (swimSetQueueCount[lane] > 0) {
@@ -1057,7 +1040,7 @@ void setupWebServer() {
 
     // record which queue index we started (will be used by applySwimSetToSettings)
     laneActiveQueueIndex[lane] = matchedQueueIndex;
-    Serial.println("/runSwimSetNow: calling applySwimSetToSettings()");
+    Serial.println("/startSwimSet: calling applySwimSetToSettings()");
     applySwimSetToSettings(s, lane);
 
     // Respond with canonical id (if any) so client can reconcile
@@ -1329,7 +1312,7 @@ void handleGetSettings() {
   server.send(200, "application/json", json);
 }
 
-void handleToggle() {// determine lane from query/form or JSON body
+void handleStopSwimSet() {// determine lane from query/form or JSON body
   int lane = -1;
   if (server.hasArg("lane")) {
       // query param or form-encoded POST
@@ -1347,7 +1330,7 @@ void handleToggle() {// determine lane from query/form or JSON body
       return;
   }
   // Toggle the specified lane's running state
-  globalConfigSettings.laneRunning[lane] = !globalConfigSettings.laneRunning[lane];
+  globalConfigSettings.laneRunning[lane] = false;
 
   // Update global running state (true if any lane is running)
   globalConfigSettings.isRunning = false;
@@ -1360,7 +1343,7 @@ void handleToggle() {// determine lane from query/form or JSON body
 
   saveGlobalConfigSettings();
 
-  String status = globalConfigSettings.laneRunning[lane] ? "Lane " + String(lane) + " Started" : "Lane " + String(lane) + " Stopped";
+  String status = "Lane " + String(lane) + " Stopped";
   server.send(200, "text/plain", status);
 }
 
