@@ -2250,6 +2250,15 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               swimSetQueue[laneIndex][actualIdx].status |= SWIMSET_STATUS_COMPLETED;
               // turn off active flag
               swimSetQueue[laneIndex][actualIdx].status &= ~SWIMSET_STATUS_ACTIVE;
+
+              // Because other swimmers may have been turned off before finishing
+              // by lowering the per lane swimmer count, we should force set
+              // all previous swim sets in the queue as completed as well.
+              for (int qi = 0; qi < qidx; qi++) {
+                int aIdx = (swimSetQueueHead[laneIndex] + qi) % SWIMSET_QUEUE_MAX;
+                swimSetQueue[laneIndex][aIdx].status |= SWIMSET_STATUS_COMPLETED;
+                swimSetQueue[laneIndex][aIdx].status &= ~SWIMSET_STATUS_ACTIVE;
+              }
             }
             // Here we could implement any lane-level completion logic if needed
             // Move all the remaining non-active swimmers to the same position
