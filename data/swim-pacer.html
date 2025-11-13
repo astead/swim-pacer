@@ -293,6 +293,16 @@
             </div>
 
             <div class="control">
+                <label for="numLedStrips">Number of LED strips:</label>
+                <input type="number" id="numLedStrips" value="1" min="1" max="10" onchange="updateCalculations()">
+            </div>
+
+            <div class="control">
+                <label for="gapBetweenStrips">Gap between strips: (centimeters?)</label>
+                <input type="number" id="gapBetweenStrips" value="1" min="1" max="10" onchange="updateCalculations()">
+            </div>
+
+            <div class="control">
                 <label for="numLanes">Number of lanes:</label>
                 <input type="number" id="numLanes" value="2" min="1" max="4" onchange="updateNumLanes()">
             </div>

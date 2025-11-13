@@ -25,6 +25,8 @@ let currentSettings = {
     poolLengthUnits: 'yards',
     stripLength: 23,  // 75 feet = 23 meters
     ledsPerMeter: 30,
+    numLedStrips: [1,1,1,1],
+    gapBetweenStrips: 0,
     numLanes: 2,
     currentLane: 0,
     laneNames: ['Lane 1', 'Lane 2', 'Lane 3', 'Lane 4'],
@@ -159,12 +161,16 @@ function updateCalculations(triggerSave = true) {
     const poolLengthUnits = poolLengthElement.includes('m') ? 'meters' : 'yards';
     const stripLength = parseFloat(document.getElementById('stripLength').value);
     const ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
+    const numLedStrips = parseInt(document.getElementById('numLedStrips').value);
+    const gapBetweenStrips = parseInt(document.getElementById('gapBetweenStrips').value);
 
     // Update current settings
     currentSettings.poolLength = poolLength;
     currentSettings.poolLengthUnits = poolLengthUnits;
     currentSettings.stripLength = stripLength;
     currentSettings.ledsPerMeter = ledsPerMeter;
+    currentSettings.numLedStrips[currentSettings.currentLane] = numLedStrips;
+    currentSettings.gapBetweenStrips = gapBetweenStrips;
     document.getElementById('distanceUnits').textContent = poolLengthUnits;
 
     // Update distance units when pool length changes.
@@ -178,6 +184,8 @@ function updateCalculations(triggerSave = true) {
         sendPoolLength(currentSettings.poolLength, currentSettings.poolLengthUnits);
         sendStripLength(currentSettings.stripLength);
         sendLedsPerMeter(currentSettings.ledsPerMeter);
+        sendNumLedStrips(currentSettings.currentLane, currentSettings.numLedStrips);
+        sendGapBetweenStrips(currentSettings.gapBetweenStrips);
     }
 }
 
@@ -2628,6 +2636,14 @@ function sendLedsPerMeter(ledsPerMeter) {
     return postForm('/setLedsPerMeter', `ledsPerMeter=${encodeURIComponent(ledsPerMeter)}`);
 }
 
+function sendNumLedStrips(lane, numLedStrips) {
+    return postForm('/setNumLedStrips', `lane=${encodeURIComponent(lane)}&numLedStrips=${encodeURIComponent(numLedStrips)}`);
+}
+
+function sendGapBetweenStrips(gapBetweenStrips) {
+    return postForm('/setGapBetweenStrips', `gapBetweenStrips=${encodeURIComponent(gapBetweenStrips)}`);
+}
+
 function sendNumLanes(numLanes) {
     return postForm('/setNumLanes', `numLanes=${encodeURIComponent(numLanes)}`);
 }
@@ -2637,7 +2653,7 @@ function sendDelayIndicators(enabled) {
 }
 
 function sendNumSwimmers(lane, numSwimmers) {
-    let body = `numSwimmers=${encodeURIComponent(numSwimmers)}&lane=${encodeURIComponent(lane)}`;
+    let body = `lane=${encodeURIComponent(lane)}&numSwimmers=${encodeURIComponent(numSwimmers)}`;
     return postForm('/setNumSwimmers', body);
 }
 

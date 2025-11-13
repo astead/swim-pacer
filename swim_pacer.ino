@@ -80,6 +80,8 @@ struct GlobalConfigSettings {
   bool poolUnitsYards = true;                // true = yards, false = meters
   float stripLengthMeters = 23.0;            // LED strip length in meters (75 feet)
   int ledsPerMeter = 30;                     // LEDs per meter
+  int numLedStrips[MAX_LANES_SUPPORTED] = {1, 1, 1, 1}; // Number of LED strips per lane
+  int gapBetweenStrips = 25;                 // gap inbetween LED strips that don't contain LEDs (centimeters)
   int numLanes = 1;                          // Number of LED strips/lanes connected
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   bool delayIndicatorsEnabled = true;        // Whether to show delay countdown indicators
@@ -157,17 +159,37 @@ int laneActiveQueueIndex[MAX_LANES_SUPPORTED] = {-1, -1, -1, -1};
 
 // Forward declarations for functions used below
 float convertPoolToMeters(float distanceInPoolUnits);
-void recalculateValues();
+void loadSettings();
+void updateLEDEffect();
+void printPeriodicStatus();
+void recalculateValues(int lane);
 void initializeSwimmers();
+void updateSwimmersLapsPerRound();
+void setupLEDs();
 void saveSwimSetSettings();
 void saveGlobalConfigSettings();
 
+// Web handler prototypes (defined later)
+void handleSetGapBetweenStrips();
+void handleSetNumLanes();
+void handleSetSwimDistance();
+void handleSetSwimTime();
+void handleSetRestTime();
+void handleSetSwimmerInterval();
+void handleSetDelayIndicators();
+void handleSetNumSwimmers();
+void handleSetNumRounds();
+void handleSetColorMode();
+void handleSetSwimmerColor();
+void handleSetSwimmerColors();
+void handleSetUnderwaterSettings();
+void handleStopSwimSet();
 
 Preferences preferences;
 WebServer server(80);
 
 // ========== CALCULATED VALUES ==========
-int totalLEDs;                    // Total number of LEDs (calculated)
+int totalLEDs[MAX_LANES_SUPPORTED]; // Total number of LEDs (calculated)
 float ledSpacingCM;               // Spacing between LEDs in cm
 int pulseWidthLEDs;               // Width of pulse in LEDs
 int delayMS;                      // Delay between LED updates
@@ -335,7 +357,7 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
   swimSetSettings.swimmerIntervalSeconds = s.swimmerInterval;
 
   needsRecalculation = true;
-  recalculateValues();
+  recalculateValues(lane);
 
   // Debug: print swim set being applied
   if (DEBUG_ENABLED) {
@@ -483,7 +505,9 @@ void setup() {
   setupWebServer();
 
   // Calculate initial values
-  recalculateValues();
+  for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
+    recalculateValues(li);
+  }
 
   // Initialize swimmers
   initializeSwimmers();
@@ -510,7 +534,9 @@ void loop() {
 
   // Recalculate if globalConfigSettings changed
   if (needsRecalculation) {
-    recalculateValues();
+    for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
+      recalculateValues(li);
+    }
     needsRecalculation = false;
   }
 
@@ -519,40 +545,43 @@ void loop() {
 
 void setupLEDs() {
   // Calculate total LEDs first
-  totalLEDs = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
-  if (totalLEDs > 150) {
-    totalLEDs = 150;
-  }
+  int ledsPerStrip = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
+
 
   // Clear any existing FastLED configurations
   FastLED.clear();
 
   // Initialize LED arrays for each configured lane
   for (int lane = 0; lane < globalConfigSettings.numLanes; lane++) {
+    totalLEDs[lane] = ledsPerStrip * globalConfigSettings.numLedStrips[lane];
+
+    if (totalLEDs[lane] > 150) {
+      totalLEDs[lane] = 150;
+    }
     // Allocate LED array dynamically for this lane
     if (leds[lane] != nullptr) {
       delete[] leds[lane];
     }
-    leds[lane] = new CRGB[totalLEDs];
+    leds[lane] = new CRGB[totalLEDs[lane]];
 
     // Add LED strip for this lane with appropriate GPIO pin
     switch (lane) {
       case 0:
-        FastLED.addLeds<LED_TYPE, 18, COLOR_ORDER>(leds[0], totalLEDs);
+        FastLED.addLeds<LED_TYPE, 18, COLOR_ORDER>(leds[0], totalLEDs[lane]);
         break;
       case 1:
-        FastLED.addLeds<LED_TYPE, 19, COLOR_ORDER>(leds[1], totalLEDs);
+        FastLED.addLeds<LED_TYPE, 19, COLOR_ORDER>(leds[1], totalLEDs[lane]);
         break;
       case 2:
-        FastLED.addLeds<LED_TYPE, 21, COLOR_ORDER>(leds[2], totalLEDs);
+        FastLED.addLeds<LED_TYPE, 21, COLOR_ORDER>(leds[2], totalLEDs[lane]);
         break;
       case 3:
-        FastLED.addLeds<LED_TYPE, 2, COLOR_ORDER>(leds[3], totalLEDs);
+        FastLED.addLeds<LED_TYPE, 2, COLOR_ORDER>(leds[3], totalLEDs[lane]);
         break;
     }
 
     // Clear this lane's LEDs
-    fill_solid(leds[lane], totalLEDs, CRGB::Black);
+    fill_solid(leds[lane], totalLEDs[lane], CRGB::Black);
   }
 
   // Initialize unused lanes to nullptr
@@ -652,6 +681,8 @@ void setupWebServer() {
   server.on("/setStripLength", HTTP_POST, handleSetStripLength);
   server.on("/setPoolLength", HTTP_POST, handleSetPoolLength);
   server.on("/setLedsPerMeter", HTTP_POST, handleSetLedsPerMeter);
+  server.on("/setNumLedStrips", HTTP_POST, handleSetNumLedStrips);
+  server.on("/setGapBetweenStrips", HTTP_POST, handleSetGapBetweenStrips);
   server.on("/setNumLanes", HTTP_POST, handleSetNumLanes);
   server.on("/setSwimDistance", HTTP_POST, handleSetSwimDistance);
   server.on("/setSwimTime", HTTP_POST, handleSetSwimTime);
@@ -1279,7 +1310,12 @@ void handleRoot() {
 void handleGetSettings() {
   // Provide an expanded JSON blob the client can consume to reflect device state
   String json = "{";
-  json += "\"totalLEDs\":" + String(totalLEDs) + ",";
+  json += "\"totalLEDs\": [";
+  for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
+    json += String(totalLEDs[li]);
+    if (li < MAX_LANES_SUPPORTED - 1) json += ",";
+  }
+  json += "],";
   json += "\"stripLengthMeters\":" + String(globalConfigSettings.stripLengthMeters, 2) + ",";
   json += "\"ledsPerMeter\":" + String(globalConfigSettings.ledsPerMeter) + ",";
   json += "\"pulseWidthFeet\":" + String(globalConfigSettings.pulseWidthFeet, 2) + ",";
@@ -1409,6 +1445,31 @@ void handleSetLedsPerMeter() {
     setupLEDs();  // Reinitialize LED array with new density
   }
   server.send(200, "text/plain", "LEDs per meter updated");
+}
+
+void handleSetNumLedStrips() {
+  if (server.hasArg("lane") && server.hasArg("numLedStrips")) {
+    int lane = server.arg("lane").toInt();
+    int numLedStrips = server.arg("numLedStrips").toInt();
+    if (lane >= 0 && lane < MAX_LANES_SUPPORTED) {
+      globalConfigSettings.numLedStrips[lane] = numLedStrips;
+      saveGlobalConfigSettings();
+      needsRecalculation = true;
+      setupLEDs();  // Reinitialize LED array with new density
+    }
+  }
+  server.send(200, "text/plain", "Number of LED strips updated");
+}
+
+void handleSetGapBetweenStrips() {
+  if (server.hasArg("gapBetweenStrips")) {
+    int gapBetweenStrips = server.arg("gapBetweenStrips").toInt();
+    globalConfigSettings.gapBetweenStrips = gapBetweenStrips;
+    saveGlobalConfigSettings();
+    needsRecalculation = true;
+    setupLEDs();  // Reinitialize LED array with new density
+  }
+  server.send(200, "text/plain", "Gap between strips updated");
 }
 
 void handleSetNumLanes() {
@@ -1740,12 +1801,12 @@ void loadSettings() {
   loadSwimSetSettings();
 }
 
-void recalculateValues() {
+void recalculateValues(int lane) {
   // Calculate total LEDs from strip length and density
-  totalLEDs = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
+  totalLEDs[lane] = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
   // Enforce a maximum to match allocation limits and hardware/FastLED constraints
-  if (totalLEDs > MAX_LEDS) {
-    totalLEDs = MAX_LEDS;
+  if (totalLEDs[lane] > MAX_LEDS) {
+    totalLEDs[lane] = MAX_LEDS;
   }
 
   // Calculate LED spacing
@@ -1818,7 +1879,7 @@ void updateLEDEffect() {
   for (int lane = 0; lane < globalConfigSettings.numLanes; lane++) {
     if (leds[lane] != nullptr) {
       // Clear this lane's LEDs
-      fill_solid(leds[lane], totalLEDs, CRGB::Black);
+      fill_solid(leds[lane], totalLEDs[lane], CRGB::Black);
 
       // Only animate if this lane is running
       if (globalConfigSettings.laneRunning[lane]) {
@@ -1932,7 +1993,7 @@ void drawDelayIndicators(int laneIndex) {
 
     // Draw delay indicator
     CRGB swimmerColor = nextSwimmer->color;
-    for (int ledIndex = 0; ledIndex < delayLEDs && ledIndex < totalLEDs; ledIndex++) {
+    for (int ledIndex = 0; ledIndex < delayLEDs && ledIndex < totalLEDs[laneIndex]; ledIndex++) {
       // Only draw delay indicator if LED is currently black (swimmers get priority)
       if (leds[laneIndex][ledIndex] == CRGB::Black) {
         // Create a dimmed version of the swimmer's color for the delay indicator
@@ -2576,7 +2637,7 @@ void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
   for (int i = 0; i < pulseWidthLEDs; i++) {
     int ledIndex = centerPos - halfWidth + i;
 
-    if (ledIndex >= 0 && ledIndex < totalLEDs) {
+    if (ledIndex >= 0 && ledIndex < totalLEDs[laneIndex]) {
       int distanceFromCenter = abs(i - halfWidth);
       float brightnessFactor = 1.0 - (float)distanceFromCenter / (float)halfWidth;
       brightnessFactor = max(0.0f, brightnessFactor);
@@ -2656,7 +2717,7 @@ void drawUnderwaterZone(int swimmerIndex, int laneIndex) {
 
   // Draw the underwater light pulse centered on swimmer
   for (int i = swimmerPos; i < swimmerPos + lightSizeLEDs; i++) {
-    if (i >= 0 && i < totalLEDs) {
+    if (i >= 0 && i < totalLEDs[laneIndex]) {
       // Only set color if LED is currently black (first wins priority)
       if (leds[laneIndex][i] == CRGB::Black) {
         leds[laneIndex][i] = currentUnderwaterColor;
