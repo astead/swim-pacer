@@ -1329,10 +1329,13 @@ void handleGetSettings() {
   json += "\"numLanes\":" + String(globalConfigSettings.numLanes) + ",";
   // Build array for per-lane swimmer counts
   json += "\"numSwimmersPerLane\": [";
+  Serial.print(" handleGetSettings: numSwimmersPerLane:");
   for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     json += String(globalConfigSettings.numSwimmersPerLane[li]);
     if (li < MAX_LANES_SUPPORTED - 1) json += ",";
+    Serial.print(" " + String(globalConfigSettings.numSwimmersPerLane[li]));
   }
+  Serial.println();
   json += "],";
   json += "\"poolLength\":" + String(globalConfigSettings.poolLength, 2) + ",";
   // poolLengthUnits should be a JSON string
@@ -1560,6 +1563,8 @@ void handleSetNumSwimmers() {
     int lane = server.arg("lane").toInt();
 
     globalConfigSettings.numSwimmersPerLane[lane] = numSwimmers;
+    Serial.print("handleSetNumSwimmers: lane "); Serial.print(lane);
+    Serial.print(" numSwimmers "); Serial.println(numSwimmers);
 
     saveGlobalConfigSettings();
   }
@@ -1771,10 +1776,13 @@ void loadGlobalConfigSettings() {
   globalConfigSettings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
   // Keep preference fallbacks consistent with struct defaults
   // Load per-lane counts if present (key changed to "swimLaneX" to fit 15-char NVS limit)
+  Serial.print(" loadGlobalConfigSettings: numSwimmersPerLane:");
   for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     String key = String("swimLane") + String(li);
     globalConfigSettings.numSwimmersPerLane[li] = preferences.getInt(key.c_str(), DEFAULT_NUM_SWIMMERS);
+    Serial.print(" " + String(globalConfigSettings.numSwimmersPerLane[li]));
   }
+  Serial.println();
   globalConfigSettings.colorRed = preferences.getUChar("colorRed", 0);      // Default to blue
   globalConfigSettings.colorGreen = preferences.getUChar("colorGreen", 0);
   globalConfigSettings.colorBlue = preferences.getUChar("colorBlue", 255);

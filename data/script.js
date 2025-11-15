@@ -1179,12 +1179,17 @@ function createOrUpdateSwimmerSetFromConfig(resetSwimTimes = false) {
 
 // Resize data for a single lane to match device-reported swimmer count
 function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
-    if (lane < 0 || lane >= swimmerSets.length) return;
-    if (!deviceNumSwimmers || deviceNumSwimmers < 1) return;
-
+    if (lane < 0 || lane >= swimmerSets.length) {
+        console.log(`migrateSwimmerCountsToDeviceForLane: invalid lane ${lane}`);
+        return;
+    }
+    if (!deviceNumSwimmers || deviceNumSwimmers < 1) {
+        console.log(`migrateSwimmerCountsToDeviceForLane: invalid deviceNumSwimmers ${deviceNumSwimmers} for lane ${lane}`);
+        return;
+    }
+    console.log(`migrateSwimmerCountsToDeviceForLane: migrating (from device) swimmer count for lane ${lane} to ${deviceNumSwimmers}`);
     // Record per-lane count in settings
     currentSettings.numSwimmersPerLane[lane] = deviceNumSwimmers;
-    console.log(`Migrated (from device) swimmer count for lane ${lane}: ${deviceNumSwimmers}`);
 
     // If this is the currently selected lane, update UI controls
     if (currentSettings.currentLane === lane) {
@@ -1194,7 +1199,11 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
             setNumSwimmersUI(deviceNumSwimmers);
             displaySwimmerSet();
             updateQueueDisplay();
-        } catch (e) {}
+        } catch (e) {
+            console.log('Failed to update UI after migrating swimmer count from device:', e);
+        }
+    } else {
+        console.log(`Not updating UI controls for lane ${lane} since current lane is ${currentSettings.currentLane}`);
     }
 }
 
@@ -2500,14 +2509,17 @@ async function fetchDeviceSettingsAndApply() {
         if (dev.ledsPerMeter !== undefined) currentSettings.ledsPerMeter = parseInt(dev.ledsPerMeter);
         if (dev.numLanes !== undefined) currentSettings.numLanes = parseInt(dev.numLanes);
         if (dev.numSwimmersPerLane !== undefined && Array.isArray(dev.numSwimmersPerLane)) {
-
+            console.log('DEBUG: Applying server\'s numSwimmersPerLane array to local settings');
             // Prefer per-lane counts
             try {
                 for (let li = 0; li < dev.numSwimmersPerLane.length && li < 4; li++) {
                     const n = parseInt(dev.numSwimmersPerLane[li]);
-                    if (!isNaN(n) && n >= 0 && n <= currentSettings.maxSwimmers) {
-                        // Apply per-lane value by resizing swimmerSets for each lane
+                    if (!isNaN(n) && n >= 0 && n <= max_swimmers_per_lane) {
+                        // Apply per-lane value by resizing swimmerSets for each lane\
+                        console.log('DEBUG: migrating numSwimmersPerLane for lane', li, 'to', n);
                         migrateSwimmerCountsToDeviceForLane(li, n);
+                    } else {
+                        console.log('Skipping invalid numSwimmersPerLane for lane', li, ':', dev.numSwimmersPerLane[li]);
                     }
                 }
             } catch (e) {
