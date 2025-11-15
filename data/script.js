@@ -1953,6 +1953,8 @@ function displaySwimmerSet() {
     swimmerList.innerHTML = '';
 
     currentSet.forEach((swimmer, index) => {
+        if (index >= currentSettings.numSwimmersPerLane[currentSettings.currentLane]) return;
+
         const row = document.createElement('div');
         row.className = 'swimmer-row';
 
