@@ -609,17 +609,6 @@ function updateHideAfter() {
 // These are used when rendering device defaults so we don't POST back to the server.
 // -------------------
 
-function setRestTimeUI(value) {
-    if (value === undefined || value === null) return;
-    const v = parseInt(value);
-    const el = document.getElementById('restTime');
-    if (el) el.value = v;
-    currentSettings.restTime = v;
-    const unit = v === 1 ? ' second' : ' seconds';
-    const label = document.getElementById('restTimeValue');
-    if (label) label.textContent = v + unit;
-}
-
 function setSwimmerIntervalUI(value) {
     if (value === undefined || value === null) return;
     const v = parseInt(value);
@@ -720,14 +709,6 @@ function setNumSwimmersUI(value) {
     // Update per-lane value
     const lane = currentSettings.currentLane || 0;
     currentSettings.numSwimmersPerLane[lane] = v;
-}
-
-function setNumRoundsUI(value) {
-    if (value === undefined || value === null) return;
-    const v = parseInt(value);
-    const el = document.getElementById('numRounds');
-    if (el) el.value = v;
-    currentSettings.numRounds = v;
 }
 
 // -------------------
@@ -2047,29 +2028,31 @@ function updateAllUIFromSettings() {
     document.getElementById('numSwimmers').value = currentSettings.numSwimmersPerLane[currentSettings.currentLane];
     document.getElementById('swimmerInterval').value = currentSettings.swimmerInterval;
     document.getElementById('swimDistance').value = currentSettings.swimDistance;
-    document.getElementById('brightness').value = Math.round((currentSettings.brightness - 20) * 100 / (255 - 20));
+    const percent = Math.round(((currentSettings.brightness - 20) * 100) / (255 - 20));
+    const clamped = Math.max(0, Math.min(100, percent));
+    document.getElementById('brightness').value = clamped;
+    document.getElementById('brightnessValue').textContent = clamped + '%';
+    document.getElementById('numLanes').value = currentSettings.numLanes;
+    document.getElementById('poolLength').value = currentSettings.poolLength;
+    document.getElementById('poolLengthUnits').value = currentSettings.poolLengthUnits;
+    document.getElementById('stripLength').value = currentSettings.stripLengthMeters;
+    document.getElementById('ledsPerMeter').value = currentSettings.ledsPerMeter;
+    document.getElementById('numLedStrips').value = currentSettings.numLedStrips;
+    document.getElementById('gapBetweenStrips').value = currentSettings.gapBetweenStrips;
 
     // Update underwater fields
     document.getElementById('firstUnderwaterDistance').value = currentSettings.firstUnderwaterDistance;
     document.getElementById('underwaterDistance').value = currentSettings.underwaterDistance;
     document.getElementById('hideAfter').value = currentSettings.hideAfter;
 
+    document.getElementById('colorIndicator').style.backgroundColor = currentSettings.swimmerColor;
+
     // Update underwaters checkbox and labels WITHOUT triggering server updates
-    const underChk = document.getElementById('underwatersEnabled');
-    const underControls = document.getElementById('underwatersControls');
-    const toggleOff = document.getElementById('toggleOff');
-    const toggleOn = document.getElementById('toggleOn');
-    if (underChk) underChk.checked = !!currentSettings.underwatersEnabled;
-    if (underControls) underControls.style.display = currentSettings.underwatersEnabled ? 'block' : 'none';
-    if (toggleOff && toggleOn) {
-        if (currentSettings.underwatersEnabled) {
-            toggleOff.classList.remove('active');
-            toggleOn.classList.add('active');
-        } else {
-            toggleOff.classList.add('active');
-            toggleOn.classList.remove('active');
-        }
-    }
+    updateUnderwatersEnabled(false, currentSettings.underwatersEnabled);
+    const underwaterColorIndicatorEl = document.getElementById('underwaterColorIndicator');
+    if (underwaterColorIndicatorEl) underwaterColorIndicatorEl.style.backgroundColor = currentSettings.underwaterColor;
+    const surfaceColorIndicatorEl = document.getElementById('surfaceColorIndicator');
+    if (surfaceColorIndicatorEl) surfaceColorIndicatorEl.style.backgroundColor = currentSettings.surfaceColor;
 
     // Update radio button states
     if (currentSettings.colorMode === 'individual') {
@@ -2078,9 +2061,10 @@ function updateAllUIFromSettings() {
         document.getElementById('sameColor').checked = true;
     }
 
+
+
     // Update display values (use UI-only setters to avoid POSTs)
-    setNumRoundsUI(currentSettings.numRounds);
-    setRestTimeUI(currentSettings.restTime);
+    // TODO: Right now these also update currentSettings again, which is redundant
     setNumSwimmersUI(currentSettings.numSwimmersPerLane[currentSettings.currentLane]);
     setSwimmerIntervalUI(currentSettings.swimmerInterval);
     setPoolLengthUI(currentSettings.poolLength, currentSettings.poolLengthUnits);
@@ -2293,11 +2277,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         reconcileIntervalId = setInterval(reconcileQueueWithDevice, 10000);
     }
 
-    // Some browsers restore form control values after load (preserve user inputs).
-    // To ensure labels stay in sync with actual slider values (which may be restored
-    // by the browser after scripts run), schedule a short re-sync.
-    setTimeout(syncRangeLabels, 60);
-
     // Initialize rest of the UI now that device values are applied and queue reconciled
     updateCalculations(false);
     initializeBrightnessDisplay();
@@ -2343,30 +2322,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         console.warn('Failed to attach start/stop listeners', e);
     }
 });
-
-// When navigating back/forward some browsers restore form values. Use pageshow
-// to ensure labels reflect any restored control values.
-window.addEventListener('pageshow', function() {
-    setTimeout(syncRangeLabels, 20);
-});
-
-// Sync labels for range/number controls by calling the existing update handlers.
-function syncRangeLabels() {
-    try {
-        // Use UI-only setters so we don't POST during restore
-        setRestTimeUI(document.getElementById('restTime') ? document.getElementById('restTime').value : currentSettings.restTime);
-        setSwimmerIntervalUI(document.getElementById('swimmerInterval') ? document.getElementById('swimmerInterval').value : currentSettings.swimmerInterval);
-        setPulseWidthUI(document.getElementById('pulseWidth') ? document.getElementById('pulseWidth').value : currentSettings.pulseWidth);
-        setFirstUnderwaterDistanceUI(document.getElementById('firstUnderwaterDistance') ? document.getElementById('firstUnderwaterDistance').value : currentSettings.firstUnderwaterDistance);
-        setUnderwaterDistanceUI(document.getElementById('underwaterDistance') ? document.getElementById('underwaterDistance').value : currentSettings.underwaterDistance);
-        setHideAfterUI(document.getElementById('hideAfter') ? document.getElementById('hideAfter').value : currentSettings.hideAfter);
-        setLightSizeUI(document.getElementById('lightSize') ? document.getElementById('lightSize').value : currentSettings.lightSize);
-        setBrightnessUI(document.getElementById('brightness') ? document.getElementById('brightness').value : Math.round((currentSettings.brightness - 20) * 100 / (255 - 20)));
-    } catch (e) {
-        // Non-fatal - if elements not present just ignore
-        //console.log('syncRangeLabels failed', e);
-    }
-}
 
 // Generic collapsible section toggler used by HTML headers.
 function toggleSection(areaId, toggleBtnId) {
@@ -2528,41 +2483,17 @@ async function fetchDeviceSettingsAndApply() {
         }
         if (dev.poolLength !== undefined) currentSettings.poolLength = dev.poolLength;
         if (dev.poolLengthUnits !== undefined) currentSettings.poolLengthUnits = dev.poolLengthUnits;
-
-        // Convert brightness 0-255 to percent (0-100)
-        if (dev.brightness !== undefined) {
-            const b = parseInt(dev.brightness);
-            const percent = Math.round(((b - 20) * 100) / (255 - 20));
-            // Clamp
-            const clamped = Math.max(0, Math.min(100, percent));
-            // Set both internal brightness (0-255) and UI control
-            currentSettings.brightness = b;
-            document.getElementById('brightness').value = clamped;
-            document.getElementById('brightnessValue').textContent = clamped + '%';
-        }
+        if (dev.brightness !== undefined) currentSettings.brightness = parseInt(dev.brightness);
 
         // Colors as bytes -> hex
         if (dev.colorRed !== undefined && dev.colorGreen !== undefined && dev.colorBlue !== undefined) {
             currentSettings.swimmerColor = rgbBytesToHex(Number(dev.colorRed), Number(dev.colorGreen), Number(dev.colorBlue));
-            document.getElementById('colorIndicator').style.backgroundColor = currentSettings.swimmerColor;
         }
 
         // Underwaters enabled + colors
-        if (dev.underwatersEnabled !== undefined) {
-            console.log("Applying underwatersEnabled from device:", dev.underwatersEnabled);
-            // Use the dedicated function so DOM and labels are updated consistently
-            updateUnderwatersEnabled(false, (dev.underwatersEnabled === 'true' || dev.underwatersEnabled === true));
-        }
-        if (dev.underwaterColor !== undefined) {
-            currentSettings.underwaterColor = dev.underwaterColor;
-            const el = document.getElementById('underwaterColorIndicator');
-            if (el) el.style.backgroundColor = currentSettings.underwaterColor;
-        }
-        if (dev.surfaceColor !== undefined) {
-            currentSettings.surfaceColor = dev.surfaceColor;
-            const el = document.getElementById('surfaceColorIndicator');
-            if (el) el.style.backgroundColor = currentSettings.surfaceColor;
-        }
+        if (dev.underwatersEnabled !== undefined) currentSettings.underwatersEnabled = (dev.underwatersEnabled === 'true' || dev.underwatersEnabled === true);
+        if (dev.underwaterColor !== undefined) currentSettings.underwaterColor = dev.underwaterColor;
+        if (dev.surfaceColor !== undefined) currentSettings.surfaceColor = dev.surfaceColor;
 
         // Ensure device colors appear in the shared palette
         try {

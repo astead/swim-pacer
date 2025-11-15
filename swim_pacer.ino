@@ -1383,33 +1383,48 @@ void handleStopSwimSet() {// determine lane from query/form or JSON body
 
 void handleSetBrightness() {
   if (server.hasArg("brightness")) {
-    int brightness = server.arg("brightness").toInt();
-    globalConfigSettings.brightness = brightness;
-    FastLED.setBrightness(brightness);
+    globalConfigSettings.brightness = server.arg("brightness").toInt();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetBrightness: updated brightness=");
+      Serial.println(globalConfigSettings.brightness);
+    }
+    FastLED.setBrightness(globalConfigSettings.brightness);
     saveGlobalConfigSettings();
+    server.send(200, "text/plain", "Brightness updated");
+  } else {
+    server.send(400, "text/plain", "Missing brightness parameter");
   }
-  server.send(200, "text/plain", "Brightness updated");
 }
 
 void handleSetPulseWidth() {
   if (server.hasArg("pulseWidth")) {
-    float pulseWidth = server.arg("pulseWidth").toFloat();
-    globalConfigSettings.pulseWidthFeet = pulseWidth;
+    globalConfigSettings.pulseWidthFeet = server.arg("pulseWidth").toFloat();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetPulseWidth: updated pulseWidthFeet=");
+      Serial.println(globalConfigSettings.pulseWidthFeet);
+    }
     saveGlobalConfigSettings();
     needsRecalculation = true;
+    server.send(200, "text/plain", "Pulse width updated");
+  } else {
+    server.send(400, "text/plain", "Missing pulseWidth parameter");
   }
-  server.send(200, "text/plain", "Pulse width updated");
 }
 
 void handleSetStripLength() {
   if (server.hasArg("stripLength")) {
-    float stripLength = server.arg("stripLength").toFloat();
-    globalConfigSettings.stripLengthMeters = stripLength;
+    globalConfigSettings.stripLengthMeters = server.arg("stripLength").toFloat();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetStripLength: updated stripLengthMeters=");
+      Serial.println(globalConfigSettings.stripLengthMeters);
+    }
     saveGlobalConfigSettings();
     needsRecalculation = true;
     setupLEDs();  // Reinitialize LED array with new length
+    server.send(200, "text/plain", "Strip length updated");
+  } else {
+    server.send(400, "text/plain", "Missing stripLength parameter");
   }
-  server.send(200, "text/plain", "Strip length updated");
 }
 
 void handleSetPoolLength() {
@@ -1424,154 +1439,191 @@ void handleSetPoolLength() {
 
     globalConfigSettings.poolLength = poolLength;
     globalConfigSettings.poolUnitsYards = !isMeters; // true if yards, false if meters
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetPoolLength: updated poolLength=");
+      Serial.print(globalConfigSettings.poolLength);
+      Serial.println(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
+    }
 
     saveGlobalConfigSettings();
     needsRecalculation = true;
     // Update laps per round instead of full reinitialization
     updateSwimmersLapsPerRound();
+    server.send(200, "text/plain", "Pool length updated");
+  } else {
+    server.send(400, "text/plain", "Missing poolLength or poolLengthUnits parameter");
   }
-  server.send(200, "text/plain", "Pool length updated");
 }
 
 void handleSetLedsPerMeter() {
   if (server.hasArg("ledsPerMeter")) {
-    int ledsPerMeter = server.arg("ledsPerMeter").toInt();
-    globalConfigSettings.ledsPerMeter = ledsPerMeter;
+    globalConfigSettings.ledsPerMeter = server.arg("ledsPerMeter").toInt();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetLedsPerMeter: updated ledsPerMeter=");
+      Serial.println(globalConfigSettings.ledsPerMeter);
+    }
     saveGlobalConfigSettings();
     needsRecalculation = true;
     setupLEDs();  // Reinitialize LED array with new density
+    server.send(200, "text/plain", "LEDs per meter updated");
+  } else {
+    server.send(400, "text/plain", "Missing ledsPerMeter parameter");
   }
-  server.send(200, "text/plain", "LEDs per meter updated");
 }
 
 void handleSetNumLedStrips() {
   if (server.hasArg("lane") && server.hasArg("numLedStrips")) {
     int lane = server.arg("lane").toInt();
-    int numLedStrips = server.arg("numLedStrips").toInt();
     if (lane >= 0 && lane < MAX_LANES_SUPPORTED) {
-      globalConfigSettings.numLedStrips[lane] = numLedStrips;
+      globalConfigSettings.numLedStrips[lane] = server.arg("numLedStrips").toInt();
+      if (DEBUG_ENABLED) {
+        Serial.print("handleSetNumLedStrips: updated numLedStrips=");
+        Serial.println(globalConfigSettings.numLedStrips[lane]);
+      }
       saveGlobalConfigSettings();
       needsRecalculation = true;
       setupLEDs();  // Reinitialize LED array with new density
+      server.send(200, "text/plain", "Number of LED strips updated");
+    } else {
+      server.send(400, "text/plain", "Invalid lane parameter");
     }
+  } else {
+    server.send(400, "text/plain", "Missing lane or numLedStrips parameter");
   }
-  server.send(200, "text/plain", "Number of LED strips updated");
 }
 
 void handleSetGapBetweenStrips() {
   if (server.hasArg("gapBetweenStrips")) {
-    int gapBetweenStrips = server.arg("gapBetweenStrips").toInt();
-    globalConfigSettings.gapBetweenStrips = gapBetweenStrips;
+    globalConfigSettings.gapBetweenStrips = server.arg("gapBetweenStrips").toInt();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetGapBetweenStrips: updated gapBetweenStrips=");
+      Serial.println(globalConfigSettings.gapBetweenStrips);
+    }
     saveGlobalConfigSettings();
     needsRecalculation = true;
     setupLEDs();  // Reinitialize LED array with new density
+    server.send(200, "text/plain", "Gap between strips updated");
+  } else {
+    server.send(400, "text/plain", "Missing gapBetweenStrips parameter");
   }
-  server.send(200, "text/plain", "Gap between strips updated");
 }
 
 void handleSetNumLanes() {
-  if (server.hasArg("numLanes")) {
-    int numLanes = server.arg("numLanes").toInt();
-    globalConfigSettings.numLanes = numLanes;
+  if (server.hasArg("numLanes")) {;
+    globalConfigSettings.numLanes = server.arg("numLanes").toInt();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetNumLanes: updated numLanes=");
+      Serial.println(globalConfigSettings.numLanes);
+    }
     saveGlobalConfigSettings();
-    // Reinitialize LEDs when number of lanes changes
     setupLEDs(); // Reinitialize LEDs when number of lanes changes
+    server.send(200, "text/plain", "Number of lanes updated");
+  } else {
+    server.send(400, "text/plain", "Missing numLanes parameter");
   }
-  server.send(200, "text/plain", "Number of lanes updated");
 }
 
 void handleSetSwimTime() {
   if (server.hasArg("swimTime")) {
-    int swimTime = server.arg("swimTime").toInt();
-    swimSetSettings.swimTimeSeconds = swimTime;
+    swimSetSettings.swimTimeSeconds = server.arg("swimTime").toInt();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetSwimTime: updated swimTime=");
+      Serial.println(swimSetSettings.swimTimeSeconds);
+    }
     saveSwimSetSettings();
+    server.send(200, "text/plain", "Swim time updated");
+  } else {
+    server.send(400, "text/plain", "Missing swimTime parameter");
   }
-  server.send(200, "text/plain", "Swim time updated");
 }
 
 void handleSetRestTime() {
   if (server.hasArg("restTime")) {
-    int restTime = server.arg("restTime").toInt();
-    swimSetSettings.restTimeSeconds = restTime;
+    swimSetSettings.restTimeSeconds = server.arg("restTime").toInt();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetRestTime: updated restTime=");
+      Serial.println(swimSetSettings.restTimeSeconds);
+    }
     saveSwimSetSettings();
+    server.send(200, "text/plain", "Rest time updated");
+  } else {
+    server.send(400, "text/plain", "Missing restTime parameter");
   }
-  server.send(200, "text/plain", "Rest time updated");
 }
 
 void handleSetSwimDistance() {
   if (server.hasArg("swimDistance")) {
-    int swimDistance = server.arg("swimDistance").toInt();
-    swimSetSettings.swimSetDistance = swimDistance;
+    swimSetSettings.swimSetDistance = server.arg("swimDistance").toInt();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetSwimDistance: updated swimDistance=");
+      Serial.println(swimSetSettings.swimSetDistance);
+    }
     saveSwimSetSettings();
+    server.send(200, "text/plain", "Swim distance updated");
+  } else {
+    server.send(400, "text/plain", "Missing swimDistance parameter");
   }
-  server.send(200, "text/plain", "Swim distance updated");
 }
 
-
 void handleSetSwimmerInterval() {
-  // Accept both form-encoded posts (swimmerInterval=<n>) and JSON bodies
-  String body = server.arg("plain");
-  int swimmerInterval = swimSetSettings.swimmerIntervalSeconds; // fallback to current
-
   if (server.hasArg("swimmerInterval")) {
-    swimmerInterval = server.arg("swimmerInterval").toInt();
-  } else if (body.length() > 0) {
-    // Try to extract from JSON payload as a best-effort fallback
-    int parsed = (int)extractJsonLong(body, "swimmerInterval", swimmerInterval);
-    swimmerInterval = parsed;
-  }
-
-  // Validate value: ignore non-positive values which often result from
-  // malformed client payloads (e.g., Number(undefined) -> NaN -> "NaN" -> toInt() == 0)
-  if (swimmerInterval <= 0) {
+    swimSetSettings.swimmerIntervalSeconds = server.arg("swimmerInterval").toInt();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetSwimmerInterval: rejected invalid swimmerInterval="); Serial.println(swimmerInterval);
+      Serial.print("handleSetSwimmerInterval: updated swimmerInterval=");
+      Serial.println(swimSetSettings.swimmerIntervalSeconds);
     }
-    server.send(400, "text/plain", "Invalid swimmerInterval; must be >= 1");
-    return;
+    saveSwimSetSettings();
+    server.send(200, "text/plain", "Swimmer interval updated");
+  } else {
+    server.send(400, "text/plain", "Missing swimmerInterval parameter");
   }
-
-  // Apply and persist valid value
-  swimSetSettings.swimmerIntervalSeconds = swimmerInterval;
-  saveSwimSetSettings();
-
-  if (DEBUG_ENABLED) {
-    Serial.print("handleSetSwimmerInterval: updated swimmerInterval="); Serial.println(swimmerInterval);
-  }
-
-  server.send(200, "text/plain", "Swimmer interval updated");
 }
 
 void handleSetDelayIndicators() {
   if (server.hasArg("enabled")) {
-    bool enabled = server.arg("enabled") == "true";
-    globalConfigSettings.delayIndicatorsEnabled = enabled;
+    globalConfigSettings.delayIndicatorsEnabled = (server.arg("enabled") == "true");
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetDelayIndicators: updated delayIndicatorsEnabled=");
+      Serial.println(globalConfigSettings.delayIndicatorsEnabled);
+    }
     saveGlobalConfigSettings();
+    server.send(200, "text/plain", "Delay indicators updated");
+  } else {
+    server.send(400, "text/plain", "Missing enabled parameter");
   }
-  server.send(200, "text/plain", "Delay indicators updated");
 }
 
 void handleSetNumSwimmers() {
   if (server.hasArg("numSwimmers")) {
-    int numSwimmers = server.arg("numSwimmers").toInt();
     int lane = server.arg("lane").toInt();
-
-    globalConfigSettings.numSwimmersPerLane[lane] = numSwimmers;
-    Serial.print("handleSetNumSwimmers: lane "); Serial.print(lane);
-    Serial.print(" numSwimmers "); Serial.println(numSwimmers);
-
-    saveGlobalConfigSettings();
+    if (lane >= 0 && lane < MAX_LANES_SUPPORTED) {
+      globalConfigSettings.numSwimmersPerLane[lane] = server.arg("numSwimmers").toInt();
+      if (DEBUG_ENABLED) {
+        Serial.print("handleSetNumSwimmers: updated numSwimmers for lane "); Serial.print(lane);
+        Serial.print(" to "); Serial.println(globalConfigSettings.numSwimmersPerLane[lane]);
+      }
+      saveGlobalConfigSettings();
+      server.send(200, "text/plain", "Number of swimmers updated");
+    } else {
+      server.send(400, "text/plain", "Invalid lane parameter");
+    }
+  } else {
+    server.send(400, "text/plain", "Missing numSwimmers parameter");
   }
-  server.send(200, "text/plain", "Number of swimmers updated");
 }
 
 void handleSetNumRounds() {
   if (server.hasArg("numRounds")) {
-    int numRounds = server.arg("numRounds").toInt();
-    swimSetSettings.numRounds = numRounds;
+    swimSetSettings.numRounds = server.arg("numRounds").toInt();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetNumRounds: updated numRounds=");
+      Serial.println(swimSetSettings.numRounds);
+    }
     saveSwimSetSettings();
+    server.send(200, "text/plain", "Number of rounds updated");
+  } else {
+    server.send(400, "text/plain", "Missing numRounds parameter");
   }
-  server.send(200, "text/plain", "Number of rounds updated");
 }
 
 // Convert hex color string to RGB values
@@ -1601,10 +1653,12 @@ CRGB createGRBColor(uint8_t r, uint8_t g, uint8_t b) {
 
 void handleSetColorMode() {
   if (server.hasArg("colorMode")) {
-    String colorMode = server.arg("colorMode");
-
     // Update globalConfigSettings based on color mode
-    globalConfigSettings.sameColorMode = (colorMode == "same");
+    globalConfigSettings.sameColorMode = (server.arg("colorMode") == "same");
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetColorMode: updated sameColorMode=");
+      Serial.println(globalConfigSettings.sameColorMode);
+    }
     saveGlobalConfigSettings();
 
     // Update ALL swimmer colors based on new mode (without resetting position/timing)
@@ -1612,15 +1666,20 @@ void handleSetColorMode() {
       for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
         if (globalConfigSettings.sameColorMode) {
           // Same mode: all swimmers get the default color
-          swimmers[lane][i].color = CRGB(globalConfigSettings.colorRed, globalConfigSettings.colorGreen, globalConfigSettings.colorBlue);
+          swimmers[lane][i].color =
+            CRGB(globalConfigSettings.colorRed,
+              globalConfigSettings.colorGreen,
+              globalConfigSettings.colorBlue);
         } else {
           // Individual mode: each swimmer gets their predefined color
           swimmers[lane][i].color = swimmerColors[i];
         }
       }
     }
+    server.send(200, "text/plain", "Color mode updated");
+  } else {
+    server.send(400, "text/plain", "Missing colorMode parameter");
   }
-  server.send(200, "text/plain", "Color mode updated");
 }
 
 void handleSetSwimmerColor() {
@@ -1633,6 +1692,12 @@ void handleSetSwimmerColor() {
     globalConfigSettings.colorRed = r;
     globalConfigSettings.colorGreen = g;
     globalConfigSettings.colorBlue = b;
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetSwimmerColor: updated color=[");
+      Serial.print(r); Serial.print(",");
+      Serial.print(g); Serial.print(",");
+      Serial.print(b); Serial.println("]");
+    }
     saveGlobalConfigSettings();
 
     // If in "same color" mode, update ALL swimmers to use this color
@@ -1645,10 +1710,13 @@ void handleSetSwimmerColor() {
       }
     }
     // If in "individual" mode, don't update swimmers - they keep their individual colors
+    server.send(200, "text/plain", "Swimmer color updated");
+  } else {
+    server.send(400, "text/plain", "Missing color parameter");
   }
-  server.send(200, "text/plain", "Swimmer color updated");
 }
 
+// TODO: Double check this logic, might be better with explicit parameters
 void handleSetSwimmerColors() {
   if (server.hasArg("colors")) {
     String colorsString = server.arg("colors");
@@ -1680,8 +1748,10 @@ void handleSetSwimmerColors() {
       }
     }
     // Note: This does NOT update default globalConfigSettings - it's for individual customization only
+    server.send(200, "text/plain", "Individual swimmer colors updated");
+  } else {
+    server.send(400, "text/plain", "Missing colors parameter");
   }
-  server.send(200, "text/plain", "Individual swimmer colors updated");
 }
 
 void handleSetUnderwaterSettings() {
