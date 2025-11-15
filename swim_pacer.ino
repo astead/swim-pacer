@@ -2175,6 +2175,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       // Reset rest tracking
       // TODO: seems redundant to track rest duration and expected start time separately
       swimmer->isResting = false;
+      swimmer->hasStarted = true;
       swimmer->restStartTime = 0;
       swimmer->expectedRestDuration = 0;
       swimmer->expectedStartTime = 0;
@@ -2597,17 +2598,6 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         // Swimming back to start: position = poolLength - distance
         float positionInMeters = poolLengthInMeters - distanceInMeters;
         swimmer->position = (int)(positionInMeters * globalConfigSettings.ledsPerMeter);
-      }
-    }
-
-    // Mark swimmer as started once they begin moving
-    // TODO: why is this here?
-    if (!swimmer->hasStarted) {
-      swimmer->hasStarted = true;
-      if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
-        Serial.print("  Swimmer ");
-        Serial.print(swimmerIndex);
-        Serial.println(" has STARTED");
       }
     }
 
