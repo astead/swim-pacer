@@ -2033,8 +2033,9 @@ function updateAllUIFromSettings() {
     document.getElementById('brightness').value = clamped;
     document.getElementById('brightnessValue').textContent = clamped + '%';
     document.getElementById('numLanes').value = currentSettings.numLanes;
-    document.getElementById('poolLength').value = currentSettings.poolLength;
-    document.getElementById('poolLengthUnits').value = currentSettings.poolLengthUnits;
+    document.getElementById('poolLength').value =
+        (currentSettings.poolLengthUnits === 'yards' ?
+            currentSettings.poolLength : currentSettings.poolLength + "m");
     document.getElementById('stripLength').value = currentSettings.stripLengthMeters;
     document.getElementById('ledsPerMeter').value = currentSettings.ledsPerMeter;
     document.getElementById('numLedStrips').value = currentSettings.numLedStrips;
@@ -2226,6 +2227,18 @@ async function reconcileQueueWithDevice() {
                 console.log('No matching device found for local swim set:', local);
                 // Not matched: keep local optimistic flags and leave unsynced
                 local.synced = !!local.synced;
+            }
+        }
+
+        if (deviceStatus) {
+            // We receive:
+            // isRunning (bool)
+            // laneRunning[lanes] (array of bool)
+            currentSettings.isRunning = !!deviceStatus.isRunning;
+            if (Array.isArray(deviceStatus.laneRunning)) {
+                for (let l = 0; l < deviceStatus.laneRunning.length; l++) {
+                    laneRunning[l] = !!deviceStatus.laneRunning[l];
+                }
             }
         }
 
