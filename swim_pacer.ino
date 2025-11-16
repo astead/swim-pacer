@@ -142,7 +142,7 @@ struct SwimSet {
   uint8_t type;             // SwimSetType
   uint8_t repeat;           // repeat metadata for LOOP_TYPE
   uint32_t id;              // device-assigned canonical id (0 = not assigned)
-  unsigned long long clientTempId; // client-supplied temporary id for reconciliation (0 = none)
+  unsigned long long uniqueId; // client-supplied unique id for reconciliation (0 = none)
 };
 
 // Simple fixed-size in-memory per-lane queues
@@ -1200,25 +1200,25 @@ void handleEnqueueSwimSet() {
   s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
   s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
   s.id = 0;
-  s.clientTempId = 0ULL;
+  s.uniqueId = 0ULL;
   s.status = SWIMSET_STATUS_PENDING;
 
-  // Optional clientTempId support: client may send a numeric clientTempId or a hex string
-  String clientTempStr = extractJsonString(body, "clientTempId", "");
-  if (clientTempStr.length() > 0) {
+  // Optional uniqueId support: client may send a numeric uniqueId or a hex string
+  String uniqueIdStr = extractJsonString(body, "uniqueId", "");
+  if (uniqueIdStr.length() > 0) {
     // Try parse as hex if it starts with 0x or contains letters, else parse as decimal
     unsigned long long parsed = 0ULL;
     bool parsedOk = false;
-    if (clientTempStr.startsWith("0x") || clientTempStr.indexOf('a') >= 0 || clientTempStr.indexOf('b') >= 0 || clientTempStr.indexOf('c') >= 0 || clientTempStr.indexOf('d') >= 0 || clientTempStr.indexOf('e') >= 0 || clientTempStr.indexOf('f') >= 0 || clientTempStr.indexOf('A') >= 0) {
+    if (uniqueIdStr.startsWith("0x") || uniqueIdStr.indexOf('a') >= 0 || uniqueIdStr.indexOf('b') >= 0 || uniqueIdStr.indexOf('c') >= 0 || uniqueIdStr.indexOf('d') >= 0 || uniqueIdStr.indexOf('e') >= 0 || uniqueIdStr.indexOf('f') >= 0 || uniqueIdStr.indexOf('A') >= 0) {
       // Hex parsing
-      parsed = (unsigned long long)strtoull(clientTempStr.c_str(), NULL, 16);
+      parsed = (unsigned long long)strtoull(uniqueIdStr.c_str(), NULL, 16);
       parsedOk = true;
     } else {
       // Decimal parsing
-      parsed = (unsigned long long)strtoull(clientTempStr.c_str(), NULL, 10);
+      parsed = (unsigned long long)strtoull(uniqueIdStr.c_str(), NULL, 10);
       parsedOk = true;
     }
-    if (parsedOk) s.clientTempId = parsed;
+    if (parsedOk) s.uniqueId = parsed;
   }
 
   // Assign a device canonical id on enqueue (non-zero)
@@ -1239,14 +1239,14 @@ void handleEnqueueSwimSet() {
   Serial.println("   type=" + String(s.type));
   Serial.println("   repeat=" + String(s.repeat));
   Serial.println("   id=" + String(s.id));
-  Serial.println("   clientTempId=" + String((unsigned long long)s.clientTempId));
+  Serial.println("   uniqueId=" + String((unsigned long long)s.uniqueId));
 
   if (ok) {
     int qCount = swimSetQueueCount[lane];
     String json = "{";
     json += "\"ok\":true,";
     json += "\"id\":" + String(s.id) + ",";
-    json += "\"clientTempId\":\"" + String((unsigned long long)s.clientTempId) + "\",";
+    json += "\"uniqueId\":\"" + String((unsigned long long)s.uniqueId) + "\",";
     json += "\"queueCount\":" + String(qCount);
     json += "}";
     server.send(200, "application/json", json);
@@ -1255,11 +1255,11 @@ void handleEnqueueSwimSet() {
   }
 }
 
-// Update an existing swim set in-place by device id or clientTempId
-// Body may include matchId (device id) or matchClientTempId (string) to locate
+// Update an existing swim set in-place by device id or uniqueId
+// Body may include matchId (device id) or matchUniqueId (string) to locate
 // the queued entry. The fields length, swimSeconds, rounds, restSeconds, type, repeat
-// will be used to replace the entry. Optionally provide clientTempId to update the
-// stored clientTempId for future reconciliation.
+// will be used to replace the entry. Optionally provide uniqueId to update the
+// stored uniqueId for future reconciliation.
 void handleUpdateSwimSet() {
   Serial.println("/updateSwimSet ENTER");
   String body = server.arg("plain");
@@ -1282,12 +1282,12 @@ void handleUpdateSwimSet() {
   s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
 
   long matchId = extractJsonLong(body, "matchId", 0);
-  String matchClientTemp = extractJsonString(body, "matchClientTempId", "");
-  String newClientTemp = extractJsonString(body, "clientTempId", "");
+  String matchUniqueId = extractJsonString(body, "matchUniqueId", "");
+  String newUniqueId = extractJsonString(body, "uniqueId", "");
 
   Serial.print("  lane="); Serial.println(lane);
   Serial.print("  matchId="); Serial.println(matchId);
-  Serial.print("  matchClientTempId="); Serial.println(matchClientTemp);
+  Serial.print("  matchUniqueId="); Serial.println(matchUniqueId);
 
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid lane\"}");
@@ -1303,8 +1303,8 @@ void handleUpdateSwimSet() {
   Serial.print(" type="); Serial.println(s.type);
   Serial.print(" repeat="); Serial.println(s.repeat);
   Serial.print(" matchId="); Serial.println(matchId);
-  Serial.print(" matchClientTempId="); Serial.println(matchClientTemp);
-  Serial.print(" newClientTempId="); Serial.println(newClientTemp);
+  Serial.print(" matchUniqueId="); Serial.println(matchUniqueId);
+  Serial.print(" newUniqueId="); Serial.println(newUniqueId);
 
   Serial.println(" Searching queue for matching entry...");
     // Find matching entry in the lane queue and update fields
@@ -1322,16 +1322,16 @@ void handleUpdateSwimSet() {
       entry.swimmerInterval = s.swimmerInterval;
       entry.type = s.type;
       entry.repeat = s.repeat;
-      if (newClientTemp.length() > 0) {
-        unsigned long long parsedNew = (unsigned long long)strtoull(newClientTemp.c_str(), NULL, 16);
-        if (parsedNew != 0) entry.clientTempId = parsedNew;
+      if (newUniqueId.length() > 0) {
+        unsigned long long parsedNew = (unsigned long long)strtoull(newUniqueId.c_str(), NULL, 16);
+        if (parsedNew != 0) entry.uniqueId = parsedNew;
       }
       found = true;
     }
-    // Otherwise try matching by clientTempId (hex/decimal)
-    else if (matchClientTemp.length() > 0) {
-      unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
-      if (parsed != 0 && entry.clientTempId == parsed) {
+    // Otherwise try matching by uniqueId (hex/decimal)
+    else if (matchUniqueId.length() > 0) {
+      unsigned long long parsed = (unsigned long long)strtoull(matchUniqueId.c_str(), NULL, 16);
+      if (parsed != 0 && entry.uniqueId == parsed) {
         entry.rounds = s.rounds;
         entry.swimDistance = s.swimDistance;
         entry.swimSeconds = s.swimSeconds;
@@ -1339,9 +1339,9 @@ void handleUpdateSwimSet() {
         entry.swimmerInterval = s.swimmerInterval;
         entry.type = s.type;
         entry.repeat = s.repeat;
-        if (newClientTemp.length() > 0) {
-          unsigned long long parsedNew = (unsigned long long)strtoull(newClientTemp.c_str(), NULL, 16);
-          if (parsedNew != 0) entry.clientTempId = parsedNew;
+        if (newUniqueId.length() > 0) {
+          unsigned long long parsedNew = (unsigned long long)strtoull(newUniqueId.c_str(), NULL, 16);
+          if (parsedNew != 0) entry.uniqueId = parsedNew;
         }
         found = true;
       }
@@ -1352,7 +1352,7 @@ void handleUpdateSwimSet() {
       String json = "{";
       json += "\"ok\":true,";
       json += "\"id\":" + String(entry.id) + ",";
-      json += "\"clientTempId\":\"" + String((unsigned long long)entry.clientTempId) + "\",";
+      json += "\"uniqueId\":\"" + String((unsigned long long)entry.uniqueId) + "\",";
       json += "\"queue\":";
       // build queue JSON for this lane
       {
@@ -1363,7 +1363,7 @@ void handleUpdateSwimSet() {
           if (qi) q += ",";
           q += "{";
           q += String("\"id\":") + String(qs.id) + ",";
-          q += String("\"clientTempId\":\"") + String((unsigned long long)qs.clientTempId) + String("\",");
+          q += String("\"uniqueId\":\"") + String((unsigned long long)qs.uniqueId) + String("\",");
           q += String("\"rounds\":") + String(qs.rounds) + ",";
           q += String("\"swimDistance\":") + String(qs.swimDistance) + ",";
           q += String("\"swimSeconds\":") + String(qs.swimSeconds) + ",";
@@ -1386,8 +1386,8 @@ void handleUpdateSwimSet() {
   server.send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}");
 }
 
-// Delete a swim set by device id or clientTempId for a lane.
-// Accepts form-encoded or JSON: matchId=<n> or matchClientTempId=<hex>, and lane=<n>
+// Delete a swim set by device id or uniqueId for a lane.
+// Accepts form-encoded or JSON: matchId=<n> or matchUniqueId=<hex>, and lane=<n>
 void handleDeleteSwimSet() {
   Serial.println("/deleteSwimSet ENTER");
   String body = server.arg("plain");
@@ -1404,7 +1404,7 @@ void handleDeleteSwimSet() {
     return;
   }
   long matchId = extractJsonLong(body, "matchId", 0);
-  String matchClientTemp = extractJsonString(body, "matchClientTempId", "");
+  String matchUniqueId = extractJsonString(body, "matchUniqueId", "");
 
   // Validate lane...
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
@@ -1414,7 +1414,7 @@ void handleDeleteSwimSet() {
   }
   Serial.println("  lane=" + String(lane));
   Serial.print("  matchId="); Serial.println(matchId);
-  Serial.print("  matchClientTempId="); Serial.println(matchClientTemp);
+  Serial.print("  matchUniqueId="); Serial.println(matchUniqueId);
 
   // Build vector of existing entries
   std::vector<SwimSet> existing;
@@ -1436,13 +1436,13 @@ void handleDeleteSwimSet() {
     }
   }
 
-  // Try match by clientTempId (hex or decimal)
-  if (!removed && matchClientTemp.length() > 0) {
-    unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
+  // Try match by uniqueId (hex or decimal)
+  if (!removed && matchUniqueId.length() > 0) {
+    unsigned long long parsed = (unsigned long long)strtoull(matchUniqueId.c_str(), NULL, 16);
     if (parsed != 0) {
       for (size_t i = 0; i < existing.size(); i++) {
-        if (existing[i].clientTempId == parsed) {
-          Serial.println(" deleteSwimSet: matched by clientTempId=" + String((unsigned long long)existing[i].clientTempId));
+        if (existing[i].uniqueId == parsed) {
+          Serial.println(" deleteSwimSet: matched by uniqueId=" + String((unsigned long long)existing[i].uniqueId));
           existing.erase(existing.begin() + i);
           removed = true;
           break;
@@ -1461,7 +1461,7 @@ void handleDeleteSwimSet() {
     swimSetQueueCount[lane]++;
   }
 
-  // Perform removal logic (match by id or clientTempId) and respond with JSON
+  // Perform removal logic (match by id or uniqueId) and respond with JSON
   if (removed) server.send(200, "application/json", "{\"ok\":true}");
   else server.send(404, "application/json", "{\"ok\":false, \"error\":\"not found\"}");
 }
@@ -1475,15 +1475,15 @@ void handleStartSwimSet() {
     return;
   }
 
-  // If client specified matchId or matchClientTempId, try to find that entry in the lane queue.
+  // If client specified matchId or matchUniqueId, try to find that entry in the lane queue.
   long matchId = extractJsonLong(body, "matchId", 0);
-  String matchClientTemp = extractJsonString(body, "matchClientTempId", "");
+  String matchUniqueId = extractJsonString(body, "matchUniqueId", "");
 
   SwimSet s;
   bool haveSet = false;
   int matchedQueueIndex = -1; // relative to head (0 = head)
 
-  if (matchId != 0 || matchClientTemp.length() > 0) {
+  if (matchId != 0 || matchUniqueId.length() > 0) {
     // Search queue for matching entry
     for (int i = 0; i < swimSetQueueCount[lane]; i++) {
       int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
@@ -1494,9 +1494,9 @@ void handleStartSwimSet() {
         matchedQueueIndex = i;
         break;
       }
-      if (matchClientTemp.length() > 0) {
-        unsigned long long parsed = (unsigned long long)strtoull(matchClientTemp.c_str(), NULL, 16);
-        if (parsed != 0 && entry.clientTempId == parsed) {
+      if (matchUniqueId.length() > 0) {
+        unsigned long long parsed = (unsigned long long)strtoull(matchUniqueId.c_str(), NULL, 16);
+        if (parsed != 0 && entry.uniqueId == parsed) {
           s = entry;
           haveSet = true;
           matchedQueueIndex = i;
@@ -1530,7 +1530,7 @@ void handleStartSwimSet() {
   String resp = "{";
   resp += "\"ok\":true,";
   resp += "\"startedId\":" + String(s.id) + ",";
-  resp += "\"clientTempId\":\"" + String((unsigned long long)s.clientTempId) + "\"";
+  resp += "\"uniqueId\":\"" + String((unsigned long long)s.uniqueId) + "\"";
   resp += "}";
   server.send(200, "application/json", resp);
 }
@@ -1591,12 +1591,12 @@ void handleGetSwimQueue() {
     SwimSet &s = swimSetQueue[lane][idx];
     JsonObject item = q.createNestedObject();
     item["id"] = (unsigned long)s.id;
-    // send clientTempId as hex string if non-zero, else empty string
-    if (s.clientTempId != 0) {
+    // send uniqueId as hex string if non-zero, else empty string
+    if (s.uniqueId != 0) {
       // represent as decimal string (cast to unsigned long long may be large)
-      item["clientTempId"] = String((unsigned long long)s.clientTempId);
+      item["uniqueId"] = String((unsigned long long)s.uniqueId);
     } else {
-      item["clientTempId"] = String("");
+      item["uniqueId"] = String("");
     }
     item["rounds"] = s.rounds;
     item["swimDistance"] = s.swimDistance;
@@ -1646,7 +1646,7 @@ void handleGetSwimQueue() {
 }
 
 // Reorder swim queue for a lane. Expects form-encoded: lane=<n>&order=<id1,id2,...>
-// id values can be device ids (numeric) or clientTempId strings. Entries not matched
+// id values can be device ids (numeric) or uniqueId strings. Entries not matched
 // will be appended at the end in their existing order.
 void handleReorderSwimQueue() {
   Serial.println("/reorderSwimQueue ENTER");
@@ -1712,7 +1712,7 @@ void handleReorderSwimQueue() {
   // New ordered list
   std::vector<SwimSet> ordered;
 
-  // Helper to match token to an existing entry by id or clientTempId
+  // Helper to match token to an existing entry by id or uniqueId
   auto matchAndConsume = [&](const String &tok) -> bool {
     // Try numeric device id match first
     unsigned long long parsed = (unsigned long long)strtoull(tok.c_str(), NULL, 10);
@@ -1723,10 +1723,10 @@ void handleReorderSwimQueue() {
         return true;
       }
     }
-    // Try parsing as hex clientTempId
+    // Try parsing as hex uniqueId
     unsigned long long parsedHex = (unsigned long long)strtoull(tok.c_str(), NULL, 16);
     for (size_t i = 0; i < existing.size(); i++) {
-      if (parsedHex != 0 && existing[i].clientTempId == parsedHex) {
+      if (parsedHex != 0 && existing[i].uniqueId == parsedHex) {
         ordered.push_back(existing[i]);
         existing.erase(existing.begin() + i);
         return true;

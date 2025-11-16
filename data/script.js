@@ -1230,9 +1230,9 @@ function queueSwimSet() {
     // can enqueue into the correct per-lane queue.
     const payload = buildMinimalSwimSetPayload(createdSwimSets[currentLane]);
     payload.lane = currentLane;
-    // Create a compact clientTempId (64-bit hex string) for deterministic reconciliation
-    const clientTempId = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
-    payload.clientTempId = clientTempId;
+    // Create a compact uniqueId (64-bit hex string) for deterministic reconciliation
+    const uniqueId = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
+    payload.uniqueId = uniqueId;
 
     console.log('queueSwimSet calling /enqueueSwimSet');
     fetch('/enqueueSwimSet', {
@@ -1241,16 +1241,16 @@ function queueSwimSet() {
         body: JSON.stringify(payload)
     }).then(async resp => {
         if (!resp.ok) throw new Error('enqueue failed');
-    // Try to read JSON response which may include a canonical id and echoed clientTempId.
+    // Try to read JSON response which may include a canonical id and echoed uniqueId.
     let json = null;
     try { json = await resp.json(); } catch (e) { /* ignore */ }
     const canonicalId = (json && json.id) ? json.id : createdSwimSets[currentLane].id;
-    const echoedClientTemp = (json && json.clientTempId) ? String(json.clientTempId) : clientTempId;
+    const echoedUniqueId = (json && json.uniqueId) ? String(json.uniqueId) : uniqueId;
         // Keep local queue in sync for UI responsiveness. Push a deep copy so
         // the UI can continue showing the current created set in the editor.
         const queued = JSON.parse(JSON.stringify(createdSwimSets[currentLane]));
         queued.id = canonicalId;
-    queued.clientTempId = echoedClientTemp;
+    queued.uniqueId = echoedUniqueId;
     queued.synced = true;
         swimSetQueues[currentLane].push(queued);
         // Do NOT call returnToConfigMode(); keep the Swimmer Customizations tab visible
@@ -1259,8 +1259,8 @@ function queueSwimSet() {
     }).catch(err => {
         console.log('Failed to enqueue on device, keeping local queue only');
         const localQueued = JSON.parse(JSON.stringify(createdSwimSets[currentLane]));
-        // Keep clientTempId so we can reconcile later
-        localQueued.clientTempId = clientTempId;
+        // Keep uniqueId so we can reconcile later
+        localQueued.uniqueId = uniqueId;
         // Mark as not yet synced
         localQueued.synced = false;
         swimSetQueues[currentLane].push(localQueued);
@@ -1526,11 +1526,13 @@ function saveSwimSet() {
     if (existing.id && existing.id !== 0) {
         payload.matchId = existing.id;
     }
-    else if (existing.clientTempId) payload.matchClientTempId = String(existing.clientTempId);
+    else if (existing.uniqueId) {
+        payload.matchUniqueId = String(existing.uniqueId);
+    }
 
-    // Generate a new clientTempId to set on the server for correlation
-    const newClientTemp = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
-    payload.clientTempId = newClientTemp;
+    // Generate a new uniqueId to set on the server for correlation
+    const newUniqueId = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
+    payload.uniqueId = newUniqueId;
 
     // Try to update on the device; if network fails, apply local-only change
     console.log('saveSwimSet calling /updateSwimSet with payload:', payload);
@@ -1543,7 +1545,7 @@ function saveSwimSet() {
         const json = await resp.json().catch(() => null);
         // Merge server-assigned values back into our local entry
         if (json && json.id) newEntry.id = json.id;
-        if (json && json.clientTempId) newEntry.clientTempId = String(json.clientTempId);
+        if (json && json.uniqueId) newEntry.uniqueId = String(json.uniqueId);
         newEntry.synced = true;
         newEntry.updatePending = false;
         swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = newEntry;
@@ -1559,7 +1561,7 @@ function saveSwimSet() {
         newEntry.synced = false;
         newEntry.updatePending = true;
         newEntry.updateRequestedAt = Date.now();
-        newEntry.clientTempId = newClientTemp;
+        newEntry.uniqueId = newUniqueId;
         swimSetQueues[currentLane][editingSwimSetIndexes[currentLane]] = newEntry;
         editingSwimSetIndexes[currentLane] = -1;
         createdSwimSets[currentLane] = null;
@@ -1627,10 +1629,10 @@ async function attemptDeleteOnServer(lane, item) {
 
     if (item.id && item.id !== 0) {
         console.log('Attempting delete on server for item with id:', item.id);
-    } else if (item.clientTempId) {
-        console.log('Attempting delete on server for item with clientTempId:', item.clientTempId);
+    } else if (item.uniqueId) {
+        console.log('Attempting delete on server for item with uniqueId:', item.uniqueId);
     } else {
-        console.log('No id or clientTempId to match swim set for deletion on server, removing locally only');
+        console.log('No id or uniqueId to match swim set for deletion on server, removing locally only');
         // nothing to match on, remove locally
         const idx = swimSetQueues[lane].indexOf(item);
         if (idx !== -1) swimSetQueues[lane].splice(idx, 1);
@@ -1643,7 +1645,7 @@ async function attemptDeleteOnServer(lane, item) {
         // Build JSON body
         const body = {};
         if (item.id && item.id !== 0) body.matchId = Number(item.id);
-        else if (item.clientTempId) body.matchClientTempId = String(item.clientTempId);
+        else if (item.uniqueId) body.matchUniqueId = String(item.uniqueId);
         body.lane = lane;
         console.log("calling /deleteSwimSet with body:", body);
         const resp = await fetch('/deleteSwimSet', {
@@ -1697,7 +1699,7 @@ async function retryPendingUpdates() {
                 try {
                     const body = {
                         matchId: it.id || 0,
-                        matchClientTempId: it.clientTempId || undefined,
+                        matchUniqueId: it.uniqueId || undefined,
                         lane: lane,
                         rounds: it.settings.numRounds || it.rounds,
                         swimDistance: it.settings.swimDistance || it.swimDistance,
@@ -1720,7 +1722,7 @@ async function retryPendingUpdates() {
                         const j = await resp.json().catch(()=>null);
                         it.updatePending = false;
                         if (j && j.id) it.id = j.id;
-                        if (j && j.clientTempId) it.clientTempId = j.clientTempId;
+                        if (j && j.uniqueId) it.uniqueId = j.uniqueId;
                         swimSetQueues[lane][i] = it;
                         updateQueueDisplay();
                     }
@@ -1790,8 +1792,8 @@ function handleDrop(evt, targetIndex) {
     _draggedQueueIndex = -1;
     updateQueueDisplay();
 
-    // Send new order to device: POST lane & order (comma-separated ids or clientTempIds)
-    const order = swimSetQueues[currentLane].map(s => s.id && s.id !== 0 ? String(s.id) : String(s.clientTempId || '0')).join(',');
+    // Send new order to device: POST lane & order (comma-separated ids or UniqueIds)
+    const order = swimSetQueues[currentLane].map(s => s.id && s.id !== 0 ? String(s.id) : String(s.uniqueId || '0')).join(',');
     console.log('handleDrop calling /reorderSwimQueue');
     fetch('/reorderSwimQueue', {
         method: 'POST',
@@ -1860,7 +1862,7 @@ async function startSwimSet(requestedIndex) {
 
     const payload = { lane };
     if (head.id && head.id !== 0) payload.matchId = Number(head.id);
-    else if (head.clientTempId) payload.matchClientTempId = String(head.clientTempId);
+    else if (head.uniqueId) payload.matchUniqueId = String(head.uniqueId);
 
     const controller = new AbortController();
     const to = setTimeout(() => controller.abort(), 7000);
@@ -1884,7 +1886,7 @@ async function startSwimSet(requestedIndex) {
         }
         const json = await resp.json().catch(()=>null);
         if (json && json.startedId) head.id = json.startedId;
-        if (json && json.clientTempId) head.clientTempId = String(json.clientTempId);
+        if (json && json.uniqueId) head.uniqueId = String(json.uniqueId);
 
         return true;
     } catch (e) {
@@ -2120,31 +2122,21 @@ async function reconcileQueueWithDevice() {
         console.log('Device status for reconciliation:', deviceStatus);
 
         // Build quick lookup tables for device entries (restricted to our lane if device provides lane)
-        const deviceById = new Map();
         const deviceByClient = new Map();
-        const deviceBySignature = new Map(); // signature -> first matching device entry
 
         for (let i = 0; i < deviceQueue.length; i++) {
             const d = deviceQueue[i];
             // filter by lane if device provides lane
             if (d.lane !== undefined && Number(d.lane) !== Number(lane)) continue;
-            if (d.id !== undefined && d.id !== null) deviceById.set(String(d.id), d);
-            if (d.clientTempId !== undefined && d.clientTempId !== null && String(d.clientTempId) !== '0' && String(d.clientTempId) !== '') {
-                deviceByClient.set(String(d.clientTempId), d);
+            if (d.uniqueId !== undefined && d.uniqueId !== null && String(d.uniqueId) !== '0' && String(d.uniqueId) !== '') {
+                deviceByClient.set(String(d.uniqueId), d);
             }
-            // tolerant signature for best-effort match
-            const swimSec = Number(d.swimSeconds ?? d.swimTime ?? 0).toFixed(0);
-            const restSec = Number(d.restSeconds ?? d.restTime ?? 0).toFixed(0);
-            const rounds = Number(d.rounds ?? d.numRounds ?? 0).toFixed(0);
-            const dist = Number(d.swimDistance ?? d.distance ?? 0).toFixed(0);
-            const sig = `${swimSec}|${restSec}|${rounds}|${dist}`;
-            if (!deviceBySignature.has(sig)) deviceBySignature.set(sig, d);
         }
 
         // Ensure swimSetQueues[lane] exists
         swimSetQueues[lane] = swimSetQueues[lane] || [];
 
-        // Try to reconcile local entries in-place using best-known matches
+        // Try to reconcile local entries in-place using uniqueId matching
         for (let i = 0; i < swimSetQueues[lane].length; i++) {
             const local = swimSetQueues[lane][i];
             if (!local) continue;
@@ -2152,58 +2144,15 @@ async function reconcileQueueWithDevice() {
             // Skip items we intentionally flagged as pending delete (do not re-sync them back)
             if (local.deletedPending) continue;
 
-            // 1) Match by server id if present
             let matchedDevice = null;
-            if (local.id !== undefined && local.id !== null && String(local.id) !== '0') {
-                console.log('Attempting match by id for local swim set:', local);
-                matchedDevice = deviceById.get(String(local.id));
-                if (matchedDevice) {
-                    console.log('Successfully matched by id:', matchedDevice);
-                }
-            }
 
-            // 2) Match by clientTempId (stable client-generated identifier)
-            if (!matchedDevice && local.clientTempId) {
-                console.log('Attempting match by clientTempId for local swim set:', local);
-                matchedDevice = deviceByClient.get(String(local.clientTempId));
+            // Match by uniqueId (stable client-generated identifier)
+            if (!matchedDevice && local.uniqueId) {
+                console.log('Attempting match by uniqueId for local swim set:', local.uniqueId);
+                matchedDevice = deviceByClient.get(String(local.uniqueId));
                 if (matchedDevice) {
-                    console.log('Successfully matched by clientTempId:', matchedDevice);
-                }
-            }
-
-            // 3) Match by tolerant signature (best-effort)
-            if (!matchedDevice) {
-                console.log('Attempting signature match for local swim set:', local);
-                const sigLocal = `${Math.round(local.settings?.swimTime ?? local.swimSeconds ?? 0).toFixed(0)}|${Number(local.settings?.restTime ?? local.restSeconds ?? 0).toFixed(0)}|${Number(local.settings?.numRounds ?? local.rounds ?? 0).toFixed(0)}|${Number(local.settings?.swimDistance ?? local.swimDistance ?? 0).toFixed(0)}`;
-                matchedDevice = deviceBySignature.get(sigLocal);
-                if (matchedDevice) {
-                    console.log('Successfully matched by signature:', matchedDevice);
-                }
-            }
-
-            // 4) If still not matched, attempt tolerant field match (numbers equal or within small tolerance)
-            if (!matchedDevice) {
-                console.log('Attempting tolerant field match for local swim set:', local);
-                for (const [k, d] of deviceById.entries()) {
-                    try {
-                        const dObj = (typeof d === 'object') ? d : null;
-                        if (!dObj) continue;
-                        const dSwim = Number(dObj.swimSeconds ?? dObj.swimTime ?? 0);
-                        const lSwim = Number(local.settings?.swimTime ?? local.swimSeconds ?? 0);
-                        const dRest = Number(dObj.restSeconds ?? dObj.restTime ?? 0);
-                        const lRest = Number(local.settings?.restTime ?? local.restSeconds ?? 0);
-                        const dRounds = Number(dObj.rounds ?? dObj.numRounds ?? 0);
-                        const lRounds = Number(local.settings?.numRounds ?? local.rounds ?? 0);
-                        const dDist = Number(dObj.swimDistance ?? dObj.distance ?? 0);
-                        const lDist = Number(local.settings?.swimDistance ?? local.swimDistance ?? 0);
-                        if (Math.abs(dSwim - lSwim) <= 1 && Math.abs(dRest - lRest) <= 1 && dRounds === lRounds && Math.abs(dDist - lDist) <= 1) {
-                            matchedDevice = dObj;
-                            break;
-                        }
-                    } catch (e) { continue; }
-                }
-                if (matchedDevice) {
-                    console.log('Successfully matched by tolerant field comparison:', matchedDevice);
+                    console.log('Successfully matched by uniqueId');
+                    matchedDevice.matched = true;
                 }
             }
 
@@ -2211,8 +2160,7 @@ async function reconcileQueueWithDevice() {
             if (matchedDevice) {
                 console.log('Merging fields from matched device:', matchedDevice);
                 local.synced = true;
-                if (matchedDevice.id !== undefined) local.id = matchedDevice.id;
-                if (matchedDevice.clientTempId !== undefined) local.clientTempId = String(matchedDevice.clientTempId);
+                if (matchedDevice.uniqueId !== undefined) local.uniqueId = String(matchedDevice.uniqueId);
                 if (matchedDevice.completed !== undefined) local.completed = !!matchedDevice.completed;
                 // Accept server-side status if present (could be numeric bitmask or string)
                 if (matchedDevice.status !== undefined) local.status = matchedDevice.status;
