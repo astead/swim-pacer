@@ -2297,6 +2297,21 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           swimmer->expectedRestDuration = (unsigned long)(swimmer->cachedRestSeconds * 1000);
           swimmer->expectedStartTime = swimmer->restStartTime + (unsigned long)(swimmer->cachedRestSeconds * 1000);
 
+          // we may want to ensure we are not less than the interval, so would want to
+          // compare with previous swimmer's expected start time plus interval
+          // Do we have a previous swimmer to stagger from?
+          if (swimmerIndex > 0) {
+            // If so, ensure we are at least swimmerIntervalSeconds after their expected start time
+            Swimmer* previousSwimmer = &swimmers[laneIndex][swimmerIndex - 1];
+            unsigned long staggeredStartTime = previousSwimmer->expectedStartTime + (unsigned long)(swimSetSettings.swimmerIntervalSeconds * 1000);
+            if (swimmer->expectedStartTime < staggeredStartTime) {
+              swimmer->expectedStartTime = staggeredStartTime;
+              swimmer->restStartTime = swimmer->expectedStartTime - (unsigned long)(swimmer->cachedRestSeconds * 1000);
+            }
+          }
+
+          // TODO: we may want to verify we are not already past expectedStartTime due to overshoot
+
           if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
             Serial.println("  *** MORE ROUNDS TO GO IN SET ***");
             Serial.print("    Now on round ");
@@ -2421,6 +2436,19 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             swimmer->expectedStartTime = swimmer->restStartTime + swimmer->expectedRestDuration;
             swimmer->totalDistance = 0.0;
             swimmer->finished = false;
+
+            // we may want to ensure we are not less than the interval, so would want to
+            // compare with previous swimmer's expected start time plus interval
+            // Do we have a previous swimmer to stagger from?
+            if (swimmerIndex > 0) {
+              // If so, ensure we are at least swimmerIntervalSeconds after their expected start time
+              Swimmer* previousSwimmer = &swimmers[laneIndex][swimmerIndex - 1];
+              unsigned long staggeredStartTime = previousSwimmer->expectedStartTime + (unsigned long)(swimSetSettings.swimmerIntervalSeconds * 1000);
+              if (swimmer->expectedStartTime < staggeredStartTime) {
+                swimmer->expectedStartTime = staggeredStartTime;
+                swimmer->restStartTime = swimmer->expectedStartTime - (unsigned long)(swimmer->cachedRestSeconds * 1000);
+              }
+            }
 
             if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
               Serial.print("    Swimmer ");
