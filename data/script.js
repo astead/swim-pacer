@@ -1230,8 +1230,12 @@ function queueSwimSet() {
     // can enqueue into the correct per-lane queue.
     const payload = buildMinimalSwimSetPayload(createdSwimSets[currentLane]);
     payload.lane = currentLane;
-    // Create a compact uniqueId (64-bit hex string) for deterministic reconciliation
-    const uniqueId = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
+
+    // Create a compact uniqueId (16-char lowercase hex, no 0x) for deterministic reconciliation
+    const part1 = Date.now().toString(16);
+    const part2 = Math.floor(Math.random() * 0xFFFFFF).toString(16);
+    const raw = (part1 + part2).padEnd(16, '0').slice(0, 16);
+    const uniqueId = raw.toLowerCase();
     payload.uniqueId = uniqueId;
 
     console.log('queueSwimSet calling /enqueueSwimSet');
@@ -1240,18 +1244,33 @@ function queueSwimSet() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     }).then(async resp => {
-        if (!resp.ok) throw new Error('enqueue failed');
-    // Try to read JSON response which may include a canonical id and echoed uniqueId.
-    let json = null;
-    try { json = await resp.json(); } catch (e) { /* ignore */ }
-    const canonicalId = (json && json.id) ? json.id : createdSwimSets[currentLane].id;
-    const echoedUniqueId = (json && json.uniqueId) ? String(json.uniqueId) : uniqueId;
-        // Keep local queue in sync for UI responsiveness. Push a deep copy so
-        // the UI can continue showing the current created set in the editor.
+        if (!resp.ok) {
+            if (resp.errorCode) {
+                switch (resp.errorCode) {
+                    case 1:
+                        console.log('QueueSwimSet Error from /enqueueSwimSet: Swim set already exists on device.');
+                        break;
+                    case 2:
+                        console.log('QueueSwimSet Error from /enqueueSwimSet: Device queue is full; cannot enqueue swim set.');
+                        break;
+                    case 3:
+                        console.log('QueueSwimSet Error from /enqueueSwimSet: Invalid lane.');
+                        break;
+                    default:
+                        console.log('QueueSwimSet Error from /enqueueSwimSet: Failed to enqueue swim set on device with error code:', resp.errorCode);
+                        break;
+                }
+            } else {
+                console.log('QueueSwimSet Error from /enqueueSwimSet: No error code, uniqueId:', payload.uniqueId);
+            }
+        }
+        // Try to read JSON response which may include a canonical id and echoed uniqueId.
+        let json = null;
+        try { json = await resp.json(); } catch (e) { /* ignore */ }
+        const echoedUniqueId = (json && json.uniqueId) ? String(json.uniqueId) : uniqueId;
         const queued = JSON.parse(JSON.stringify(createdSwimSets[currentLane]));
-        queued.id = canonicalId;
-    queued.uniqueId = echoedUniqueId;
-    queued.synced = true;
+        queued.uniqueId = echoedUniqueId;
+        queued.synced = true;
         swimSetQueues[currentLane].push(queued);
         // Do NOT call returnToConfigMode(); keep the Swimmer Customizations tab visible
         updateQueueDisplay();
@@ -1523,16 +1542,14 @@ function saveSwimSet() {
     const payload = buildMinimalSwimSetPayload(newEntry);
     payload.lane = currentLane;
 
-    if (existing.id && existing.id !== 0) {
-        payload.matchId = existing.id;
-    }
-    else if (existing.uniqueId) {
-        payload.matchUniqueId = String(existing.uniqueId);
-    }
+    payload.matchUniqueId = String(existing.uniqueId);
 
-    // Generate a new uniqueId to set on the server for correlation
-    const newUniqueId = (Date.now().toString(16) + Math.floor(Math.random() * 0xFFFFFF).toString(16)).slice(0,16);
-    payload.uniqueId = newUniqueId;
+    // Create a compact uniqueId (16-char lowercase hex, no 0x) for deterministic reconciliation
+    const part1 = Date.now().toString(16);
+    const part2 = Math.floor(Math.random() * 0xFFFFFF).toString(16);
+    const raw = (part1 + part2).padEnd(16, '0').slice(0, 16);
+    const uniqueId = raw.toLowerCase();
+    payload.uniqueId = uniqueId;
 
     // Try to update on the device; if network fails, apply local-only change
     console.log('saveSwimSet calling /updateSwimSet with payload:', payload);
@@ -1644,8 +1661,7 @@ async function attemptDeleteOnServer(lane, item) {
     try {
         // Build JSON body
         const body = {};
-        if (item.id && item.id !== 0) body.matchId = Number(item.id);
-        else if (item.uniqueId) body.matchUniqueId = String(item.uniqueId);
+        if (item.uniqueId) body.matchUniqueId = String(item.uniqueId);
         body.lane = lane;
         console.log("calling /deleteSwimSet with body:", body);
         const resp = await fetch('/deleteSwimSet', {
@@ -1698,7 +1714,6 @@ async function retryPendingUpdates() {
                 // Re-send update to server (best-effort)
                 try {
                     const body = {
-                        matchId: it.id || 0,
                         matchUniqueId: it.uniqueId || undefined,
                         lane: lane,
                         rounds: it.settings.numRounds || it.rounds,
@@ -1861,8 +1876,7 @@ async function startSwimSet(requestedIndex) {
     const head = queue[headIndex];
 
     const payload = { lane };
-    if (head.id && head.id !== 0) payload.matchId = Number(head.id);
-    else if (head.uniqueId) payload.matchUniqueId = String(head.uniqueId);
+    if (head.uniqueId) payload.matchUniqueId = String(head.uniqueId);
 
     const controller = new AbortController();
     const to = setTimeout(() => controller.abort(), 7000);
@@ -2137,6 +2151,7 @@ async function reconcileQueueWithDevice() {
         swimSetQueues[lane] = swimSetQueues[lane] || [];
 
         // Try to reconcile local entries in-place using uniqueId matching
+        // to get any updates from the device
         for (let i = 0; i < swimSetQueues[lane].length; i++) {
             const local = swimSetQueues[lane][i];
             if (!local) continue;
@@ -2175,6 +2190,78 @@ async function reconcileQueueWithDevice() {
                 console.log('No matching device found for local swim set:', local);
                 // Not matched: keep local optimistic flags and leave unsynced
                 local.synced = !!local.synced;
+
+                const payload = buildMinimalSwimSetPayload(local);
+                payload.lane = lane;
+                payload.uniqueId = local.uniqueId;
+
+                // Send this queue item again
+                fetch('/enqueueSwimSet', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }).then(async resp => {
+                        if (!resp.ok) {
+                            if (resp.errorCode) {
+                                switch (resp.errorCode) {
+                                    case 1:
+                                        console.log('reconcileQueueWithDevice Error from /enqueueSwimSet: Swim set already exists on device.');
+                                        local.synced = true; // mark as synced since it exists
+                                        swimSetQueues[lane][i] = local;
+                                        break;
+                                    case 2:
+                                        console.log('reconcileQueueWithDevice Error from /enqueueSwimSet: Device queue is full; cannot enqueue swim set.');
+                                        break;
+                                    case 3:
+                                        console.log('reconcileQueueWithDevice Error from /enqueueSwimSet: Invalid lane.');
+                                        break;
+                                    default:
+                                        console.log('reconcileQueueWithDevice Error from /enqueueSwimSet: Failed to enqueue swim set on device with error code:', resp.errorCode);
+                                        break;
+                                }
+                            } else {
+                                console.log('reconcileQueueWithDevice Error from /enqueueSwimSet: No error code, uniqueId:', local.uniqueId);
+                            }
+                            console.log('re-enqueue request failed for local swim set with uniqueId', local.uniqueId);
+                        } else {
+                            const j = await resp.json().catch(()=>null);
+                            if (j && j.uniqueId) local.uniqueId = String(j.uniqueId);
+                            local.synced = true;
+                            swimSetQueues[lane][i] = local;
+                            console.log('Re-enqueued local swim set successfully on server:', local.uniqueId);
+                        }
+                    }).catch(err => {
+                        console.log('re-enqueue request failed for local swim set with uniqueId', local.uniqueId, err);
+                    });
+            }
+        }
+
+        // Now add any device entries that we don't have locally
+        for (let i = 0; i < deviceQueue.length; i++) {
+            const d = deviceQueue[i];
+            // filter by lane if device provides lane
+            if (d.lane !== undefined && Number(d.lane) !== Number(lane)) continue;
+            if (d.matched) continue; // already matched
+
+            // Build new local entry from device entry
+            // TODO: What items are missing here?
+            const newEntry = {
+                lane: Number(lane),
+                uniqueId: d.uniqueId ? String(d.uniqueId) : undefined,
+                rounds: Number(d.rounds || 0),
+                swimDistance: Number(d.swimDistance || 0),
+                swimSeconds: Number(d.swimSeconds || 0),
+                restSeconds: Number(d.restSeconds || 0),
+                swimmerInterval: Number(d.swimmerInterval || 0),
+                status: d.status !== undefined ? d.status : 0,
+                synced: true,
+            };
+            console.log('Adding new swim set from device to local queue:', newEntry.uniqueId);
+            // if status is SWIMSET_STATUS_COMPLETED add to the beginning of the queue
+            if (newEntry.status & SWIMSET_STATUS_COMPLETED) {
+                swimSetQueues[lane].unshift(newEntry);
+            } else {
+                swimSetQueues[lane].push(newEntry);
             }
         }
 
