@@ -124,7 +124,7 @@ struct SwimSetSettings {
   int restTimeSeconds = 5;                   // Rest time between laps in seconds
   int swimSetDistance = 50;                  // Distance for pace calculation (in pool's native units)
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
-  int numRounds = 10;                        // Number of rounds/sets to complete
+  int numRounds = 10;                        // Number of numRounds/sets to complete
 };
 
 SwimSetSettings swimSetSettings;
@@ -141,10 +141,10 @@ enum SwimSetStatus {
 };
 
 struct SwimSet {
-  uint8_t rounds;           // number of rounds
+  uint8_t numRounds;           // number of numRounds
   uint16_t swimDistance;    // distance in pool's native units (no units attached)
-  uint16_t swimSeconds;     // seconds to swim the 'length'
-  uint16_t restSeconds;     // rest time between rounds
+  uint16_t swimTime;     // seconds to swim the 'length'
+  uint16_t restTime;     // rest time between numRounds
   uint16_t swimmerInterval; // interval between swimmers (seconds)
   uint8_t status;           // status flags (bitmask)
   uint8_t type;             // SwimSetType
@@ -243,13 +243,13 @@ int enqueueSwimSet(const SwimSet &s, int lane) {
     Serial.print("enqueueSwimSet(): received set for lane:");
     Serial.print(lane);
     Serial.print("  [");
-    Serial.print(s.rounds);
+    Serial.print(s.numRounds);
     Serial.print("x");
     Serial.print(s.swimDistance);
     Serial.print(" on ");
-    Serial.print(s.swimSeconds);
+    Serial.print(s.swimTime);
     Serial.print(" rest:");
-    Serial.print(s.restSeconds);
+    Serial.print(s.restTime);
     Serial.print(" interval:");
     Serial.print(s.swimmerInterval);
     Serial.println("]");
@@ -337,10 +337,10 @@ struct Swimmer {
   bool inSurfacePhase;         // Has switched to surface color
   float distanceTraveled;      // Distance traveled in current underwater phase
   unsigned long hideTimerStart;   // When hide timer started (after surface distance completed)
-  bool finished;               // Has swimmer completed all rounds
+  bool finished;               // Has swimmer completed all numRounds
 
   // Per-swimmer cached swim set settings (for independent progression through queue)
-  int cachedNumRounds;         // Number of rounds for this swimmer's active swim set
+  int cachedNumRounds;         // Number of numRounds for this swimmer's active swim set
   int cachedLapsPerRound;      // Number of laps per round (calculated from distance)
   float cachedSpeedMPS;        // Speed in meters per second
   int cachedRestSeconds;       // Rest duration in seconds
@@ -362,16 +362,16 @@ CRGB swimmerColors[] = {
 void applySwimSetToSettings(const SwimSet &s, int lane) {
   long currentMillis = millis();
 
-  // Compute speed (m/s) from swimDistance (in pool units) and swimSeconds
+  // Compute speed (m/s) from swimDistance (in pool units) and swimTime
   // convert swimDistance to meters using current pool units
   float swimDistanceMeters = convertPoolToMeters((float)s.swimDistance);
-  if (s.swimSeconds <= 0.0f) return; // avoid divide by zero
-  float speedMPS = swimDistanceMeters / s.swimSeconds;
+  if (s.swimTime <= 0.0f) return; // avoid divide by zero
+  float speedMPS = swimDistanceMeters / s.swimTime;
 
   swimSetSettings.speedMetersPerSecond = speedMPS;
   swimSetSettings.swimSetDistance = s.swimDistance;
-  swimSetSettings.numRounds = s.rounds;
-  swimSetSettings.restTimeSeconds = s.restSeconds;
+  swimSetSettings.numRounds = s.numRounds;
+  swimSetSettings.restTimeSeconds = s.restTime;
   swimSetSettings.swimmerIntervalSeconds = s.swimmerInterval;
 
   needsRecalculation = true;
@@ -381,10 +381,10 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
   if (DEBUG_ENABLED) {
     Serial.println("applySwimSetToSettings(): applying set:");
     Serial.print("  lane="); Serial.println(lane);
-    Serial.print("  rounds="); Serial.println(s.rounds);
+    Serial.print("  numRounds="); Serial.println(s.numRounds);
     Serial.print("  swimDistance="); Serial.println(s.swimDistance);
-    Serial.print("  swimSeconds="); Serial.println(s.swimSeconds);
-    Serial.print("  restSeconds="); Serial.println(s.restSeconds);
+    Serial.print("  swimTime="); Serial.println(s.swimTime);
+    Serial.print("  restTime="); Serial.println(s.restTime);
     Serial.print("  swimmerIntervalSeconds="); Serial.println(s.swimmerInterval);
     Serial.print("  computed speedMPS="); Serial.println(speedMPS, 4);
   }
@@ -443,10 +443,10 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
     swimmers[lane][i].debugSwimmingPrinted = false;
 
     // Cache swim set settings for this swimmer (enables independent progression through queue)
-    swimmers[lane][i].cachedNumRounds = s.rounds;
+    swimmers[lane][i].cachedNumRounds = s.numRounds;
     swimmers[lane][i].cachedLapsPerRound = ceil(s.swimDistance / globalConfigSettings.poolLength);
     swimmers[lane][i].cachedSpeedMPS = speedMPS;
-    swimmers[lane][i].cachedRestSeconds = s.restSeconds;
+    swimmers[lane][i].cachedRestSeconds = s.restTime;
     swimmers[lane][i].activeSwimSetId = s.id;
 
     // set queue index: use laneActiveQueueIndex if set, otherwise 0
@@ -1029,7 +1029,7 @@ void handleSetNumRounds() {
       Serial.println(swimSetSettings.numRounds);
     }
     saveSwimSetSettings();
-    server.send(200, "text/plain", "Number of rounds updated");
+    server.send(200, "text/plain", "Number of numRounds updated");
   } else {
     server.send(400, "text/plain", "Missing numRounds parameter");
   }
@@ -1125,16 +1125,20 @@ void handleSetSwimmerColor() {
   }
 }
 
-// TODO: Double check this logic, might be better with explicit parameters
 void handleSetSwimmerColors() {
-  if (server.hasArg("colors")) {
+  if (server.hasArg("lane") && server.hasArg("colors")) {
+    int lane = server.arg("lane").toInt();
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      server.send(400, "text/plain", "Invalid lane parameter");
+      return;
+    }
     String colorsString = server.arg("colors");
 
     // Parse comma-separated hex colors
     int colorIndex = 0;
     int startIndex = 0;
 
-    for (int i = 0; i <= colorsString.length() && colorIndex < MAX_SWIMMERS_SUPPORTED; i++) {
+    for (int i = 0; i <= colorsString.length() &&  colorIndex < MAX_SWIMMERS_SUPPORTED; i++) {
       if (i == colorsString.length() || colorsString.charAt(i) == ',') {
         String hexColor = colorsString.substring(startIndex, i);
         hexColor.trim();
@@ -1143,12 +1147,10 @@ void handleSetSwimmerColors() {
           uint8_t r, g, b;
           hexToRGB(hexColor, r, g, b);
 
-          // Update this specific swimmer's color for all lanes (just the color, not position/timing)
+          // Update this specific swimmer's color for the current lane
           CRGB newColor = CRGB(r, g, b);
-          for (int lane = 0; lane < MAX_LANES_SUPPORTED; lane++) {
-            if (colorIndex < MAX_SWIMMERS_SUPPORTED) {
-              swimmers[lane][colorIndex].color = newColor;
-            }
+          if (colorIndex < MAX_SWIMMERS_SUPPORTED) {
+            swimmers[lane][colorIndex].color = newColor;
           }
 
           colorIndex++;
@@ -1232,10 +1234,10 @@ void handleEnqueueSwimSet() {
     return;
   }
   SwimSet s;
-  s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
+  s.numRounds = (uint8_t)extractJsonLong(body, "numRounds", swimSetSettings.numRounds);
   s.swimDistance = (uint16_t)extractJsonLong(body, "swimDistance", swimSetSettings.swimSetDistance);
-  s.swimSeconds = (uint16_t)extractJsonLong(body, "swimSeconds", swimSetSettings.swimTimeSeconds);
-  s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
+  s.swimTime = (uint16_t)extractJsonLong(body, "swimTime", swimSetSettings.swimTimeSeconds);
+  s.restTime = (uint16_t)extractJsonLong(body, "restTime", swimSetSettings.restTimeSeconds);
   s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
   s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
   s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
@@ -1245,17 +1247,27 @@ void handleEnqueueSwimSet() {
   String uniqueIdStr = extractJsonString(body, "uniqueId", "");
   if (uniqueIdStr.length() > 0) {
     unsigned long long parsed = parseUniqueIdHex(uniqueIdStr);
-    if (parsed != 0ULL) s.uniqueId = parsed;
+    if (parsed != 0ULL) {
+      s.uniqueId = parsed;
+    } else {
+      Serial.println(" Warning: invalid uniqueId format: " + uniqueIdStr);
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid uniqueId format\"}");
+      return;
+    }
+  } else {
+    Serial.println(" Warning: missing uniqueId");
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing uniqueId\"}");
+    return;
   }
 
   int result = enqueueSwimSet(s, lane);
   Serial.println(" Enqueue result: " + String((result == QUEUE_INSERT_SUCCESS) ? "OK" : "FAILED"));
   Serial.println("  Enqueued swim set: ");
   Serial.println("   lane=" + String(lane));
-  Serial.println("   rounds=" + String(s.rounds));
+  Serial.println("   numRounds=" + String(s.numRounds));
   Serial.println("   swimDistance=" + String(s.swimDistance));
-  Serial.println("   swimSeconds=" + String(s.swimSeconds));
-  Serial.println("   restSeconds=" + String(s.restSeconds));
+  Serial.println("   swimTime=" + String(s.swimTime));
+  Serial.println("   restTime=" + String(s.restTime));
   Serial.println("   swimmerInterval=" + String(s.swimmerInterval));
   Serial.println("   type=" + String(s.type));
   Serial.println("   repeat=" + String(s.repeat));
@@ -1265,8 +1277,7 @@ void handleEnqueueSwimSet() {
     int qCount = swimSetQueueCount[lane];
     String json = "{";
     json += "\"ok\":true,";
-    json += "\"uniqueId\":\"" + uniqueIdToHex(s.uniqueId) + "\",";
-    json += "\"queueCount\":" + String(qCount);
+    json += "\"uniqueId\":\"" + uniqueIdToHex(s.uniqueId) + "\"";
     json += "}";
     server.send(200, "application/json", json);
   } else {
@@ -1276,7 +1287,7 @@ void handleEnqueueSwimSet() {
 
 // Update an existing swim set in-place by device id or uniqueId
 // Body may include matchId (device id) or matchUniqueId (string) to locate
-// the queued entry. The fields length, swimSeconds, rounds, restSeconds, type, repeat
+// the queued entry. The fields length, swimTime, numRounds, restTime, type, repeat
 // will be used to replace the entry. Optionally provide uniqueId to update the
 // stored uniqueId for future reconciliation.
 void handleUpdateSwimSet() {
@@ -1292,23 +1303,22 @@ void handleUpdateSwimSet() {
 
   // Parse required fields from JSON body (no form-encoded fallback)
   SwimSet s;
-  s.rounds = (uint8_t)extractJsonLong(body, "rounds", swimSetSettings.numRounds);
+  s.numRounds = (uint8_t)extractJsonLong(body, "numRounds", swimSetSettings.numRounds);
   s.swimDistance = (uint16_t)extractJsonLong(body, "swimDistance", swimSetSettings.swimSetDistance);
-  s.swimSeconds = (uint16_t)extractJsonLong(body, "swimSeconds", swimSetSettings.swimTimeSeconds);
-  s.restSeconds = (uint16_t)extractJsonLong(body, "restSeconds", swimSetSettings.restTimeSeconds);
+  s.swimTime = (uint16_t)extractJsonLong(body, "swimTime", swimSetSettings.swimTimeSeconds);
+  s.restTime = (uint16_t)extractJsonLong(body, "restTime", swimSetSettings.restTimeSeconds);
   s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
   s.type = (uint8_t)extractJsonLong(body, "type", 0);
   s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
 
-  String matchUniqueIdStr = extractJsonString(body, "matchUniqueId", "");
   String uniqueIdStr = extractJsonString(body, "uniqueId", "");
-  unsigned long long parsedMatch = 0ULL;
-  unsigned long long parsedNew = 0ULL;
-  if (matchUniqueIdStr.length() > 0) {
-    parsedMatch = parseUniqueIdHex(matchUniqueIdStr);
-  }
+  unsigned long long uniqueId = 0ULL;
   if (uniqueIdStr.length() > 0) {
-    parsedNew = parseUniqueIdHex(uniqueIdStr);
+    uniqueId = parseUniqueIdHex(uniqueIdStr);
+  } else {
+    Serial.println(" Warning: missing uniqueId");
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing uniqueId\"}");
+    return;
   }
 
 
@@ -1318,15 +1328,14 @@ void handleUpdateSwimSet() {
   }
 
   Serial.println("  received payload to update set: ");
-  Serial.print(" rounds="); Serial.println(s.rounds);
+  Serial.print(" numRounds="); Serial.println(s.numRounds);
   Serial.print(" swimDistance="); Serial.println(s.swimDistance);
-  Serial.print(" swimSeconds="); Serial.println(s.swimSeconds);
-  Serial.print(" restSeconds="); Serial.println(s.restSeconds);
+  Serial.print(" swimTime="); Serial.println(s.swimTime);
+  Serial.print(" restTime="); Serial.println(s.restTime);
   Serial.print(" swimmerInterval="); Serial.println(s.swimmerInterval);
   Serial.print(" type="); Serial.println(s.type);
   Serial.print(" repeat="); Serial.println(s.repeat);
-  Serial.print(" matchUniqueId="); Serial.println(uniqueIdToHex(parsedMatch));
-  Serial.print(" uniqueId="); Serial.println(uniqueIdToHex(parsedNew));
+  Serial.print(" uniqueId="); Serial.println(uniqueIdToHex(uniqueId));
 
   Serial.println(" Searching queue for matching entry...");
     // Find matching entry in the lane queue and update fields
@@ -1335,23 +1344,21 @@ void handleUpdateSwimSet() {
     int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
     SwimSet &entry = swimSetQueue[lane][idx];
 
-    if (parsedMatch != 0 && parsedNew != 0 && entry.uniqueId == parsedMatch) {
-      entry.rounds = s.rounds;
+    if (uniqueId != 0 && entry.uniqueId == uniqueId) {
+      entry.numRounds = s.numRounds;
       entry.swimDistance = s.swimDistance;
-      entry.swimSeconds = s.swimSeconds;
-      entry.restSeconds = s.restSeconds;
+      entry.swimTime = s.swimTime;
+      entry.restTime = s.restTime;
       entry.swimmerInterval = s.swimmerInterval;
       entry.type = s.type;
       entry.repeat = s.repeat;
-      entry.uniqueId = parsedNew;
       found = true;
     }
 
     if (found) {
       // Respond with updated canonical info + current lane queue for immediate reconciliation
       String json = "{";
-      json += "\"ok\":true,";
-      json += "\"uniqueId\":\"" + uniqueIdToHex(entry.uniqueId) + "\",";
+      json += "\"ok\":true";
       json += "}";
       server.send(200, "application/json", json);
       return;
@@ -1376,7 +1383,7 @@ void handleDeleteSwimSet() {
 
   // Expect application/json body
   if (body.length() == 0) {
-    server.send(400, "application/json", "{\"error\":\"empty body\"}");
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"empty body\"}");
     return;
   }
 
@@ -1384,6 +1391,10 @@ void handleDeleteSwimSet() {
   String matchUniqueIdStr = extractJsonString(body, "matchUniqueId", "");
   if (matchUniqueIdStr.length() > 0) {
     matchUniqueId = parseUniqueIdHex(matchUniqueIdStr);
+  } else {
+    Serial.println(" Warning: missing matchUniqueId");
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing matchUniqueId\"}");
+    return;
   }
 
   // Validate lane...
@@ -1403,14 +1414,14 @@ void handleDeleteSwimSet() {
   }
 
   // Try match by numeric id
-  bool removed = false;
+  bool found = false;
   // Try match by uniqueId (hex or decimal)
-  if (!removed && matchUniqueId != 0ULL) {
+  if (!found && matchUniqueId != 0ULL) {
     for (size_t i = 0; i < existing.size(); i++) {
       if (existing[i].uniqueId == matchUniqueId) {
         Serial.println(" deleteSwimSet: matched by uniqueId=" + String((unsigned long long)existing[i].uniqueId));
         existing.erase(existing.begin() + i);
-        removed = true;
+        found = true;
         break;
       }
     }
@@ -1427,8 +1438,15 @@ void handleDeleteSwimSet() {
   }
 
   // Perform removal logic (match by id or uniqueId) and respond with JSON
-  if (removed) server.send(200, "application/json", "{\"ok\":true}");
-  else server.send(404, "application/json", "{\"ok\":false, \"error\":\"not found\"}");
+  if (found) {
+    Serial.print(" deleteSwimSet: deleted entry, new queue count=");
+    Serial.println(swimSetQueueCount[lane]);
+    server.send(200, "application/json", "{\"ok\":true, \"message\":\"deleted\"}");
+  } else {
+    Serial.print(" deleteSwimSet: no matching entry found, nothing to delete, queue count=");
+    Serial.println(String(swimSetQueueCount[lane]));
+    server.send(200, "application/json", "{\"ok\":true, \"message\":\"not found\"}");
+  }
 }
 
 void handleStartSwimSet() {
@@ -1445,23 +1463,25 @@ void handleStartSwimSet() {
   unsigned long long matchUniqueId = 0ULL;
   if (matchUniqueIdStr.length() > 0) {
     matchUniqueId = parseUniqueIdHex(matchUniqueIdStr);
+  } else {
+    Serial.println(" Warning: missing matchUniqueId");
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing matchUniqueId\"}");
+    return;
   }
 
   SwimSet s;
   bool haveSet = false;
   int matchedQueueIndex = -1; // relative to head (0 = head)
 
-  if (matchUniqueId != 0) {
-    // Search queue for matching entry
-    for (int i = 0; i < swimSetQueueCount[lane]; i++) {
-      int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
-      SwimSet &entry = swimSetQueue[lane][idx];
-      if (entry.uniqueId == matchUniqueId) {
-        s = entry;
-        haveSet = true;
-        matchedQueueIndex = i;
-        break;
-      }
+  // Search queue for matching entry
+  for (int i = 0; i < swimSetQueueCount[lane]; i++) {
+    int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
+    SwimSet &entry = swimSetQueue[lane][idx];
+    if (entry.uniqueId == matchUniqueId) {
+      s = entry;
+      haveSet = true;
+      matchedQueueIndex = i;
+      break;
     }
   }
 
@@ -1489,7 +1509,7 @@ void handleStartSwimSet() {
   String resp = "{";
   resp += "\"ok\":true,";
   resp += "\"startedId\":" + String(s.id) + ",";
-  resp += "\"uniqueId\":\"" + String((unsigned long long)s.uniqueId) + "\"";
+  resp += "\"uniqueId\":\"" + uniqueIdToHex(s.uniqueId) + "\"";
   resp += "}";
   server.send(200, "application/json", resp);
 }
@@ -1550,17 +1570,11 @@ void handleGetSwimQueue() {
     SwimSet &s = swimSetQueue[lane][idx];
     JsonObject item = q.createNestedObject();
     item["id"] = (unsigned long)s.id;
-    // send uniqueId as hex string if non-zero, else empty string
-    if (s.uniqueId != 0) {
-      // represent as decimal string (cast to unsigned long long may be large)
-      item["uniqueId"] = String((unsigned long long)s.uniqueId);
-    } else {
-      item["uniqueId"] = String("");
-    }
-    item["rounds"] = s.rounds;
+    item["uniqueId"] = uniqueIdToHex(s.uniqueId);
+    item["numRounds"] = s.numRounds;
     item["swimDistance"] = s.swimDistance;
-    item["swimSeconds"] = s.swimSeconds;
-    item["restSeconds"] = s.restSeconds;
+    item["swimTime"] = s.swimTime;
+    item["restTime"] = s.restTime;
     item["swimmerInterval"] = s.swimmerInterval;
     item["type"] = s.type;
     item["repeat"] = s.repeat;
@@ -1645,7 +1659,7 @@ void handleReorderSwimQueue() {
   }
 
   if (orderStr.length() == 0) {
-    server.send(400, "text/plain", "Missing order");
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid order\"}");
     return;
   }
 
@@ -1717,7 +1731,10 @@ void handleReorderSwimQueue() {
     Serial.print("reorderSwimQueue: lane "); Serial.print(lane); Serial.print(" newCount="); Serial.println(swimSetQueueCount[lane]);
   }
 
-  server.send(200, "text/plain", "OK");
+  String json = "{";
+    json += "\"ok\":true";
+    json += "}";
+  server.send(200, "application/json", json);
 }
 
 // Reset swimmers for a given lane to starting wall (position=0, direction=1)
@@ -2086,7 +2103,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     return;
   }
   Swimmer* swimmer = &swimmers[laneIndex][swimmerIndex];
-  // If swimmer has already completed all rounds, do nothing
+  // If swimmer has already completed all numRounds, do nothing
   if (swimmer->finished) return;
   unsigned long currentTime = millis();
 
@@ -2110,7 +2127,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         // First swimmer starts after swimmerInterval, second after 2*swimmerInterval, etc.
         swimmer->expectedRestDuration = (unsigned long)((swimmerIndex + 1) * (unsigned long)swimSetSettings.swimmerIntervalSeconds * 1000);
       } else {
-        // Subsequent rounds: include rest period plus swimmer interval offset
+        // Subsequent numRounds: include rest period plus swimmer interval offset
         swimmer->expectedRestDuration = (unsigned long)(swimmer->cachedRestSeconds * 1000) + (unsigned long)(swimmerIndex * swimSetSettings.swimmerIntervalSeconds * 1000);
       }
     }
@@ -2287,7 +2304,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         }
 
         // -------------------------------- STILL MORE ROUNDS TO GO --------------------------------
-        // Only rest if we haven't completed all rounds yet
+        // Only rest if we haven't completed all numRounds yet
         if (swimmer->currentRound < swimmer->cachedNumRounds) {
           swimmer->currentRound++;
           swimmer->isResting = true;
@@ -2324,7 +2341,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           }
         } else {
           // -------------------------------- ALL ROUNDS COMPLETE --------------------------------
-          // All rounds complete for this swim set
+          // All numRounds complete for this swim set
           if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
             Serial.println("  *** ALL ROUNDS COMPLETE FOR CURRENT SET ***");
             Serial.print("    Swimmer ");
@@ -2386,29 +2403,29 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               Serial.print(nextSet.id);
               Serial.print(", queue index: ");
               Serial.print(swimmer->queueIndex + 1);
-              Serial.print(", rounds: ");
-              Serial.print(nextSet.rounds);
+              Serial.print(", numRounds: ");
+              Serial.print(nextSet.numRounds);
               Serial.print(", swimDistance: ");
               Serial.print(nextSet.swimDistance);
               Serial.print(", swim seconds: ");
-              Serial.print(nextSet.swimSeconds);
+              Serial.print(nextSet.swimTime);
               Serial.print(", rest seconds: ");
-              Serial.print(nextSet.restSeconds);
+              Serial.print(nextSet.restTime);
               Serial.print(", status: ");
               Serial.println(nextSet.status);
             }
 
             // Calculate new settings for the next set
             float lengthMeters = convertPoolToMeters((float)nextSet.swimDistance);
-            float speedMPS = (nextSet.swimSeconds > 0) ? (lengthMeters / nextSet.swimSeconds) : 0.0;
+            float speedMPS = (nextSet.swimTime > 0) ? (lengthMeters / nextSet.swimTime) : 0.0;
             int lapsPerRound = ceil(nextSet.swimDistance / globalConfigSettings.poolLength);
 
             // Cache the new swim set settings in this swimmer
             int currentSetRestSeconds = swimmer->cachedRestSeconds;
-            swimmer->cachedNumRounds = nextSet.rounds;
+            swimmer->cachedNumRounds = nextSet.numRounds;
             swimmer->cachedLapsPerRound = lapsPerRound;
             swimmer->cachedSpeedMPS = speedMPS;
-            swimmer->cachedRestSeconds = nextSet.restSeconds;
+            swimmer->cachedRestSeconds = nextSet.restTime;
             swimmer->activeSwimSetId = nextSet.id;
             swimmer->queueIndex++;  // Move to next index in queue
 
@@ -2462,10 +2479,10 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             // Setup any remaining non-active swimmers so they are in the right place.
             if (swimmerIndex >= laneSwimmerCount - 1) {
               for (int si = swimmerIndex + 1; si < laneSwimmerCount; si++) {
-                swimmers[laneIndex][si].cachedNumRounds = nextSet.rounds;
+                swimmers[laneIndex][si].cachedNumRounds = nextSet.numRounds;
                 swimmers[laneIndex][si].cachedLapsPerRound = lapsPerRound;
                 swimmers[laneIndex][si].cachedSpeedMPS = speedMPS;
-                swimmers[laneIndex][si].cachedRestSeconds = nextSet.restSeconds;
+                swimmers[laneIndex][si].cachedRestSeconds = nextSet.restTime;
                 swimmers[laneIndex][si].activeSwimSetId = nextSet.id;
                 swimmers[laneIndex][si].queueIndex++;  // Move to next index in queue
                 swimmers[laneIndex][si].currentRound = 1;
