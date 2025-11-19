@@ -156,18 +156,6 @@ function timeLabelFromString(timeStr) {
     return "seconds";
 }
 
-function updateSwimDistance(triggerSave = true) {
-    const swimDistance = parseInt(document.getElementById('swimDistance').value);
-    currentSettings.swimDistance = swimDistance;
-    if (createdSwimSets[currentSettings.currentLane]) {
-        createdSwimSets[currentSettings.currentLane].swimDistance = swimDistance;
-    }
-    if (triggerSave) {
-        // Save only the swim distance
-        sendSwimDistance(currentSettings.swimDistance);
-    }
-}
-
 function updateCalculations(triggerSave = true) {
     const poolLengthElement = document.getElementById('poolLength').value;
     const poolLength = parseFloat(poolLengthElement.split(' ')[0]);
@@ -189,6 +177,7 @@ function updateCalculations(triggerSave = true) {
     // Update distance units when pool length changes.
     // We only want to save the specific fields that changed instead of issuing
     // a broad, multi-endpoint write which would overwrite other device state.
+    // TODO: This doesn't need to change
     updateSwimDistance(false);
 
     // If caller requested saving, call the targeted send helpers so the
@@ -507,12 +496,54 @@ function updateIndividualSwimmerTimeDueToNumSwimmers() {
     }
 }
 
+
+// TODO: I think there may be a race condition when clicking from this texbox
+//       directly to the Queue button, maybe this update doesn't make it into
+//       createdSwimSets before queuing? Need to check that.
+//       Could be the same for all items below.
+function updateNumRounds() {
+    const numRounds = document.getElementById('numRounds').value;
+    currentSettings.numRounds = parseInt(numRounds);
+    if (createdSwimSets[currentSettings.currentLane]) {
+        createdSwimSets[currentSettings.currentLane].numRounds = numRounds;
+        createdSwimSets[currentSettings.currentLane].summary = generateSetSummary(currentSettings);
+    } else {
+        createOrUpdateFromConfig();
+    }
+    // Also send num rounds to device so it can be used as a default for swim-sets
+    sendNumRounds(currentSettings.numRounds).catch(err => {
+        console.debug('sendNumRounds failed (ignored):', err && err.message ? err.message : err);
+    });
+}
+
+function updateSwimDistance(triggerSave = true) {
+    const swimDistance = parseInt(document.getElementById('swimDistance').value);
+    currentSettings.swimDistance = swimDistance;
+    if (createdSwimSets[currentSettings.currentLane]) {
+        createdSwimSets[currentSettings.currentLane].swimDistance = swimDistance;
+        createdSwimSets[currentSettings.currentLane].summary = generateSetSummary(currentSettings);
+    } else {
+        createOrUpdateFromConfig();
+    }
+    // Updating swim distance is special because we might also be changing this
+    // due to changing the pool dimensions. So we allow caller to specify whether to trigger a save.
+    // TODO: Not sure if this is needed or not. Wouldn't we want to always save swim distance changes?
+    //       Also not sure if this needs to change when pool length changes.
+    if (triggerSave) {
+        // Save only the swim distance
+        sendSwimDistance(currentSettings.swimDistance);
+    }
+}
+
 function updateSwimTime() {
     const swimTime = document.getElementById('swimTime').value;
     currentSettings.swimTime = parseTimeInput(swimTime);
     document.getElementById('swimTimeLabel').textContent = timeLabelFromString(swimTime);
     if (createdSwimSets[currentSettings.currentLane]) {
         createdSwimSets[currentSettings.currentLane].swimTime = currentSettings.swimTime;
+        createdSwimSets[currentSettings.currentLane].summary = generateSetSummary(currentSettings);
+    } else {
+        createOrUpdateFromConfig();
     }
     // Also send swim time to device so it can be used as a default for swim-sets
     sendSwimTime(currentSettings.swimTime).catch(err => {
@@ -528,6 +559,9 @@ function updateRestTime() {
     document.getElementById('restTimeLabel').textContent = timeLabelFromString(restTime);
     if (createdSwimSets[currentSettings.currentLane]) {
         createdSwimSets[currentSettings.currentLane].restTime = currentSettings.restTime;
+        createdSwimSets[currentSettings.currentLane].summary = generateSetSummary(currentSettings);
+    } else {
+        createOrUpdateFromConfig();
     }
     // Also send rest time to device so it can be used as a default for swim-sets
     sendRestTime(currentSettings.restTime).catch(err => {
@@ -535,20 +569,22 @@ function updateRestTime() {
     });
 }
 
-
-
 function updateSwimmerInterval() {
     const swimmerInterval = document.getElementById('swimmerInterval').value;
     currentSettings.swimmerInterval = parseTimeInput(swimmerInterval);
     document.getElementById('swimmerIntervalLabel').textContent = timeLabelFromString(swimmerInterval);
     if (createdSwimSets[currentSettings.currentLane]) {
         createdSwimSets[currentSettings.currentLane].swimmerInterval = currentSettings.swimmerInterval;
+        createdSwimSets[currentSettings.currentLane].summary = generateSetSummary(currentSettings);
+    } else {
+        createOrUpdateFromConfig();
     }
     // Also send swimmer interval to device so it can be used as a default for swim-sets
     sendSwimmerInterval(currentSettings.swimmerInterval).catch(err => {
         console.debug('sendSwimmerInterval failed (ignored):', err && err.message ? err.message : err);
     });
 }
+
 
 function updateDelayIndicatorsEnabled() {
     const enabled = document.getElementById('delayIndicatorsEnabled').checked;
@@ -655,20 +691,6 @@ function updateNumSwimmers() {
     updateIndividualSwimmerTimeDueToNumSwimmers();
     displaySwimmerSet();
     sendNumSwimmers(lane, numSwimmers);
-}
-
-function updateNumRounds() {
-    const numRounds = document.getElementById('numRounds').value;
-    currentSettings.numRounds = parseInt(numRounds);
-    if (createdSwimSets[currentSettings.currentLane]) {
-        createdSwimSets[currentSettings.currentLane].numRounds = numRounds;
-    } else {
-        console.log('updateNumRounds: no createdSwimSets for current lane', currentSettings.currentLane);
-    }
-    // Also send num rounds to device so it can be used as a default for swim-sets
-    sendNumRounds(currentSettings.numRounds).catch(err => {
-        console.debug('sendNumRounds failed (ignored):', err && err.message ? err.message : err);
-    });
 }
 
 function updateColorMode() {
@@ -989,7 +1011,10 @@ function updateStatus() {
     }
 }
 
-
+// TODO: Why do we ever clear this? Why not always have it, OR
+//       Why don't we just always build from currentSettings?
+//       It is nice to have a smaller structure to send to device though,
+//       so its nice to have this.
 function createOrUpdateFromConfig() {
     console.log('createOrUpdateFromConfig ENTER');
     const lane = currentSettings.currentLane;
@@ -2051,6 +2076,8 @@ async function reconcileQueueWithDevice() {
                 if (matchedDevice.currentRound !== undefined) local.currentRound = Number(matchedDevice.currentRound);
                 if (matchedDevice.startedAt) local.startedAt = matchedDevice.startedAt;
                 if (matchedDevice.completedAt) local.completedAt = matchedDevice.completedAt;
+                // Reset summary
+                local.summary = generateSetSummary(local);
 
                 //debug output
                 console.log('Reconciled local swim set with device entry:', local, matchedDevice);
