@@ -46,8 +46,8 @@
 #endif
 
 // ========== HARDWARE CONFIGURATION ==========
-#define LED_TYPE        WS2812B     // LED strip type
-//#define LED_TYPE        WS2815
+//#define LED_TYPE        WS2812B     // LED strip type
+#define LED_TYPE        WS2815
 #define COLOR_ORDER     GRB         // Color order (may need adjustment)
 
 // Maximum supported LEDs by FastLED for this project
