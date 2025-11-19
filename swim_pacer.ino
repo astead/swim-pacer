@@ -558,6 +558,8 @@ void loop() {
 
 void setupLEDs() {
   // Calculate total LEDs first
+  // TODO: How is this different than the calculation in recalculateValues()?
+  //       Why do we need both, can we consolidate?
   int ledsPerStrip = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
 
 
@@ -756,6 +758,13 @@ void handleGetSettings() {
   json += "],";
   json += "\"stripLengthMeters\":" + String(globalConfigSettings.stripLengthMeters, 2) + ",";
   json += "\"ledsPerMeter\":" + String(globalConfigSettings.ledsPerMeter) + ",";
+  json += "\"numLedStrips\": [";
+  for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
+    json += String(globalConfigSettings.numLedStrips[li]);
+    if (li < MAX_LANES_SUPPORTED - 1) json += ",";
+  }
+  json += "],";
+  json += "\"gapBetweenStrips\":" + String(globalConfigSettings.gapBetweenStrips, 2) + ",";
   json += "\"pulseWidthFeet\":" + String(globalConfigSettings.pulseWidthFeet, 2) + ",";
   // Return swim speed in feet/sec (legacy) but include a named field for clarity
   // Return speed in meters per second for consistent units with the client
@@ -821,8 +830,8 @@ void handleSetPulseWidth() {
 }
 
 void handleSetStripLength() {
-  if (server.hasArg("stripLength")) {
-    globalConfigSettings.stripLengthMeters = server.arg("stripLength").toFloat();
+  if (server.hasArg("stripLengthMeters")) {
+    globalConfigSettings.stripLengthMeters = server.arg("stripLengthMeters").toFloat();
     if (DEBUG_ENABLED) {
       Serial.print("handleSetStripLength: updated stripLengthMeters=");
       Serial.println(globalConfigSettings.stripLengthMeters);
@@ -832,7 +841,44 @@ void handleSetStripLength() {
     setupLEDs();  // Reinitialize LED array with new length
     server.send(200, "text/plain", "Strip length updated");
   } else {
-    server.send(400, "text/plain", "Missing stripLength parameter");
+    server.send(400, "text/plain", "Missing stripLengthMeters parameter");
+  }
+}
+
+void handleSetNumLedStrips() {
+  if (server.hasArg("lane") && server.hasArg("numLedStrips")) {
+    int lane = server.arg("lane").toInt();
+    if (lane >= 0 && lane < MAX_LANES_SUPPORTED) {
+      globalConfigSettings.numLedStrips[lane] = server.arg("numLedStrips").toInt();
+      if (DEBUG_ENABLED) {
+        Serial.print("handleSetNumLedStrips: updated numLedStrips=");
+        Serial.println(globalConfigSettings.numLedStrips[lane]);
+      }
+      saveGlobalConfigSettings();
+      needsRecalculation = true;
+      setupLEDs();  // Reinitialize LED array with new density
+      server.send(200, "text/plain", "Number of LED strips updated");
+    } else {
+      server.send(400, "text/plain", "Invalid lane parameter");
+    }
+  } else {
+    server.send(400, "text/plain", "Missing lane or numLedStrips parameter");
+  }
+}
+
+void handleSetGapBetweenStrips() {
+  if (server.hasArg("gapBetweenStrips")) {
+    globalConfigSettings.gapBetweenStrips = server.arg("gapBetweenStrips").toInt();
+    if (DEBUG_ENABLED) {
+      Serial.print("handleSetGapBetweenStrips: updated gapBetweenStrips=");
+      Serial.println(globalConfigSettings.gapBetweenStrips);
+    }
+    saveGlobalConfigSettings();
+    needsRecalculation = true;
+    setupLEDs();  // Reinitialize LED array with new density
+    server.send(200, "text/plain", "Gap between strips updated");
+  } else {
+    server.send(400, "text/plain", "Missing gapBetweenStrips parameter");
   }
 }
 
@@ -877,43 +923,6 @@ void handleSetLedsPerMeter() {
     server.send(200, "text/plain", "LEDs per meter updated");
   } else {
     server.send(400, "text/plain", "Missing ledsPerMeter parameter");
-  }
-}
-
-void handleSetNumLedStrips() {
-  if (server.hasArg("lane") && server.hasArg("numLedStrips")) {
-    int lane = server.arg("lane").toInt();
-    if (lane >= 0 && lane < MAX_LANES_SUPPORTED) {
-      globalConfigSettings.numLedStrips[lane] = server.arg("numLedStrips").toInt();
-      if (DEBUG_ENABLED) {
-        Serial.print("handleSetNumLedStrips: updated numLedStrips=");
-        Serial.println(globalConfigSettings.numLedStrips[lane]);
-      }
-      saveGlobalConfigSettings();
-      needsRecalculation = true;
-      setupLEDs();  // Reinitialize LED array with new density
-      server.send(200, "text/plain", "Number of LED strips updated");
-    } else {
-      server.send(400, "text/plain", "Invalid lane parameter");
-    }
-  } else {
-    server.send(400, "text/plain", "Missing lane or numLedStrips parameter");
-  }
-}
-
-void handleSetGapBetweenStrips() {
-  if (server.hasArg("gapBetweenStrips")) {
-    globalConfigSettings.gapBetweenStrips = server.arg("gapBetweenStrips").toInt();
-    if (DEBUG_ENABLED) {
-      Serial.print("handleSetGapBetweenStrips: updated gapBetweenStrips=");
-      Serial.println(globalConfigSettings.gapBetweenStrips);
-    }
-    saveGlobalConfigSettings();
-    needsRecalculation = true;
-    setupLEDs();  // Reinitialize LED array with new density
-    server.send(200, "text/plain", "Gap between strips updated");
-  } else {
-    server.send(400, "text/plain", "Missing gapBetweenStrips parameter");
   }
 }
 
@@ -1775,6 +1784,11 @@ void saveGlobalConfigSettings() {
   preferences.putBool("poolUnitsYards", globalConfigSettings.poolUnitsYards);
   preferences.putFloat("stripLengthM", globalConfigSettings.stripLengthMeters);
   preferences.putInt("ledsPerMeter", globalConfigSettings.ledsPerMeter);
+  for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
+    String key = String("numLedStrips") + String(li);
+    preferences.putInt(key.c_str(), globalConfigSettings.numLedStrips[li]);
+  }
+  preferences.putFloat("gapBetweenStrips", globalConfigSettings.gapBetweenStrips);
   preferences.putFloat("pulseWidthFeet", globalConfigSettings.pulseWidthFeet);
   for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     String key = String("swimLane") + String(li);
@@ -1814,6 +1828,11 @@ void loadGlobalConfigSettings() {
   globalConfigSettings.poolLength = preferences.getFloat("poolLength", 25.0);  // 25 yards default
   globalConfigSettings.poolUnitsYards = preferences.getBool("poolUnitsYards", true);  // Default to yards
   globalConfigSettings.stripLengthMeters = preferences.getFloat("stripLengthM", 23.0);
+  for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
+    String key = String("numLedStrips") + String(li);
+    globalConfigSettings.numLedStrips[li] = preferences.getInt(key.c_str(), 1);
+  }
+  globalConfigSettings.gapBetweenStrips = preferences.getFloat("gapBetweenStrips", 0.0);
   globalConfigSettings.ledsPerMeter = preferences.getInt("ledsPerMeter", 30);
   globalConfigSettings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
   // Keep preference fallbacks consistent with struct defaults

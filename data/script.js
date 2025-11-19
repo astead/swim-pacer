@@ -25,7 +25,7 @@ let currentSettings = {
 
     poolLength: 25,
     poolLengthUnits: 'yards',
-    stripLength: 23,  // 75 feet = 23 meters
+    stripLengthMeters: 23,  // 75 feet = 23 meters
     ledsPerMeter: 30,
     numLedStrips: [1,1,1,1],
     gapBetweenStrips: 0,
@@ -160,7 +160,7 @@ function updateCalculations(triggerSave = true) {
     const poolLengthElement = document.getElementById('poolLength').value;
     const poolLength = parseFloat(poolLengthElement.split(' ')[0]);
     const poolLengthUnits = poolLengthElement.includes('m') ? 'meters' : 'yards';
-    const stripLength = parseFloat(document.getElementById('stripLength').value);
+    const stripLengthMeters = parseFloat(document.getElementById('stripLengthMeters').value);
     const ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
     const numLedStrips = parseInt(document.getElementById('numLedStrips').value);
     const gapBetweenStrips = parseInt(document.getElementById('gapBetweenStrips').value);
@@ -168,7 +168,7 @@ function updateCalculations(triggerSave = true) {
     // Update current settings
     currentSettings.poolLength = poolLength;
     currentSettings.poolLengthUnits = poolLengthUnits;
-    currentSettings.stripLength = stripLength;
+    currentSettings.stripLengthMeters = stripLengthMeters;
     currentSettings.ledsPerMeter = ledsPerMeter;
     currentSettings.numLedStrips[currentSettings.currentLane] = numLedStrips;
     currentSettings.gapBetweenStrips = gapBetweenStrips;
@@ -184,9 +184,9 @@ function updateCalculations(triggerSave = true) {
     // server only receives the changed values.
     if (triggerSave) {
         sendPoolLength(currentSettings.poolLength, currentSettings.poolLengthUnits);
-        sendStripLength(currentSettings.stripLength);
+        sendStripLength(currentSettings.stripLengthMeters);
         sendLedsPerMeter(currentSettings.ledsPerMeter);
-        sendNumLedStrips(currentSettings.currentLane, currentSettings.numLedStrips);
+        sendNumLedStrips(currentSettings.currentLane, currentSettings.numLedStrips[currentSettings.currentLane]);
         sendGapBetweenStrips(currentSettings.gapBetweenStrips);
     }
 }
@@ -1959,9 +1959,9 @@ function updateAllUIFromSettings() {
     document.getElementById('poolLength').value =
         (currentSettings.poolLengthUnits === 'yards' ?
             currentSettings.poolLength : currentSettings.poolLength + "m");
-    document.getElementById('stripLength').value = currentSettings.stripLengthMeters;
+    document.getElementById('stripLengthMeters').value = currentSettings.stripLengthMeters;
     document.getElementById('ledsPerMeter').value = currentSettings.ledsPerMeter;
-    document.getElementById('numLedStrips').value = currentSettings.numLedStrips;
+    document.getElementById('numLedStrips').value = currentSettings.numLedStrips[currentSettings.currentLane];
     document.getElementById('gapBetweenStrips').value = currentSettings.gapBetweenStrips;
 
     // Update underwater fields
@@ -2393,8 +2393,23 @@ async function fetchDeviceSettingsAndApply() {
         console.log('DEBUG: device reports numSwimmersPerLane =', dev.numSwimmersPerLane);
 
         // Merge device settings into currentSettings with conversions
-        if (dev.stripLengthMeters !== undefined) currentSettings.stripLength = parseFloat(dev.stripLengthMeters);
+        if (dev.stripLengthMeters !== undefined) currentSettings.stripLengthMeters = parseFloat(dev.stripLengthMeters);
         if (dev.ledsPerMeter !== undefined) currentSettings.ledsPerMeter = parseInt(dev.ledsPerMeter);
+        // numLedStrips is per lane, so it is an array of ints
+        if (dev.numLedStrips !== undefined && Array.isArray(dev.numLedStrips)) {
+            console.log('DEBUG: Applying server\'s numLedStrips array to local settings');
+            for (let li = 0; li < dev.numLedStrips.length && li < max_lanes; li++) {
+                const n = parseInt(dev.numLedStrips[li]);
+                if (!isNaN(n) && n >= 1 && n <= max_strips_per_lane) {
+                    console.log('DEBUG: migrating numLedStrips for lane', li, 'to', n);
+                    currentSettings.numLedStrips[li] = n;
+                } else {
+                    console.log('Skipping invalid numLedStrips for lane', li, ':', dev.numLedStrips[li]);
+                }
+            }
+        }
+        if (dev.gapBetweenStrips !== undefined) currentSettings.gapBetweenStrips = parseInt(dev.gapBetweenStrips);
+        if (dev.pulseWidth !== undefined) currentSettings.pulseWidth = parseInt(dev.pulseWidth);
         if (dev.numLanes !== undefined) currentSettings.numLanes = parseInt(dev.numLanes);
         if (dev.numSwimmersPerLane !== undefined && Array.isArray(dev.numSwimmersPerLane)) {
             console.log('DEBUG: Applying server\'s numSwimmersPerLane array to local settings');
@@ -2462,7 +2477,10 @@ async function fetchDeviceSettingsAndApply() {
 
         setIndividualSwimmerColors();
 
+        console.log('fetchDeviceSettingsAndApply: current settings after apply:', currentSettings);
+
         // After merging, update full UI
+        console.log('fetchDeviceSettingsAndApply: calling updateAllUIFromSettings to update UI settings');
         updateAllUIFromSettings();
         // Re-enable outbound writes now that device defaults are applied
         suppressSettingsWrites = false;
@@ -2503,8 +2521,8 @@ function sendPulseWidth(pulseWidth) {
     return postForm('/setPulseWidth', `pulseWidth=${encodeURIComponent(pulseWidth)}`);
 }
 
-function sendStripLength(stripLength) {
-    return postForm('/setStripLength', `stripLength=${encodeURIComponent(stripLength)}`);
+function sendStripLength(stripLengthMeters) {
+    return postForm('/setStripLength', `stripLengthMeters=${encodeURIComponent(stripLengthMeters)}`);
 }
 
 function sendPoolLength(poolLength, poolUnits) {
