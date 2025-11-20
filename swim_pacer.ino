@@ -53,6 +53,13 @@
 // Maximum supported LEDs by FastLED for this project
 #define MAX_LEDS 150
 
+// GPIO pins for multiple LED strips (lanes)
+// Lane 1: GPIO 18, Lane 2: GPIO 19, Lane 3: GPIO 21, Lane 4: GPIO 2
+#define LANE_0_PIN 18
+#define LANE_1_PIN 19
+#define LANE_2_PIN 21
+#define LANE_3_PIN 2
+
 // Enum for Queue insert error codes
 enum QueueInsertError {
   QUEUE_INSERT_SUCCESS = 0,
@@ -64,10 +71,6 @@ enum QueueInsertError {
 const int SWIMSET_QUEUE_MAX = 12;
 const int MAX_LANES_SUPPORTED = 4;
 const int MAX_SWIMMERS_SUPPORTED = 10;
-
-// GPIO pins for multiple LED strips (lanes)
-// Lane 1: GPIO 18, Lane 2: GPIO 19, Lane 3: GPIO 21, Lane 4: GPIO 2
-const int LED_PINS[MAX_LANES_SUPPORTED] = {18, 19, 21, 2}; // GPIO pins for lanes 1-4
 
 // Debug control - set to true to enable detailed debug output
 const bool DEBUG_ENABLED = true;
@@ -197,14 +200,17 @@ Preferences preferences;
 WebServer server(80);
 
 // ========== CALCULATED VALUES ==========
-int totalLEDs[MAX_LANES_SUPPORTED]; // Total number of LEDs (calculated)
+int fullLengthLEDs[MAX_LANES_SUPPORTED];  // Total number of rendered LEDs (ignoring gaps)
+int visibleLEDs[MAX_LANES_SUPPORTED];     // Total number of actual LEDs (accounting for gaps)
+std::vector<int> gapLEDs[MAX_LANES_SUPPORTED];         // positions where there are no LEDs due to gaps
 float ledSpacingCM;               // Spacing between LEDs in cm
 int pulseWidthLEDs;               // Width of pulse in LEDs
 int delayMS;                      // Delay between LED updates
 float poolToStripRatio;           // Ratio of pool to strip length
 
 // ========== GLOBAL VARIABLES ==========
-CRGB* leds[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
+CRGB* renderedLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
+CRGB* scanoutLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
 int currentPosition = 0;
 int direction = 1;
 unsigned long lastUpdate = 0;
@@ -557,53 +563,76 @@ void loop() {
 }
 
 void setupLEDs() {
+  Serial.println("Setting up LED strips...");
   // Calculate total LEDs first
   // TODO: How is this different than the calculation in recalculateValues()?
   //       Why do we need both, can we consolidate?
   int ledsPerStrip = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
-
 
   // Clear any existing FastLED configurations
   FastLED.clear();
 
   // Initialize LED arrays for each configured lane
   for (int lane = 0; lane < globalConfigSettings.numLanes; lane++) {
-    totalLEDs[lane] = ledsPerStrip * globalConfigSettings.numLedStrips[lane];
+    // Total number of rendered LEDs, including gaps
+    // TODO: Does the official 5m length include the gaps or not?
+    fullLengthLEDs[lane] = ledsPerStrip * globalConfigSettings.numLedStrips[lane];
 
-    if (totalLEDs[lane] > 150) {
-      totalLEDs[lane] = 150;
+    // Total number of visible LEDs, factoring out the gaps
+    // First get number of LEDs per gap
+    int ledsPerGap = (int)(globalConfigSettings.gapBetweenStrips * globalConfigSettings.ledsPerMeter / 100);
+    // Then figure out total number of LEDs in all the gaps
+    int totalMissingLEDs = ledsPerGap * (globalConfigSettings.numLedStrips[lane] - 1);
+    // Subtract total missing LEDs from full length total
+    visibleLEDs[lane] = fullLengthLEDs[lane] - totalMissingLEDs;
+
+    // Get the individual index values of the LEDs that are in a gap
+    gapLEDs[lane].clear();
+    for (int i=1; i<globalConfigSettings.numLedStrips[lane]; i++) {
+      int gapStartIndex = i * ledsPerStrip + (i - 1) * ledsPerGap;
+      for (int j=0; j<ledsPerGap; j++) {
+        gapLEDs[lane].push_back(gapStartIndex + j);
+      }
     }
+
     // Allocate LED array dynamically for this lane
-    if (leds[lane] != nullptr) {
-      delete[] leds[lane];
+    if (scanoutLEDs[lane] != nullptr) {
+      delete[] scanoutLEDs[lane];
     }
-    leds[lane] = new CRGB[totalLEDs[lane]];
+    scanoutLEDs[lane] = new CRGB[visibleLEDs[lane]];
+    if (renderedLEDs[lane] != nullptr) {
+      delete[] renderedLEDs[lane];
+    }
+    renderedLEDs[lane] = new CRGB[fullLengthLEDs[lane]];
 
-    // Add LED strip for this lane with appropriate GPIO pin
+    // FastLED requires the pin number as a compile-time template parameter.
+    // Use a switch so each call uses a literal pin constant (one per lane).
     switch (lane) {
       case 0:
-        FastLED.addLeds<LED_TYPE, 18, COLOR_ORDER>(leds[0], totalLEDs[lane]);
+        FastLED.addLeds<LED_TYPE, LANE_0_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
         break;
       case 1:
-        FastLED.addLeds<LED_TYPE, 19, COLOR_ORDER>(leds[1], totalLEDs[lane]);
+        FastLED.addLeds<LED_TYPE, LANE_1_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
         break;
       case 2:
-        FastLED.addLeds<LED_TYPE, 21, COLOR_ORDER>(leds[2], totalLEDs[lane]);
+        FastLED.addLeds<LED_TYPE, LANE_2_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
         break;
       case 3:
-        FastLED.addLeds<LED_TYPE, 2, COLOR_ORDER>(leds[3], totalLEDs[lane]);
+        FastLED.addLeds<LED_TYPE, LANE_3_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
+        break;
+      default:
+        // fallback: do nothing for out-of-range lanes
         break;
     }
-
     // Clear this lane's LEDs
-    fill_solid(leds[lane], totalLEDs[lane], CRGB::Black);
+    fill_solid(scanoutLEDs[lane], visibleLEDs[lane], CRGB::Black);
   }
 
   // Initialize unused lanes to nullptr
   for (int lane = globalConfigSettings.numLanes; lane < MAX_LANES_SUPPORTED; lane++) {
-    if (leds[lane] != nullptr) {
-      delete[] leds[lane];
-      leds[lane] = nullptr;
+    if (scanoutLEDs[lane] != nullptr) {
+      delete[] scanoutLEDs[lane];
+      scanoutLEDs[lane] = nullptr;
     }
   }
 
@@ -750,12 +779,6 @@ void handleRoot() {
 void handleGetSettings() {
   // Provide an expanded JSON blob the client can consume to reflect device state
   String json = "{";
-  json += "\"totalLEDs\": [";
-  for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
-    json += String(totalLEDs[li]);
-    if (li < MAX_LANES_SUPPORTED - 1) json += ",";
-  }
-  json += "],";
   json += "\"stripLengthMeters\":" + String(globalConfigSettings.stripLengthMeters, 2) + ",";
   json += "\"ledsPerMeter\":" + String(globalConfigSettings.ledsPerMeter) + ",";
   json += "\"numLedStrips\": [";
@@ -1871,11 +1894,36 @@ void loadSettings() {
 }
 
 void recalculateValues(int lane) {
-  // Calculate total LEDs from strip length and density
-  totalLEDs[lane] = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
-  // Enforce a maximum to match allocation limits and hardware/FastLED constraints
-  if (totalLEDs[lane] > MAX_LEDS) {
-    totalLEDs[lane] = MAX_LEDS;
+  Serial.print("recalculateValues: lane="); Serial.println(lane);
+  // Calculate total LEDs first
+  // TODO: How is this different than the calculation in setupLEDs()?
+  //       Why do we need both, can we consolidate?
+  int ledsPerStrip = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
+
+  // Total number of rendered LEDs, including gaps
+  // TODO: Does the official 5m length include the gaps or not?
+  fullLengthLEDs[lane] = ledsPerStrip * globalConfigSettings.numLedStrips[lane];
+
+  // Total number of visible LEDs, factoring out the gaps
+  // First get number of LEDs per gap
+  int ledsPerGap = (int)(globalConfigSettings.gapBetweenStrips * globalConfigSettings.ledsPerMeter / 100);
+  // Then figure out total number of LEDs in all the gaps
+  int totalMissingLEDs = ledsPerGap * (globalConfigSettings.numLedStrips[lane] - 1);
+  // Subtract total missing LEDs from full length total
+  if (visibleLEDs[lane] != fullLengthLEDs[lane] - totalMissingLEDs) {
+    Serial.print(" visibleLEDs changed from "); Serial.print(visibleLEDs[lane]);
+    Serial.print(" to "); Serial.println(fullLengthLEDs[lane] - totalMissingLEDs);
+    // TODO: Should we reset FastLED?
+  }
+  visibleLEDs[lane] = fullLengthLEDs[lane] - totalMissingLEDs;
+
+  // Get the individual index values of the LEDs that are in a gap
+  gapLEDs[lane].clear();
+  for (int i=1; i<globalConfigSettings.numLedStrips[lane]; i++) {
+    int gapStartIndex = i * ledsPerStrip + (i - 1) * ledsPerGap;
+    for (int j=0; j<ledsPerGap; j++) {
+      gapLEDs[lane].push_back(gapStartIndex + j);
+    }
   }
 
   // Calculate LED spacing
@@ -1901,15 +1949,20 @@ void recalculateValues(int lane) {
 
   // Ensure reasonable bounds
   delayMS = max(10, min(delayMS, 1000));
+  Serial.println("################################");
+  Serial.print("render delayMS="); Serial.println(delayMS);
+  Serial.print("visibleLEDs="); Serial.println(visibleLEDs[lane]);
+  Serial.print("fullLengthLEDs="); Serial.println(fullLengthLEDs[lane]);
+  Serial.print("ledsPerStrip="); Serial.println(ledsPerStrip);
+  Serial.print("ledsPerGap="); Serial.println(ledsPerGap);
+  Serial.print("totalMissingLEDs="); Serial.println(totalMissingLEDs);
+  Serial.print("gapLEDs count="); Serial.println(gapLEDs[lane].size());
+  Serial.println("################################");
 
   // Reset position if it's out of bounds
-  //if (currentPosition >= totalLEDs) {
-  //  currentPosition = totalLEDs - 1;
-  //}
-
-  // Reinitialize swimmers when values change
-  // TODO: it would be better to de-couple this
-  //initializeSwimmers();
+  if (currentPosition >= visibleLEDs[lane]) {
+    currentPosition = visibleLEDs[lane] - 1;
+  }
 }
 
 // ----- Targeted swimmer update helpers -----
@@ -1947,9 +2000,9 @@ float convertPoolToMeters(float distanceInPoolUnits) {
 void updateLEDEffect() {
   // Update LEDs for all active lanes
   for (int lane = 0; lane < globalConfigSettings.numLanes; lane++) {
-    if (leds[lane] != nullptr) {
+    if (scanoutLEDs[lane] != nullptr && renderedLEDs[lane] != nullptr) {
       // Clear this lane's LEDs
-      fill_solid(leds[lane], totalLEDs[lane], CRGB::Black);
+      fill_solid(renderedLEDs[lane], fullLengthLEDs[lane], CRGB::Black);
 
       // Only animate if this lane is running
       if (globalConfigSettings.laneRunning[lane]) {
@@ -1981,12 +2034,51 @@ void updateLEDEffect() {
             }
           }
         }
+
+        // Splice out gap LEDs for this lane
+        spliceOutGaps(lane);
       }
     }
   }
 
   // Update FastLED
   FastLED.show();
+}
+
+void spliceOutGaps(int lane) {
+  //Serial.print("spliceOutGaps: lane="); Serial.println(lane);
+  // If no gaps, copy exactly visibleLEDs[lane] entries (safe)
+  if (gapLEDs[lane].size() == 0) {
+    //Serial.println("No gaps, copying visible LEDs directly");
+    memcpy(scanoutLEDs[lane], renderedLEDs[lane], visibleLEDs[lane] * sizeof(CRGB));
+    return;
+  } else {
+    //Serial.print("Gaps present, count="); Serial.println(gapLEDs[lane].size());
+  }
+
+  // gapLEDs[lane] must be sorted ascending for this to work. Ensure it is.
+  std::sort(gapLEDs[lane].begin(), gapLEDs[lane].end());
+
+  int scanoutIndex = 0;
+  size_t gapIndex = 0;
+  const size_t gapCount = gapLEDs[lane].size();
+  int nextGap = (gapCount > 0) ? gapLEDs[lane][0] : -1;
+
+  for (int renderIndex = 0; renderIndex < fullLengthLEDs[lane] && scanoutIndex < visibleLEDs[lane]; ++renderIndex) {
+    if (gapIndex < gapCount && renderIndex == nextGap) {
+      // skip gap LED and advance to next gap
+      ++gapIndex;
+      nextGap = (gapIndex < gapCount) ? gapLEDs[lane][gapIndex] : -1;
+      continue;
+    }
+    // copy valid LED to scanout
+    scanoutLEDs[lane][scanoutIndex++] = renderedLEDs[lane][renderIndex];
+  }
+
+  // Defensive: if we didn't fill the scanout buffer, clear the remainder
+  for (int i = scanoutIndex; i < visibleLEDs[lane]; ++i) {
+    scanoutLEDs[lane][i] = CRGB::Black;
+  }
 }
 
 bool drawDelayIndicators(int laneIndex, int swimmerIndex) {
@@ -2024,25 +2116,25 @@ bool drawDelayIndicators(int laneIndex, int swimmerIndex) {
     if (swimmer->direction > 0) {
       // Going away from start wall
       // Draw delay indicator at the start of the strip
-      for (int ledIndex = 0; ledIndex < remainingDelayLEDs && ledIndex < totalLEDs[laneIndex]; ledIndex++) {
+      for (int ledIndex = 0; ledIndex < remainingDelayLEDs && ledIndex < fullLengthLEDs[laneIndex]; ledIndex++) {
         // Only draw delay indicator if LED is currently black (swimmers get priority)
-        if (leds[laneIndex][ledIndex] == CRGB::Black) {
+        if (renderedLEDs[laneIndex][ledIndex] == CRGB::Black) {
           // Create a dimmed version of the swimmer's color for the delay indicator
           CRGB delayColor = swimmer->color;
           delayColor.nscale8(128); // 50% brightness for delay indicator
-          leds[laneIndex][ledIndex] = delayColor;
+          renderedLEDs[laneIndex][ledIndex] = delayColor;
         }
       }
     } else {
       // Coming back to start wall
       // Draw delay indicator at the end of the strip
-      for (int ledIndex = totalLEDs[laneIndex] - 1; ledIndex >= totalLEDs[laneIndex] - remainingDelayLEDs && ledIndex >= 0; ledIndex--) {
+      for (int ledIndex = fullLengthLEDs[laneIndex] - 1; ledIndex >= fullLengthLEDs[laneIndex] - remainingDelayLEDs && ledIndex >= 0; ledIndex--) {
         // Only draw delay indicator if LED is currently black (swimmers get priority)
-        if (leds[laneIndex][ledIndex] == CRGB::Black) {
+        if (renderedLEDs[laneIndex][ledIndex] == CRGB::Black) {
           // Create a dimmed version of the swimmer's color for the delay indicator
           CRGB delayColor = swimmer->color;
           delayColor.nscale8(128); // 50% brightness for delay indicator
-          leds[laneIndex][ledIndex] = delayColor;
+          renderedLEDs[laneIndex][ledIndex] = delayColor;
         }
       }
     }
@@ -2761,17 +2853,13 @@ void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
   for (int i = 0; i < pulseWidthLEDs; i++) {
     int ledIndex = centerPos - halfWidth + i;
 
-    if (ledIndex >= 0 && ledIndex < totalLEDs[laneIndex]) {
-      int distanceFromCenter = abs(i - halfWidth);
-      float brightnessFactor = 1.0 - (float)distanceFromCenter / (float)halfWidth;
-      brightnessFactor = max(0.0f, brightnessFactor);
-
+    if (ledIndex >= 0 && ledIndex < fullLengthLEDs[laneIndex]) {
       CRGB color = pulseColor;
-      color.nscale8((uint8_t)(brightnessFactor * 255));
+      color.nscale8((uint8_t)(globalConfigSettings.brightness));
 
       // Only set color if LED is currently black (first wins priority)
-      if (leds[laneIndex][ledIndex] == CRGB::Black) {
-        leds[laneIndex][ledIndex] = color;
+      if (renderedLEDs[laneIndex][ledIndex] == CRGB::Black) {
+        renderedLEDs[laneIndex][ledIndex] = color;
       }
     }
   }
@@ -2841,10 +2929,10 @@ void drawUnderwaterZone(int laneIndex, int swimmerIndex) {
 
   // Draw the underwater light pulse centered on swimmer
   for (int i = swimmerPos; i < swimmerPos + lightSizeLEDs; i++) {
-    if (i >= 0 && i < totalLEDs[laneIndex]) {
+    if (i >= 0 && i < fullLengthLEDs[laneIndex]) {
       // Only set color if LED is currently black (first wins priority)
-      if (leds[laneIndex][i] == CRGB::Black) {
-        leds[laneIndex][i] = currentUnderwaterColor;
+      if (renderedLEDs[laneIndex][i] == CRGB::Black) {
+        renderedLEDs[laneIndex][i] = currentUnderwaterColor;
       }
     }
   }
