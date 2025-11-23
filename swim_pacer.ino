@@ -1477,6 +1477,9 @@ void handleStopSwimSet() {// determine lane from query/form or JSON body
   // Toggle the specified lane's running state
   globalConfigSettings.laneRunning[lane] = false;
 
+  // Clear lights on this lane to black
+  fill_solid(scanoutLEDs[lane], visibleLEDs[lane], CRGB::Black);
+
   // Update global running state (true if any lane is running)
   globalConfigSettings.isRunning = false;
   for (int i = 0; i < globalConfigSettings.numLanes; i++) {
