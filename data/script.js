@@ -200,13 +200,20 @@ function updateNumLanes() {
 }
 
 function updateCurrentLane() {
+    const newLane = parseInt(document.getElementById('currentLane').value);
     console.log('updateCurrentLane: switching lanes: ' +
-        currentSettings.currentLane + ' -> ' + document.getElementById('currentLane').value);
-    currentSettings.currentLane = parseInt(document.getElementById('currentLane').value);
+        currentSettings.currentLane + ' -> ' + newLane);
+    currentSettings.currentLane = newLane;
 
     // What else should get triggered, maybe the swim set queue?
     // Update any UI elements that were lane dependent?
     //  num swimmers, num LED strips
+    updateStatus();
+    updateQueueDisplay();
+    console.log('updateCurrentLane: Setting switching numSwimmers to numSwimmersPerLane[' + newLane + ']:' +
+        currentSettings.numSwimmersPerLane[newLane]);
+    document.getElementById('numSwimmers').value =
+        currentSettings.numSwimmersPerLane[newLane];
 }
 
 function updateLaneSelector() {
@@ -695,6 +702,8 @@ function openColorPickerForSurface() {
 function updateNumSwimmers() {
     const numSwimmers = parseInt(document.getElementById('numSwimmers').value);
     const lane = currentSettings.currentLane || 0;
+    console.log(`updateNumSwimmers: Updating numSwimmersPerLane variable for lane ${lane} after changing drop down to ${numSwimmers}`);
+
     currentSettings.numSwimmersPerLane[lane] = numSwimmers;
     updateIndividualSwimmerColorDueToNumSwimmers();
     updateIndividualSwimmerTimeDueToNumSwimmers();
@@ -1050,8 +1059,6 @@ function createOrUpdateFromConfig() {
     console.log('Existing swim set updated:', createdSwimSets[lane]);
 }
 
-function setNumSwimmersUI(lane, numSwimmers) {}
-
 // Resize data for a single lane to match device-reported swimmer count
 function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
     if (lane < 0 || lane >= max_lanes) {
@@ -1062,14 +1069,14 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
         console.log(`migrateSwimmerCountsToDeviceForLane: invalid deviceNumSwimmers ${deviceNumSwimmers} for lane ${lane}`);
         return;
     }
-    console.log(`migrateSwimmerCountsToDeviceForLane: migrating (from device) swimmer count for lane ${lane} to ${deviceNumSwimmers}`);
+    console.log(`migrateSwimmerCountsToDeviceForLane: migrating (from device) numSwimmersPerLane ${lane} to ${deviceNumSwimmers}`);
     // Record per-lane count in settings
     currentSettings.numSwimmersPerLane[lane] = deviceNumSwimmers;
 
     // If this is the currently selected lane, update UI controls
     if (currentSettings.currentLane === lane) {
-        console.log(`Updating UI controls for lane ${lane} after migrating swimmer count from device`);
         try {
+            console.log(`Updating numSwimmersPerLane for lane ${lane} after migrating swimmer count from device`);
             document.getElementById('numSwimmers').value = deviceNumSwimmers;
             // Update swimmerColors array length for current lane
             updateIndividualSwimmerColorDueToNumSwimmers();
@@ -1938,6 +1945,7 @@ function buildMinimalSwimSetPayload(createdSet) {
 function updateAllUIFromSettings() {
     // Update input fields
     document.getElementById('numLanes').value = currentSettings.numLanes;
+    console.log(`updateAllUIFromSettings: Updating numSwimmersPerLane value for lane ${currentSettings.currentLane} to ${currentSettings.numSwimmersPerLane[currentSettings.currentLane]}`);
     document.getElementById('numSwimmers').value =
         currentSettings.numSwimmersPerLane[currentSettings.currentLane];
     // Update swimmerColors array length for current lane
