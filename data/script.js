@@ -214,6 +214,7 @@ function updateCurrentLane() {
         currentSettings.numSwimmersPerLane[newLane]);
     document.getElementById('numSwimmers').value =
         currentSettings.numSwimmersPerLane[newLane];
+    updatePacerButtons();
 }
 
 function updateLaneSelector() {
