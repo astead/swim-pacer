@@ -1717,6 +1717,7 @@ void handleResetLane() {
 // End of Web Handlers ******************************************
 
 void saveGlobalConfigSettings() {
+  preferences.putFloat("numLanes", globalConfigSettings.numLanes);
   preferences.putFloat("poolLength", globalConfigSettings.poolLength);
   preferences.putBool("poolUnitsYards", globalConfigSettings.poolUnitsYards);
   preferences.putFloat("stripLengthM", globalConfigSettings.stripLengthMeters);
@@ -1762,6 +1763,7 @@ void saveSettings() {
 }
 
 void loadGlobalConfigSettings() {
+  globalConfigSettings.numLanes = preferences.getFloat("numLanes", 1);  // 1 lane default
   globalConfigSettings.poolLength = preferences.getFloat("poolLength", 25.0);  // 25 yards default
   globalConfigSettings.poolUnitsYards = preferences.getBool("poolUnitsYards", true);  // Default to yards
   globalConfigSettings.stripLengthMeters = preferences.getFloat("stripLengthM", 23.0);
