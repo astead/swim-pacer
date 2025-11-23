@@ -176,7 +176,6 @@ void printPeriodicStatus();
 void recalculateValues(int lane);
 void initializeSwimmers();
 void updateSwimmersLapsPerRound();
-void setupLEDs();
 void saveSwimSetSettings();
 void saveGlobalConfigSettings();
 
@@ -211,7 +210,6 @@ float poolToStripRatio;           // Ratio of pool to strip length
 // ========== GLOBAL VARIABLES ==========
 CRGB* renderedLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
 CRGB* scanoutLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
-int currentPosition = 0;
 int direction = 1;
 unsigned long lastUpdate = 0;
 bool needsRecalculation = true;
@@ -380,9 +378,6 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
   swimSetSettings.restTimeSeconds = s.restTime;
   swimSetSettings.swimmerIntervalSeconds = s.swimmerInterval;
 
-  needsRecalculation = true;
-  recalculateValues(lane);
-
   // Debug: print swim set being applied
   if (DEBUG_ENABLED) {
     Serial.println("applySwimSetToSettings(): applying set:");
@@ -514,8 +509,6 @@ void setup() {
   preferences.begin("swim_pacer", false);
   loadSettings();
 
-  // Initialize LED strip
-    setupLEDs(); // Reinitialize LEDs when number of lanes changes
 
   // Setup WiFi Access Point
   setupWiFi();
@@ -524,9 +517,12 @@ void setup() {
   setupWebServer();
 
   // Calculate initial values
+  FastLED.clear();
   for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     recalculateValues(li);
   }
+  FastLED.setBrightness(globalConfigSettings.brightness);
+  FastLED.show();
 
   // Initialize swimmers
   initializeSwimmers();
@@ -545,99 +541,20 @@ void loop() {
   if (globalConfigSettings.isRunning) {
     updateLEDEffect();
     //printPeriodicStatus(); // Print status update every few seconds
-  } else {
-    // If stopped, just clear the strip
-    FastLED.clear();
-    FastLED.show();
   }
 
   // Recalculate if globalConfigSettings changed
   if (needsRecalculation) {
+    FastLED.clear();
     for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
       recalculateValues(li);
     }
+    FastLED.setBrightness(globalConfigSettings.brightness);
+    FastLED.show();
     needsRecalculation = false;
   }
 
   digitalWrite(2, LOW);
-}
-
-void setupLEDs() {
-  Serial.println("Setting up LED strips...");
-  // Calculate total LEDs first
-  // TODO: How is this different than the calculation in recalculateValues()?
-  //       Why do we need both, can we consolidate?
-  int ledsPerStrip = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
-
-  // Clear any existing FastLED configurations
-  FastLED.clear();
-
-  // Initialize LED arrays for each configured lane
-  for (int lane = 0; lane < globalConfigSettings.numLanes; lane++) {
-    // Total number of rendered LEDs, including gaps
-    // TODO: Does the official 5m length include the gaps or not?
-    fullLengthLEDs[lane] = ledsPerStrip * globalConfigSettings.numLedStrips[lane];
-
-    // Total number of visible LEDs, factoring out the gaps
-    // First get number of LEDs per gap
-    int ledsPerGap = (int)(globalConfigSettings.gapBetweenStrips * globalConfigSettings.ledsPerMeter / 100);
-    // Then figure out total number of LEDs in all the gaps
-    int totalMissingLEDs = ledsPerGap * (globalConfigSettings.numLedStrips[lane] - 1);
-    // Subtract total missing LEDs from full length total
-    visibleLEDs[lane] = fullLengthLEDs[lane] - totalMissingLEDs;
-
-    // Get the individual index values of the LEDs that are in a gap
-    gapLEDs[lane].clear();
-    for (int i=1; i<globalConfigSettings.numLedStrips[lane]; i++) {
-      int gapStartIndex = i * ledsPerStrip + (i - 1) * ledsPerGap;
-      for (int j=0; j<ledsPerGap; j++) {
-        gapLEDs[lane].push_back(gapStartIndex + j);
-      }
-    }
-
-    // Allocate LED array dynamically for this lane
-    if (scanoutLEDs[lane] != nullptr) {
-      delete[] scanoutLEDs[lane];
-    }
-    scanoutLEDs[lane] = new CRGB[visibleLEDs[lane]];
-    if (renderedLEDs[lane] != nullptr) {
-      delete[] renderedLEDs[lane];
-    }
-    renderedLEDs[lane] = new CRGB[fullLengthLEDs[lane]];
-
-    // FastLED requires the pin number as a compile-time template parameter.
-    // Use a switch so each call uses a literal pin constant (one per lane).
-    switch (lane) {
-      case 0:
-        FastLED.addLeds<LED_TYPE, LANE_0_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
-        break;
-      case 1:
-        FastLED.addLeds<LED_TYPE, LANE_1_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
-        break;
-      case 2:
-        FastLED.addLeds<LED_TYPE, LANE_2_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
-        break;
-      case 3:
-        FastLED.addLeds<LED_TYPE, LANE_3_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
-        break;
-      default:
-        // fallback: do nothing for out-of-range lanes
-        break;
-    }
-    // Clear this lane's LEDs
-    fill_solid(scanoutLEDs[lane], visibleLEDs[lane], CRGB::Black);
-  }
-
-  // Initialize unused lanes to nullptr
-  for (int lane = globalConfigSettings.numLanes; lane < MAX_LANES_SUPPORTED; lane++) {
-    if (scanoutLEDs[lane] != nullptr) {
-      delete[] scanoutLEDs[lane];
-      scanoutLEDs[lane] = nullptr;
-    }
-  }
-
-  FastLED.setBrightness(globalConfigSettings.brightness);
-  FastLED.show();
 }
 
 void setupWiFi() {
@@ -845,7 +762,6 @@ void handleSetPulseWidth() {
       Serial.println(globalConfigSettings.pulseWidthFeet);
     }
     saveGlobalConfigSettings();
-    needsRecalculation = true;
     server.send(200, "text/plain", "Pulse width updated");
   } else {
     server.send(400, "text/plain", "Missing pulseWidth parameter");
@@ -861,7 +777,6 @@ void handleSetStripLength() {
     }
     saveGlobalConfigSettings();
     needsRecalculation = true;
-    setupLEDs();  // Reinitialize LED array with new length
     server.send(200, "text/plain", "Strip length updated");
   } else {
     server.send(400, "text/plain", "Missing stripLengthMeters parameter");
@@ -879,7 +794,6 @@ void handleSetNumLedStrips() {
       }
       saveGlobalConfigSettings();
       needsRecalculation = true;
-      setupLEDs();  // Reinitialize LED array with new density
       server.send(200, "text/plain", "Number of LED strips updated");
     } else {
       server.send(400, "text/plain", "Invalid lane parameter");
@@ -898,7 +812,6 @@ void handleSetGapBetweenStrips() {
     }
     saveGlobalConfigSettings();
     needsRecalculation = true;
-    setupLEDs();  // Reinitialize LED array with new density
     server.send(200, "text/plain", "Gap between strips updated");
   } else {
     server.send(400, "text/plain", "Missing gapBetweenStrips parameter");
@@ -942,7 +855,6 @@ void handleSetLedsPerMeter() {
     }
     saveGlobalConfigSettings();
     needsRecalculation = true;
-    setupLEDs();  // Reinitialize LED array with new density
     server.send(200, "text/plain", "LEDs per meter updated");
   } else {
     server.send(400, "text/plain", "Missing ledsPerMeter parameter");
@@ -957,7 +869,6 @@ void handleSetNumLanes() {
       Serial.println(globalConfigSettings.numLanes);
     }
     saveGlobalConfigSettings();
-    setupLEDs(); // Reinitialize LEDs when number of lanes changes
     server.send(200, "text/plain", "Number of lanes updated");
   } else {
     server.send(400, "text/plain", "Missing numLanes parameter");
@@ -1895,9 +1806,16 @@ void loadSettings() {
 
 void recalculateValues(int lane) {
   Serial.print("recalculateValues: lane="); Serial.println(lane);
+
+  if (lane >= globalConfigSettings.numLanes) {
+    if (scanoutLEDs[lane] != nullptr) {
+      delete[] scanoutLEDs[lane];
+      scanoutLEDs[lane] = nullptr;
+    }
+    return;
+  }
+
   // Calculate total LEDs first
-  // TODO: How is this different than the calculation in setupLEDs()?
-  //       Why do we need both, can we consolidate?
   int ledsPerStrip = (int)(globalConfigSettings.stripLengthMeters * globalConfigSettings.ledsPerMeter);
 
   // Total number of rendered LEDs, including gaps
@@ -1937,6 +1855,8 @@ void recalculateValues(int lane) {
   float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
   poolToStripRatio = poolLengthInMeters / globalConfigSettings.stripLengthMeters;
 
+  // TODO: this should just be a constant, or be set based on the swim speed
+  //       it doesn't need to be here in the LED setup
   // Calculate delayMS based on swim pace and distance between LEDs
   // start with distance per LED in meters
   float ledSpacingMeters = ledSpacingCM / 100.0;
@@ -1959,9 +1879,38 @@ void recalculateValues(int lane) {
   Serial.print("gapLEDs count="); Serial.println(gapLEDs[lane].size());
   Serial.println("################################");
 
-  // Reset position if it's out of bounds
-  if (currentPosition >= visibleLEDs[lane]) {
-    currentPosition = visibleLEDs[lane] - 1;
+  // Allocate LED array dynamically for this lane
+  if (scanoutLEDs[lane] != nullptr) {
+    delete[] scanoutLEDs[lane];
+  }
+  scanoutLEDs[lane] = new CRGB[visibleLEDs[lane]];
+
+  if (renderedLEDs[lane] != nullptr) {
+    delete[] renderedLEDs[lane];
+  }
+  renderedLEDs[lane] = new CRGB[fullLengthLEDs[lane]];
+
+  // Clear this lane's LEDs
+  fill_solid(scanoutLEDs[lane], visibleLEDs[lane], CRGB::Black);
+
+  // FastLED requires the pin number as a compile-time template parameter.
+  // Use a switch so each call uses a literal pin constant (one per lane).
+  switch (lane) {
+    case 0:
+      FastLED.addLeds<LED_TYPE, LANE_0_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
+      break;
+    case 1:
+      FastLED.addLeds<LED_TYPE, LANE_1_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
+      break;
+    case 2:
+      FastLED.addLeds<LED_TYPE, LANE_2_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
+      break;
+    case 3:
+      FastLED.addLeds<LED_TYPE, LANE_3_PIN, COLOR_ORDER>(scanoutLEDs[lane], visibleLEDs[lane]);
+      break;
+    default:
+      // fallback: do nothing for out-of-range lanes
+      break;
   }
 }
 
