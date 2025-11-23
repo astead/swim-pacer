@@ -199,6 +199,16 @@ function updateNumLanes() {
     sendNumLanes(numLanes);
 }
 
+function updateCurrentLane() {
+    console.log('updateCurrentLane: switching lanes: ' +
+        currentSettings.currentLane + ' -> ' + document.getElementById('currentLane').value);
+    currentSettings.currentLane = parseInt(document.getElementById('currentLane').value);
+
+    // What else should get triggered, maybe the swim set queue?
+    // Update any UI elements that were lane dependent?
+    //  num swimmers, num LED strips
+}
+
 function updateLaneSelector() {
     console.log('updateLaneSelector() called - currentSettings.numLanes=', currentSettings.numLanes,
                 'currentSettings.currentLane=', currentSettings.currentLane,
