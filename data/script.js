@@ -618,7 +618,7 @@ function updateUnderwatersEnabled(triggerSave = true, enabledArg) {
 
     currentSettings.underwatersEnabled = enabled;
 
-    console.log(`Underwaters enabled set to: ${enabled}, triggerSave: ${triggerSave}`);
+    console.log(`Underwaters: enabledArg:  ${enabledArg}, enabled: ${enabled}, triggerSave: ${triggerSave}`);
 
     // Show/hide underwaters controls
     const controls = document.getElementById('underwatersControls');
@@ -2400,7 +2400,7 @@ async function fetchDeviceSettingsAndApply() {
             console.log('DEBUG: Applying server\'s numLedStrips array to local settings');
             for (let li = 0; li < dev.numLedStrips.length && li < max_lanes; li++) {
                 const n = parseInt(dev.numLedStrips[li]);
-                if (!isNaN(n) && n >= 1 && n <= max_strips_per_lane) {
+                if (!isNaN(n) && n >= 1) {
                     console.log('DEBUG: migrating numLedStrips for lane', li, 'to', n);
                     currentSettings.numLedStrips[li] = n;
                 } else {
@@ -2438,7 +2438,7 @@ async function fetchDeviceSettingsAndApply() {
         }
 
         // Underwaters enabled + colors
-        if (dev.underwatersEnabled !== undefined) currentSettings.underwatersEnabled = (dev.underwatersEnabled === 'true' || dev.underwatersEnabled === true);
+        if (dev.underwatersEnabled !== undefined) currentSettings.underwatersEnabled = dev.underwatersEnabled;
         if (dev.underwaterColor !== undefined) currentSettings.underwaterColor = dev.underwaterColor;
         if (dev.surfaceColor !== undefined) currentSettings.surfaceColor = dev.surfaceColor;
 
