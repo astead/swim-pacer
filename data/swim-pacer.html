@@ -186,19 +186,19 @@
                 </div>
 
                 <div class="control">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                        <label for="firstUnderwaterDistance">First underwater distance:</label>
-                        <span id="firstUnderwaterDistanceValue">20 ft</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <label for="firstUnderwaterDistance" style="margin:0; white-space:nowrap;">First underwater distance:</label>
+                        <input type="number" id="firstUnderwaterDistance" min="1" max="50" step="1" value="1" onchange="updateFirstUnderwaterDistance()" class="compact-input" style="width:80px;">
+                        <span id="firstUnderwaterDistanceUnit">ft</span>
                     </div>
-                    <input type="range" id="firstUnderwaterDistance" min="1" max="50" step="1" value="20" oninput="updateFirstUnderwaterDistance()">
                 </div>
 
                 <div class="control">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                        <label for="underwaterDistance">Underwater distance:</label>
-                        <span id="underwaterDistanceValue">20 ft</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <label for="underwaterDistance" style="margin:0; white-space:nowrap;">Underwater distance:</label>
+                        <input type="number" id="underwaterDistance" min="1" max="50" step="1" value="1" onchange="updateUnderwaterDistance()" class="compact-input" style="width:80px;">
+                        <span id="underwaterDistanceUnit">ft</span>
                     </div>
-                    <input type="range" id="underwaterDistance" min="1" max="50" step="1" value="20" oninput="updateUnderwaterDistance()">
                 </div>
 
                 <div class="control">

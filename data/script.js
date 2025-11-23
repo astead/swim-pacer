@@ -41,7 +41,6 @@ let currentSettings = {
     lightSize: 1.0,
     firstUnderwaterDistance: 20,
     underwaterDistance: 20,
-    surfaceDistance: 2,
     hideAfter: 1,
     underwaterColor: '#0000ff',
     surfaceColor: '#00ff00',
@@ -1974,11 +1973,7 @@ function updateAllUIFromSettings() {
     document.getElementById('lightSize').value = currentSettings.lightSize;
     document.getElementById('lightSizeUnit').textContent = "ft";
     document.getElementById('firstUnderwaterDistance').value = currentSettings.firstUnderwaterDistance;
-    document.getElementById('firstUnderwaterDistanceValue').textContent =
-        currentSettings.firstUnderwaterDistance + " ft";
     document.getElementById('underwaterDistance').value = currentSettings.underwaterDistance;
-    document.getElementById('underwaterDistanceValue').textContent =
-        currentSettings.underwaterDistance + " ft";
     document.getElementById('hideAfter').value = currentSettings.hideAfter;
     document.getElementById('hideAfterUnit').textContent =
         currentSettings.hideAfter === 1 ? ' second' : ' seconds';
@@ -2568,7 +2563,7 @@ function sendSwimmerColors(lane, csvHex) {
 
 function sendUnderwaterSettings() {
     const u = currentSettings;
-    const body = `enabled=${u.underwatersEnabled ? 'true' : 'false'}&firstUnderwaterDistance=${encodeURIComponent(u.firstUnderwaterDistance)}&underwaterDistance=${encodeURIComponent(u.underwaterDistance)}&surfaceDistance=${encodeURIComponent(u.surfaceDistance)}&hideAfter=${encodeURIComponent(u.hideAfter)}&lightSize=${encodeURIComponent(u.lightSize)}&underwaterColor=${encodeURIComponent(u.underwaterColor)}&surfaceColor=${encodeURIComponent(u.surfaceColor)}`;
+    const body = `enabled=${u.underwatersEnabled ? 'true' : 'false'}&firstUnderwaterDistance=${encodeURIComponent(u.firstUnderwaterDistance)}&underwaterDistance=${encodeURIComponent(u.underwaterDistance)}&hideAfter=${encodeURIComponent(u.hideAfter)}&lightSize=${encodeURIComponent(u.lightSize)}&underwaterColor=${encodeURIComponent(u.underwaterColor)}&surfaceColor=${encodeURIComponent(u.surfaceColor)}`;
     return postForm('/setUnderwaterSettings', body);
 }
 
