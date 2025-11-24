@@ -2708,8 +2708,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         } else {
           // Convert pool length to LED position
           float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
-          float ledPosition = floor((poolLengthInMeters * globalConfigSettings.ledsPerMeter)-1);
-          swimmer->position = ledPosition;
+          int ledPosition = (int)roundf(poolLengthInMeters * globalConfigSettings.ledsPerMeter) - 1;
+          swimmer->position = max(0, ledPosition);
         }
         // Move any remaining inactive swimmers to same position
         if (swimmerIndex >= laneSwimmerCount - 1) {
@@ -2733,13 +2733,13 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         // Place LED position where we overshot the wall
         // TODO: is this redundant, is overshootDistance already in meters?
         float overshootInMeters = convertPoolToMeters(overshootInDistance);
-        int overshootLEDs = (int)(overshootInMeters * globalConfigSettings.ledsPerMeter);
+        int overshootLEDs = (int)roundf(overshootInMeters * globalConfigSettings.ledsPerMeter);
         if (swimmer->lapDirection == 1) {
           swimmer->position = overshootLEDs;
         } else {
           float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
-          float ledPosition = floor((poolLengthInMeters * globalConfigSettings.ledsPerMeter)-1) - overshootLEDs;
-          swimmer->position = ledPosition;
+          int ledEnd = (int)roundf(poolLengthInMeters * globalConfigSettings.ledsPerMeter) - 1;
+          swimmer->position = max(0, ledEnd - overshootLEDs);
         }
       }
     } else {
@@ -2752,12 +2752,12 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
 
       // Calculate LED position based on lapDirection
       if (swimmer->lapDirection == 1) {
-        // Swimming away from start: position = 0 + distance
-        swimmer->position = (int)(distanceInMeters * globalConfigSettings.ledsPerMeter);
+        // Swimming away from start: position = 0 + distance (use round)
+        swimmer->position = (int)roundf(distanceInMeters * globalConfigSettings.ledsPerMeter);
       } else {
-        // Swimming back to start: position = poolLength - distance
+        // Swimming back to start: position = poolLength - distance (use round)
         float positionInMeters = poolLengthInMeters - distanceInMeters;
-        swimmer->position = (int)(positionInMeters * globalConfigSettings.ledsPerMeter);
+        swimmer->position = (int)roundf(positionInMeters * globalConfigSettings.ledsPerMeter);
       }
     }
 
@@ -2905,9 +2905,12 @@ void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
       color.nscale8((uint8_t)(globalConfigSettings.brightness));
 
       // Only set color if LED is currently black (first wins priority)
-      if (renderedLEDs[laneIndex][ledIndex] == CRGB::Black) {
-        renderedLEDs[laneIndex][ledIndex] = color;
-      }
+      //if (renderedLEDs[laneIndex][ledIndex] == CRGB::Black) {
+      //  renderedLEDs[laneIndex][ledIndex] = color;
+      //}
+      // Write the pulse pixel for this frame (overwrite). Layers/priority are
+      // still controlled by draw order; forcing the write avoids 1-pixel flicker.
+      renderedLEDs[laneIndex][ledIndex] = color;
     }
   }
 }
