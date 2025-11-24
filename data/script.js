@@ -155,13 +155,17 @@ function timeLabelFromString(timeStr) {
     return "seconds";
 }
 
+function updateNumLedStrips(lane, value) {
+    currentSettings.numLedStrips[lane] = value;
+    sendNumLedStrips(lane, value);
+}
+
 function updateCalculations(triggerSave = true) {
     const poolLengthElement = document.getElementById('poolLength').value;
     const poolLength = parseFloat(poolLengthElement.split(' ')[0]);
     const poolLengthUnits = poolLengthElement.includes('m') ? 'meters' : 'yards';
     const stripLengthMeters = parseFloat(document.getElementById('stripLengthMeters').value);
     const ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
-    const numLedStrips = parseInt(document.getElementById('numLedStrips').value);
     const gapBetweenStrips = parseInt(document.getElementById('gapBetweenStrips').value);
 
     // Update current settings
@@ -169,7 +173,6 @@ function updateCalculations(triggerSave = true) {
     currentSettings.poolLengthUnits = poolLengthUnits;
     currentSettings.stripLengthMeters = stripLengthMeters;
     currentSettings.ledsPerMeter = ledsPerMeter;
-    currentSettings.numLedStrips[currentSettings.currentLane] = numLedStrips;
     currentSettings.gapBetweenStrips = gapBetweenStrips;
     document.getElementById('distanceUnits').textContent = poolLengthUnits;
 
@@ -185,7 +188,6 @@ function updateCalculations(triggerSave = true) {
         sendPoolLength(currentSettings.poolLength, currentSettings.poolLengthUnits);
         sendStripLength(currentSettings.stripLengthMeters);
         sendLedsPerMeter(currentSettings.ledsPerMeter);
-        sendNumLedStrips(currentSettings.currentLane, currentSettings.numLedStrips[currentSettings.currentLane]);
         sendGapBetweenStrips(currentSettings.gapBetweenStrips);
     }
 }
@@ -195,6 +197,7 @@ function updateNumLanes() {
     currentSettings.numLanes = numLanes;
     console.log('updateNumLanes: calling updateLaneSelector after setting numLanes to what was selected in UI: ' + numLanes);
     updateLaneSelector();
+    updateNumLedStripsSection();
     updateLaneNamesSection();
     sendNumLanes(numLanes);
 }
@@ -259,13 +262,41 @@ function getCurrentLaneFromUI() {
     return isNaN(v) ? ((currentSettings.currentLane !== undefined) ? currentSettings.currentLane : 0) : v;
 }
 
+function updateNumLedStripsSection() {
+    const numLedStripsList = document.getElementById('numLedStripsList');
+    numLedStripsList.innerHTML = '';
+
+    for (let i = 0; i < currentSettings.numLanes; i++) {
+        const laneDiv = document.createElement('div');
+        laneDiv.style.cssText = 'margin: 8px 0; display: flex; align-items: center; gap: 8px;';
+        const label = document.createElement('span');
+        label.style.cssText="margin:0; white-space:nowrap;";
+        label.textContent = currentSettings.laneNames[i] + ":";
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.value = currentSettings.numLedStrips[i];
+        input.min = 1;
+        input.max=10;
+        input.style.className="compact-input";
+        input.style.cssText="width: 80px;";
+        input.onchange = function() {
+            updateNumLedStrips(i, this.value);
+        };
+
+        laneDiv.appendChild(label);
+        laneDiv.appendChild(input);
+        numLedStripsList.appendChild(laneDiv);
+    }
+}
+
 function updateLaneNamesSection() {
     const laneNamesList = document.getElementById('laneNamesList');
     laneNamesList.innerHTML = '';
 
     for (let i = 0; i < currentSettings.numLanes; i++) {
         const laneDiv = document.createElement('div');
-        laneDiv.style.cssText = 'margin: 8px 0; display: flex; align-items: center; gap: 10px;';
+        laneDiv.style.cssText = 'margin: 8px 0; display: flex; align-items: center; gap: 8px;';
 
         // Color indicator (shown only in identification mode)
         const colorIndicator = document.createElement('div');
@@ -1826,6 +1857,7 @@ async function stopSwimSet() {
     const controller = new AbortController();
     const to = setTimeout(() => controller.abort(), 5000);
     try {
+        console.log("calling /stopSwimSet for lane " + lane);
         const resp = await fetch('/stopSwimSet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1979,7 +2011,7 @@ function updateAllUIFromSettings() {
             currentSettings.poolLength : currentSettings.poolLength + "m");
     document.getElementById('stripLengthMeters').value = currentSettings.stripLengthMeters;
     document.getElementById('ledsPerMeter').value = currentSettings.ledsPerMeter;
-    document.getElementById('numLedStrips').value = currentSettings.numLedStrips[currentSettings.currentLane];
+    updateNumLedStripsSection();
     document.getElementById('gapBetweenStrips').value = currentSettings.gapBetweenStrips;
 
     // Update underwater fields
@@ -2253,6 +2285,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     initializeBrightnessDisplay();
     console.log('DOM fully loaded: calling updateLaneSelector with current lane:', currentSettings.currentLane);
     updateLaneSelector();
+    updateNumLedStripsSection();
     updateLaneNamesSection();
     updateStatus();
 

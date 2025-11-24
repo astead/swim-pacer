@@ -1474,11 +1474,21 @@ void handleStopSwimSet() {// determine lane from query/form or JSON body
       server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
       return;
   }
+  Serial.print("handleStopSwimSet: for lane: ");
+  Serial.println(lane);
   // Toggle the specified lane's running state
   globalConfigSettings.laneRunning[lane] = false;
 
   // Clear lights on this lane to black
-  fill_solid(scanoutLEDs[lane], visibleLEDs[lane], CRGB::Black);
+  Serial.println("filling lane with all black LEDs");
+  if (scanoutLEDs[lane] != nullptr && visibleLEDs[lane] > 0) {
+    fill_solid(scanoutLEDs[lane], visibleLEDs[lane], CRGB::Black);
+  }
+  if (renderedLEDs[lane] != nullptr && fullLengthLEDs[lane] > 0) {
+    fill_solid(renderedLEDs[lane], fullLengthLEDs[lane], CRGB::Black);
+  }
+  // Immediately push the black frame to the strips so the lane clears even if no other lanes are running
+  FastLED.show();
 
   // Update global running state (true if any lane is running)
   globalConfigSettings.isRunning = false;
