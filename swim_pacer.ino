@@ -205,6 +205,7 @@ Preferences preferences;
 WebServer server(80);
 
 // ========== CALCULATED VALUES ==========
+int poolLengthLEDs;  // Total number of LEDs representing the pool length
 int fullLengthLEDs[MAX_LANES_SUPPORTED];  // Total number of rendered LEDs (ignoring gaps)
 int visibleLEDs[MAX_LANES_SUPPORTED];     // Total number of actual LEDs (accounting for gaps)
 std::vector<int> gapLEDs[MAX_LANES_SUPPORTED];         // positions where there are no LEDs due to gaps
@@ -1939,11 +1940,11 @@ void recalculateValues(int lane) {
   float pulseWidthCM = globalConfigSettings.pulseWidthFeet * 30.48;
   pulseWidthLEDs = (int)(pulseWidthCM / ledSpacingCM);
 
-
-
   // Calculate pool to strip ratio for timing adjustments
   float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
   poolToStripRatio = poolLengthInMeters / globalConfigSettings.stripLengthMeters;
+
+  poolLengthLEDs = (int)(poolLengthInMeters * globalConfigSettings.ledsPerMeter);
 
   // TODO: this should just be a constant, or be set based on the swim speed
   //       it doesn't need to be here in the LED setup
@@ -2167,13 +2168,16 @@ bool drawDelayIndicators(int laneIndex, int swimmerIndex) {
     } else {
       // Coming back to start wall
       // Draw delay indicator at the end of the strip
-      for (int ledIndex = fullLengthLEDs[laneIndex] - 1; ledIndex >= fullLengthLEDs[laneIndex] - remainingDelayLEDs && ledIndex >= 0; ledIndex--) {
-        // Only draw delay indicator if LED is currently black (swimmers get priority)
-        if (renderedLEDs[laneIndex][ledIndex] == CRGB::Black) {
-          // Create a dimmed version of the swimmer's color for the delay indicator
-          CRGB delayColor = swimmer->color;
-          delayColor.nscale8(128); // 50% brightness for delay indicator
-          renderedLEDs[laneIndex][ledIndex] = delayColor;
+      for (int ledIndex = poolLengthLEDs - 1; ledIndex >= poolLengthLEDs - remainingDelayLEDs && ledIndex >= 0; ledIndex--) {
+        // Are we within rendered number of LEDs?
+        if (ledIndex < fullLengthLEDs[laneIndex]) {
+          // Only draw delay indicator if LED is currently black (swimmers get priority)
+          if (renderedLEDs[laneIndex][ledIndex] == CRGB::Black) {
+            // Create a dimmed version of the swimmer's color for the delay indicator
+            CRGB delayColor = swimmer->color;
+            delayColor.nscale8(128); // 50% brightness for delay indicator
+            renderedLEDs[laneIndex][ledIndex] = delayColor;
+          }
         }
       }
     }
