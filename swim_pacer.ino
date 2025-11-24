@@ -92,7 +92,7 @@ struct GlobalConfigSettings {
   float stripLengthMeters = 23.0;            // LED strip length in meters (75 feet)
   int ledsPerMeter = 30;                     // LEDs per meter
   int numLedStrips[MAX_LANES_SUPPORTED] = {1, 1, 1, 1}; // Number of LED strips per lane
-  int gapBetweenStrips = 25;                 // gap inbetween LED strips that don't contain LEDs (centimeters)
+  int gapBetweenStrips = 23;                 // gap inbetween LED strips that don't contain LEDs (centimeters)
   int numLanes = 1;                          // Number of LED strips/lanes connected
   float pulseWidthFeet = 1.0;                // Width of pulse in feet
   bool delayIndicatorsEnabled = true;        // Whether to show delay countdown indicators

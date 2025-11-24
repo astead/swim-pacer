@@ -28,7 +28,7 @@ let currentSettings = {
     stripLengthMeters: 23,  // 75 feet = 23 meters
     ledsPerMeter: 30,
     numLedStrips: [1,1,1,1],
-    gapBetweenStrips: 0,
+    gapBetweenStrips: 23,
 
     numRounds: 10,
     swimDistance: 50,
