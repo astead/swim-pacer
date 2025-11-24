@@ -55,6 +55,7 @@ const SWIMSET_STATUS_PENDING    = 0x0 << 0;
 const SWIMSET_STATUS_SYNCHED    = 0x1 << 0;
 const SWIMSET_STATUS_ACTIVE     = 0x1 << 1;
 const SWIMSET_STATUS_COMPLETED  = 0x1 << 2;
+const SWIMSET_STATUS_STOPPED    = 0x1 << 3;
 
 const ENQUEUE_RETRY_MS = 15000; // wait 15s before retrying a pending enqueue
 
@@ -1285,6 +1286,7 @@ function updateQueueDisplay() {
         const isCompleted = !!(statusVal & SWIMSET_STATUS_COMPLETED);
         const isActive = !!(statusVal & SWIMSET_STATUS_ACTIVE);
         const isDeletedPending = !!entry.deletedPending;
+        const isStopped = !!(statusVal & SWIMSET_STATUS_STOPPED);
 
         // Completed
         if (isCompleted && !isActive) {
@@ -1326,6 +1328,44 @@ function updateQueueDisplay() {
             const roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : 'In progress';
             statusSpan.textContent = roundText;
             row.appendChild(statusSpan);
+
+            listEl.appendChild(row);
+            return;
+        }
+
+        // Stopped
+        if (isStopped) {
+            row.classList.add('stopped');
+            const label = document.createElement('span');
+            label.className = 'queue-label';
+            label.textContent = (entry.summary || (`${entry.numRounds} x ${entry.swimDistance}'s`)) + ' — Stopped';
+            row.appendChild(label);
+
+            const statusSpan = document.createElement('span');
+            statusSpan.className = 'queue-status';
+            const roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : '';
+            statusSpan.textContent = roundText;
+            row.appendChild(statusSpan);
+
+            const actions = document.createElement('span');
+            actions.className = 'queue-actions';
+
+            const editBtn = document.createElement('button');
+            editBtn.textContent = 'Edit';
+            editBtn.onclick = () => { editSwimSet(idx); };
+            actions.appendChild(editBtn);
+
+            const runBtn = document.createElement('button');
+            runBtn.textContent = 'Run';
+            runBtn.onclick = () => { startSwimSet(idx); };
+            actions.appendChild(runBtn);
+
+            const delBtn = document.createElement('button');
+            delBtn.textContent = 'Delete';
+            delBtn.onclick = () => { deleteSwimSet(idx); };
+            actions.appendChild(delBtn);
+
+            row.appendChild(actions);
 
             listEl.appendChild(row);
             return;

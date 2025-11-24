@@ -112,9 +112,14 @@ struct GlobalConfigSettings {
   bool underwatersEnabled = false;           // Whether underwater indicators are enabled
   float firstUnderwaterDistanceFeet = 5.0;   // First underwater distance in feet
   float underwaterDistanceFeet = 3.0;        // Subsequent underwater distance in feet
-  float surfaceDistanceFeet = 2.0;           // Surface phase distance in feet
-  float lightPulseSizeFeet = 1.0;            // Size of underwater light pulse in feet
+  float underwatersSizeFeet = 1.0;           // Size of underwater light pulse in feet
   float hideAfterSeconds = 1.0;              // Hide underwater light after surface phase (seconds)
+  uint8_t underwaterColorRed = 0;            // RGB color values for underwater indicators when underwater
+  uint8_t underwaterColorGreen = 0;
+  uint8_t underwaterColorBlue = 255;
+  uint8_t underwaterSurfaceColorRed = 0;            // RGB color values for underwater indicators when surfacing
+  uint8_t underwaterSurfaceColorGreen = 255;
+  uint8_t underwaterSurfaceColorBlue = 0;
 };
 
 GlobalConfigSettings globalConfigSettings;
@@ -141,6 +146,7 @@ enum SwimSetStatus {
   SWIMSET_STATUS_SYNCHED    = 0x1 << 0,
   SWIMSET_STATUS_ACTIVE     = 0x1 << 1,
   SWIMSET_STATUS_COMPLETED  = 0x1 << 2,
+  SWIMSET_STATUS_STOPPED    = 0x1 << 3,
 };
 
 struct SwimSet {
@@ -204,8 +210,11 @@ int visibleLEDs[MAX_LANES_SUPPORTED];     // Total number of actual LEDs (accoun
 std::vector<int> gapLEDs[MAX_LANES_SUPPORTED];         // positions where there are no LEDs due to gaps
 float ledSpacingCM;               // Spacing between LEDs in cm
 int pulseWidthLEDs;               // Width of pulse in LEDs
+int underwatersWidthLEDs;         // Width of underwaters pulse in LEDs
 int delayMS;                      // Delay between LED updates
 float poolToStripRatio;           // Ratio of pool to strip length
+CRGB underwaterColor;            // Color for underwater indicators
+CRGB underwaterSurfaceColor;     // Color for underwater surface indicators
 
 // ========== GLOBAL VARIABLES ==========
 CRGB* renderedLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
@@ -485,6 +494,7 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
     if (qidx >= 0 && qidx < swimSetQueueCount[lane]) {
       int actualIdx = (swimSetQueueHead[lane] + qidx) % SWIMSET_QUEUE_MAX;
       swimSetQueue[lane][actualIdx].status |= SWIMSET_STATUS_ACTIVE;
+      swimSetQueue[lane][actualIdx].status &= ~SWIMSET_STATUS_STOPPED;
     }
   }
 
@@ -731,8 +741,10 @@ void handleGetSettings() {
   json += "\"delayIndicatorsEnabled\":" + String(globalConfigSettings.delayIndicatorsEnabled ? "true" : "false") + ",";
 
   // Include underwater colors stored in Preferences as hex strings (fallbacks match drawUnderwaterZone())
-  String underwaterHex = preferences.getString("underwaterColor", "#0066CC");
-  String surfaceHex = preferences.getString("surfaceColor", "#66CCFF");
+  String underwaterHex;
+  RGBtoHex(globalConfigSettings.underwaterColorRed, globalConfigSettings.underwaterColorGreen, globalConfigSettings.underwaterColorBlue, underwaterHex);
+  String surfaceHex;
+  RGBtoHex(globalConfigSettings.underwaterSurfaceColorRed, globalConfigSettings.underwaterSurfaceColorGreen, globalConfigSettings.underwaterSurfaceColorBlue, surfaceHex);
   json += "\"underwaterColor\":\"" + underwaterHex + "\",";
   json += "\"surfaceColor\":\"" + surfaceHex + "\"}";
 
@@ -995,6 +1007,12 @@ void hexToRGB(String hexColor, uint8_t &r, uint8_t &g, uint8_t &b) {
   CRGB testColor = CRGB(r, g, b);
 }
 
+void RGBtoHex(uint8_t r, uint8_t g, uint8_t b, String& hexColor) {
+  char buf[8];
+  snprintf(buf, sizeof(buf), "#%02X%02X%02X", r, g, b);
+  hexColor = String(buf);
+}
+
 // Alternative color creation for GRB strips if FastLED auto-conversion fails
 CRGB createGRBColor(uint8_t r, uint8_t g, uint8_t b) {
   // For GRB strips, we may need to manually swap R and G
@@ -1125,7 +1143,8 @@ void handleSetUnderwaterSettings() {
         globalConfigSettings.hideAfterSeconds = server.arg("hideAfter").toFloat();
       }
       if (server.hasArg("lightSize")) {
-        globalConfigSettings.lightPulseSizeFeet = server.arg("lightSize").toFloat();
+        globalConfigSettings.underwatersSizeFeet = server.arg("lightSize").toFloat();
+        calculateUnderwatersSize();
       }
 
       // Update colors
@@ -1133,9 +1152,19 @@ void handleSetUnderwaterSettings() {
         String underwaterHex = server.arg("underwaterColor");
         String surfaceHex = server.arg("surfaceColor");
 
-        // Store underwater colors
-        preferences.putString("underwaterColor", underwaterHex);
-        preferences.putString("surfaceColor", surfaceHex);
+        // store global RGB values
+        uint8_t r, g, b;
+        hexToRGB(underwaterHex, r, g, b);
+        globalConfigSettings.underwaterColorRed = r;
+        globalConfigSettings.underwaterColorGreen = g;
+        globalConfigSettings.underwaterColorBlue = b;
+
+        hexToRGB(surfaceHex, r, g, b);
+        globalConfigSettings.underwaterSurfaceColorRed = r;
+        globalConfigSettings.underwaterSurfaceColorGreen = g;
+        globalConfigSettings.underwaterSurfaceColorBlue = b;
+
+        calculateUnderwatersColors();
       }
     }
 
@@ -1479,6 +1508,14 @@ void handleStopSwimSet() {// determine lane from query/form or JSON body
   // Toggle the specified lane's running state
   globalConfigSettings.laneRunning[lane] = false;
 
+  // Set any active swim sets to stopped
+  int qidx = laneActiveQueueIndex[lane];
+  if (qidx >= 0 && qidx < swimSetQueueCount[lane]) {
+    int actualIdx = (swimSetQueueHead[lane] + qidx) % SWIMSET_QUEUE_MAX;
+    swimSetQueue[lane][actualIdx].status &= ~SWIMSET_STATUS_ACTIVE;
+    swimSetQueue[lane][actualIdx].status |= SWIMSET_STATUS_STOPPED;
+  }
+
   // Clear lights on this lane to black
   Serial.println("filling lane with all black LEDs");
   if (scanoutLEDs[lane] != nullptr && visibleLEDs[lane] > 0) {
@@ -1748,7 +1785,18 @@ void saveGlobalConfigSettings() {
   preferences.putUChar("brightness", globalConfigSettings.brightness);
   preferences.putBool("isRunning", globalConfigSettings.isRunning);
   preferences.putBool("sameColorMode", globalConfigSettings.sameColorMode);
-  preferences.putBool("underwaterEn", globalConfigSettings.underwatersEnabled);
+
+  preferences.putBool("uwEn", globalConfigSettings.underwatersEnabled);
+  preferences.putFloat("uwSizeFeet", globalConfigSettings.underwatersSizeFeet);
+  preferences.putFloat("uwFirDistFeet", globalConfigSettings.firstUnderwaterDistanceFeet);
+  preferences.putFloat("uwDistFeet", globalConfigSettings.underwaterDistanceFeet);
+  preferences.putFloat("uwHideSecs", globalConfigSettings.hideAfterSeconds);
+  preferences.putUChar("uwColorR", globalConfigSettings.underwaterColorRed);
+  preferences.putUChar("uwColorG", globalConfigSettings.underwaterColorGreen);
+  preferences.putUChar("uwColorB", globalConfigSettings.underwaterColorBlue);
+  preferences.putUChar("uwSurfColR", globalConfigSettings.underwaterSurfaceColorRed);
+  preferences.putUChar("uwSurfColG", globalConfigSettings.underwaterSurfaceColorGreen);
+  preferences.putUChar("uwSurfColB", globalConfigSettings.underwaterSurfaceColorBlue);
 }
 
 void saveSwimSetSettings() {
@@ -1798,10 +1846,23 @@ void loadGlobalConfigSettings() {
   globalConfigSettings.colorBlue = preferences.getUChar("colorBlue", 255);
   globalConfigSettings.brightness = preferences.getUChar("brightness", 196);
   globalConfigSettings.isRunning = preferences.getBool("isRunning", false);  // Default: stopped
-  globalConfigSettings.sameColorMode = preferences.getBool("sameColorMode", false); // Default: individual colors
+  globalConfigSettings.sameColorMode = preferences.getBool("sameColorMode", false); // Default: individual colors feet
 
   // Load underwatersEnabled (key changed to "underwaterEn" to fit 15-char NVS limit)
-  globalConfigSettings.underwatersEnabled = preferences.getBool("underwaterEn", false);
+  globalConfigSettings.underwatersEnabled = preferences.getBool("uwEn", false);
+  globalConfigSettings.underwatersSizeFeet = preferences.getFloat("uwSizeFeet", 1.0);  // Default size in feet
+  globalConfigSettings.firstUnderwaterDistanceFeet = preferences.getFloat("uwFirDistFeet", 5.0);
+  globalConfigSettings.underwaterDistanceFeet = preferences.getFloat("uwDistFeet", 3.0);
+  globalConfigSettings.hideAfterSeconds = preferences.getFloat("uwHideSecs", 1.0);
+  globalConfigSettings.underwaterColorRed = preferences.getUChar("uwColorR", 0);
+  globalConfigSettings.underwaterColorGreen = preferences.getUChar("uwColorG", 0);
+  globalConfigSettings.underwaterColorBlue = preferences.getUChar("uwColorB", 255);
+  globalConfigSettings.underwaterSurfaceColorRed = preferences.getUChar("uwSurfColR", 0);
+  globalConfigSettings.underwaterSurfaceColorGreen = preferences.getUChar("uwSurfColG", 0);
+  globalConfigSettings.underwaterSurfaceColorBlue = preferences.getUChar("uwSurfColB", 255);
+
+  calculateUnderwatersSize();
+  calculateUnderwatersColors();
 }
 
 void loadSwimSetSettings() {
@@ -1817,6 +1878,17 @@ void loadSwimSetSettings() {
 void loadSettings() {
   loadGlobalConfigSettings();
   loadSwimSetSettings();
+}
+
+void calculateUnderwatersSize() {
+  // Calculate underwater light size in LEDs
+  underwatersWidthLEDs = (int)(globalConfigSettings.underwatersSizeFeet * 30.48 * globalConfigSettings.ledsPerMeter / 100.0);
+}
+
+void calculateUnderwatersColors() {
+  // Update CRGB color objects for underwater indicators
+  underwaterColor = CRGB(globalConfigSettings.underwaterColorRed, globalConfigSettings.underwaterColorGreen, globalConfigSettings.underwaterColorBlue);
+  underwaterSurfaceColor = CRGB(globalConfigSettings.underwaterSurfaceColorRed, globalConfigSettings.underwaterSurfaceColorGreen, globalConfigSettings.underwaterSurfaceColorBlue);
 }
 
 void recalculateValues(int lane) {
@@ -1865,6 +1937,8 @@ void recalculateValues(int lane) {
   // Calculate pulse width in LEDs
   float pulseWidthCM = globalConfigSettings.pulseWidthFeet * 30.48;
   pulseWidthLEDs = (int)(pulseWidthCM / ledSpacingCM);
+
+
 
   // Calculate pool to strip ratio for timing adjustments
   float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
@@ -2449,6 +2523,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               swimSetQueue[laneIndex][actualIdx].status |= SWIMSET_STATUS_COMPLETED;
               // turn off active flag
               swimSetQueue[laneIndex][actualIdx].status &= ~SWIMSET_STATUS_ACTIVE;
+              swimSetQueue[laneIndex][actualIdx].status &= ~SWIMSET_STATUS_STOPPED;
 
               // Because other swimmers may have been turned off before finishing
               // by lowering the per lane swimmer count, we should force set
@@ -2457,6 +2532,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
                 int aIdx = (swimSetQueueHead[laneIndex] + qi) % SWIMSET_QUEUE_MAX;
                 swimSetQueue[laneIndex][aIdx].status |= SWIMSET_STATUS_COMPLETED;
                 swimSetQueue[laneIndex][aIdx].status &= ~SWIMSET_STATUS_ACTIVE;
+                swimSetQueue[laneIndex][aIdx].status &= ~SWIMSET_STATUS_STOPPED;
               }
             }
             // Move all the remaining non-active swimmers to the same position
@@ -2516,6 +2592,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             if (qidx >= 0 && qidx < swimSetQueueCount[laneIndex]) {
               int actualIdx = (swimSetQueueHead[laneIndex] + qidx) % SWIMSET_QUEUE_MAX;
               swimSetQueue[laneIndex][actualIdx].status |= SWIMSET_STATUS_ACTIVE;
+              swimSetQueue[laneIndex][actualIdx].status &= ~SWIMSET_STATUS_STOPPED;
             }
 
             // Reset swimmer state for new set
@@ -2810,12 +2887,14 @@ void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
     return; // Swimmer hasn't started yet
   }
 
-  int centerPos = swimmer->position;
-  int halfWidth = pulseWidthLEDs / 2;
+  //int centerPos = swimmer->position;
+  //int halfWidth = pulseWidthLEDs / 2;
   CRGB pulseColor = swimmer->color;
 
   for (int i = 0; i < pulseWidthLEDs; i++) {
-    int ledIndex = centerPos - halfWidth + i;
+    //int ledIndex = centerPos - halfWidth + i;
+    int ledIndex = swimmer->position + i;
+
 
     if (ledIndex >= 0 && ledIndex < fullLengthLEDs[laneIndex]) {
       CRGB color = pulseColor;
@@ -2855,44 +2934,15 @@ void drawUnderwaterZone(int laneIndex, int swimmerIndex) {
     }
   }
 
-  // Get underwater globalConfigSettings from preferences
-  String underwaterHex = preferences.getString("underwaterColor", "#0066CC"); // Default blue
-  String surfaceHex = preferences.getString("surfaceColor", "#66CCFF");       // Default light blue
-
-  // Convert hex colors to RGB
-  uint8_t underwaterR, underwaterG, underwaterB;
-  uint8_t surfaceR, surfaceG, surfaceB;
-  hexToRGB(underwaterHex, underwaterR, underwaterG, underwaterB);
-  hexToRGB(surfaceHex, surfaceR, surfaceG, surfaceB);
-
-  CRGB underwaterColor = CRGB(underwaterR, underwaterG, underwaterB);
-  CRGB surfaceColor = CRGB(surfaceR, surfaceG, surfaceB);
-
   // Determine color based on phase
   CRGB currentUnderwaterColor = swimmer->inSurfacePhase ?
-    surfaceColor : underwaterColor;
-
-  // Calculate underwater light size
-  float lightPulseSizeFeet = globalConfigSettings.lightPulseSizeFeet;
-
-  // Convert feet to pool's native units
-  float lightSizeInPoolUnits;
-  if (globalConfigSettings.poolUnitsYards) {
-    lightSizeInPoolUnits = lightPulseSizeFeet / 3.0; // feet to yards
-  } else {
-    lightSizeInPoolUnits = lightPulseSizeFeet * 0.3048; // feet to meters
-  }
-
-  // Convert to strip units and then to LEDs
-  float lightSizeInMeters = convertPoolToMeters(lightSizeInPoolUnits);
-  int lightSizeLEDs = (int)(lightSizeInMeters * globalConfigSettings.ledsPerMeter);
-  if (lightSizeLEDs < 1) lightSizeLEDs = 1; // Minimum 1 LED
+    underwaterSurfaceColor : underwaterColor;
 
   // Position underwater light exactly at the swimmer's position (moves with swimmer)
-  int swimmerPos = swimmer->position;
+  int swimmerPos = swimmer->position + pulseWidthLEDs;
 
   // Draw the underwater light pulse centered on swimmer
-  for (int i = swimmerPos; i < swimmerPos + lightSizeLEDs; i++) {
+  for (int i = swimmerPos; i < swimmerPos + underwatersWidthLEDs; i++) {
     if (i >= 0 && i < fullLengthLEDs[laneIndex]) {
       // Only set color if LED is currently black (first wins priority)
       if (renderedLEDs[laneIndex][i] == CRGB::Black) {

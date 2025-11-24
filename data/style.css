@@ -527,6 +527,12 @@ button[disabled], .small-button[disabled] {
     border-left: 4px solid #007bff;
 }
 
+/* Running row: visually prominent */
+.queue-item.stoped {
+    background: #f0f8ff;
+    border-left: 4px solid #721c24;
+}
+
 /* Completed row: de-emphasized */
 .queue-item.completed {
     background: #fbfbfb;
