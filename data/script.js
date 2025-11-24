@@ -2528,6 +2528,10 @@ async function fetchDeviceSettingsAndApply() {
         if (dev.underwatersEnabled !== undefined) currentSettings.underwatersEnabled = dev.underwatersEnabled;
         if (dev.underwaterColor !== undefined) currentSettings.underwaterColor = dev.underwaterColor;
         if (dev.surfaceColor !== undefined) currentSettings.surfaceColor = dev.surfaceColor;
+        if (dev.firstUnderwaterDistanceFeet !== undefined) currentSettings.firstUnderwaterDistance = parseFloat(dev.firstUnderwaterDistanceFeet);
+        if (dev.underwaterDistanceFeet !== undefined) currentSettings.underwaterDistance = parseFloat(dev.underwaterDistanceFeet);
+        if (dev.underwatersSizeFeet !== undefined) currentSettings.lightSize = parseFloat(dev.underwatersSizeFeet);
+        if (dev.hideAfterSeconds !== undefined) currentSettings.hideAfterSeconds = parseFloat(dev.hideAfterSeconds);
 
         // Ensure device colors appear in the shared palette
         try {

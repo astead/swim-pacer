@@ -219,7 +219,6 @@ CRGB underwaterSurfaceColor;     // Color for underwater surface indicators
 // ========== GLOBAL VARIABLES ==========
 CRGB* renderedLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
 CRGB* scanoutLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
-int direction = 1;
 unsigned long lastUpdate = 0;
 bool needsRecalculation = true;
 
@@ -325,7 +324,6 @@ String extractJsonString(const String &json, const char *key, const char *fallba
 // ========== MULTI-SWIMMER VARIABLES ==========
 struct Swimmer {
   int position;
-  int direction;
   unsigned long lastUpdate;
   CRGB color;
   bool hasStarted;  // Track if this swimmer has had their first start
@@ -422,7 +420,6 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
   // Initialize swimmers for the current lane to start fresh
   for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
     //swimmers[lane][i].position = 0; This should continue from previous position
-    //swimmers[lane][i].direction = 1; This should continue from previous direction
     swimmers[lane][i].hasStarted = false;  // Initialize as not started
     swimmers[lane][i].lastUpdate = currentMillis;
 
@@ -436,7 +433,7 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
     swimmers[lane][i].restStartTime = currentMillis;
     // Total distance should start at 0 for the new set
     swimmers[lane][i].totalDistance = 0.0;
-    //swimmers[lane][i].lapDirection = 1;  This should continue from previous direction
+    //swimmers[lane][i].lapDirection = 1;  This should continue from previous lapDirection
     // Compute the target rest duration and absolute start time so it's easy to verify stagger
     unsigned long initilRestDuration = (i + 1) * swimSetSettings.swimmerIntervalSeconds * 1000UL;
     swimmers[lane][i].expectedStartTime = currentMillis + initilRestDuration;
@@ -473,7 +470,6 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
       Swimmer &sw = swimmers[lane][i];
       Serial.print("  swimmer="); Serial.print(i);
       Serial.print(" pos="); Serial.print(sw.position);
-      Serial.print(" dir="); Serial.print(sw.direction);
       Serial.print(" hasStarted="); Serial.print(sw.hasStarted ? 1 : 0);
       Serial.print(" currentRound="); Serial.print(sw.currentRound);
       Serial.print(" currentLap="); Serial.print(sw.currentLap);
@@ -746,7 +742,12 @@ void handleGetSettings() {
   String surfaceHex;
   RGBtoHex(globalConfigSettings.underwaterSurfaceColorRed, globalConfigSettings.underwaterSurfaceColorGreen, globalConfigSettings.underwaterSurfaceColorBlue, surfaceHex);
   json += "\"underwaterColor\":\"" + underwaterHex + "\",";
-  json += "\"surfaceColor\":\"" + surfaceHex + "\"}";
+  json += "\"surfaceColor\":\"" + surfaceHex + "\",";
+  json += "\"firstUnderwaterDistanceFeet\":" + String(globalConfigSettings.firstUnderwaterDistanceFeet, 2) + ",";
+  json += "\"underwaterDistanceFeet\":" + String(globalConfigSettings.underwaterDistanceFeet, 2) + ",";
+  json += "\"underwatersSizeFeet\":" + String(globalConfigSettings.underwatersSizeFeet, 2) + ",";
+  json += "\"hideAfterSeconds\":" + String(globalConfigSettings.hideAfterSeconds, 2);
+  json += "}";
 
   server.send(200, "application/json", json);
 }
@@ -1730,7 +1731,7 @@ void handleReorderSwimQueue() {
   server.send(200, "application/json", json);
 }
 
-// Reset swimmers for a given lane to starting wall (position=0, direction=1)
+// Reset swimmers for a given lane to starting wall (position=0, lapDirection=1)
 void handleResetLane() {
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
@@ -1742,7 +1743,7 @@ void handleResetLane() {
   // Reset swimmers for this lane
   for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
     swimmers[lane][i].position = 0;
-    swimmers[lane][i].direction = 1; // point towards far wall
+    swimmers[lane][i].lapDirection = 1;
     swimmers[lane][i].hasStarted = false;
     swimmers[lane][i].currentRound = 1;
     swimmers[lane][i].currentLap = 1;
@@ -2151,7 +2152,7 @@ bool drawDelayIndicators(int laneIndex, int swimmerIndex) {
     int remainingDelayLEDs = (int)(remainingDelayDistanceMeters * globalConfigSettings.ledsPerMeter);
 
     // Which side of the pool are we on?
-    if (swimmer->direction > 0) {
+    if (swimmer->lapDirection > 0) {
       // Going away from start wall
       // Draw delay indicator at the start of the strip
       for (int ledIndex = 0; ledIndex < remainingDelayLEDs && ledIndex < fullLengthLEDs[laneIndex]; ledIndex++) {
@@ -2192,7 +2193,6 @@ void initializeSwimmers() {
   for (int lane = 0; lane < MAX_LANES_SUPPORTED; lane++) {
   for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
       swimmers[lane][i].position = 0;
-      swimmers[lane][i].direction = 1;
       swimmers[lane][i].hasStarted = false;  // Initialize as not started
       swimmers[lane][i].lastUpdate = 0;
 
@@ -2429,7 +2429,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         Serial.println(overshootInMilliseconds);
       }
 
-      // Change direction
+      // Change lapDirection
       swimmer->lapDirection *= -1;
 
       // Increment length counter
@@ -2698,7 +2698,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         }
 
         // We finished a round, so we need to position the swimmer at the wall
-        // Place LED at the wall based on direction
+        // Place LED at the wall based on lapDirection
         if (swimmer->lapDirection == 1) {
           swimmer->position = 0;
         } else {
@@ -2746,7 +2746,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       float distanceInMeters = convertPoolToMeters(distanceForCurrentLength);
       float poolLengthInMeters = convertPoolToMeters(globalConfigSettings.poolLength);
 
-      // Calculate LED position based on direction
+      // Calculate LED position based on lapDirection
       if (swimmer->lapDirection == 1) {
         // Swimming away from start: position = 0 + distance
         swimmer->position = (int)(distanceInMeters * globalConfigSettings.ledsPerMeter);
