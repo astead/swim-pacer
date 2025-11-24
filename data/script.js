@@ -1995,6 +1995,11 @@ function updateSwimmerSwimTime(swimmerIndex, newSwimTime) {
 
 // Build the minimal swim set payload expected by the device
 function buildMinimalSwimSetPayload(createdSet) {
+
+    // TODO: we hit an error if there is no createdSet.
+    //       We could just always have a createdSet, or
+    //       We create one here.
+
     // createdSet: { id, lane, swimmers, settings, summary }
     const newSet = {
         numRounds: Number(createdSet.numRounds),
