@@ -1443,6 +1443,10 @@ function updatePacerButtons() {
     const pacerButtons = document.getElementById('pacerButtons');
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
+    const copyLeftBtn = document.getElementById('copyLeftBtn');
+    const copyRightBtn = document.getElementById('copyRightBtn');
+    const repeatBtn = document.getElementById('repeatBtn');
+
 
     if (!pacerButtons || !startBtn || !stopBtn) {
         console.error('Pacer button elements not found');
@@ -1458,8 +1462,16 @@ function updatePacerButtons() {
             startBtn.style.display = 'block';
             stopBtn.style.display = 'none';
         }
+
+        // show/hide copy buttons but preserve layout by toggling visibility
+        if (copyLeftBtn) copyLeftBtn.style.visibility = (currentLane > 0 ? 'visible' : 'hidden');
+        if (copyRightBtn) copyRightBtn.style.visibility = (currentSettings.numLanes && currentLane < (currentSettings.numLanes - 1) ? 'visible' : 'hidden');
+        if (repeatBtn) repeatBtn.style.visibility = 'visible';
     } else {
         pacerButtons.style.display = 'none';
+        copyLeftBtn.style.display = 'none';
+        copyRightBtn.style.display = 'none';
+        repeatBtn.style.display = 'none';
     }
 }
 
@@ -2596,6 +2608,96 @@ async function fetchDeviceSettingsAndApply() {
         // Ensure we don't leave suppression enabled on error
         suppressSettingsWrites = false;
     }
+}
+
+// Helper: clone queue entries and enqueue to target lane
+async function copyLaneQueueTo(fromLane, toLane) {
+    if (fromLane === toLane) return;
+    // source queue (support both per-lane and global queue setups)
+    let source = (swimSetQueues && Array.isArray(swimSetQueues) && Array.isArray(swimSetQueues[fromLane])) ? swimSetQueues[fromLane] :
+                 (typeof getLaneQueue === 'function' ? getLaneQueue(fromLane) : []);
+    if (!source || source.length === 0) return;
+
+    // ensure destination exists for per-lane shape
+    if (swimSetQueues && Array.isArray(swimSetQueues) && Array.isArray(swimSetQueues[toLane])) {
+        // nothing
+    } else if (typeof swimSetQueue !== 'undefined' && Array.isArray(swimSetQueue)) {
+        // fine
+    } else {
+        console.warn('No recognized queue structure to copy into');
+        return;
+    }
+
+    for (const item of source) {
+        // shallow clone then normalize fields
+        const clone = JSON.parse(JSON.stringify(item));
+        clone.lane = toLane;
+        // remove server-side identity so server treats this as a new enqueue
+        delete clone.uniqueId;
+        clone.synced = false;
+        clone.enqueuePending = true;
+        clone.enqueueRequestedAt = Date.now();
+
+        // push locally
+        if (swimSetQueues && Array.isArray(swimSetQueues) && Array.isArray(swimSetQueues[toLane])) {
+            swimSetQueues[toLane].push(clone);
+        } else if (typeof swimSetQueue !== 'undefined' && Array.isArray(swimSetQueue)) {
+            swimSetQueue.push(clone);
+        }
+
+        updateQueueDisplay();
+
+        // attempt to enqueue on server (sequential, best-effort). If standalone, skip.
+        if (!isStandaloneMode) {
+            try {
+                const payload = (typeof buildMinimalSwimSetPayload === 'function') ? buildMinimalSwimSetPayload(clone) : {
+                    numRounds: clone.numRounds,
+                    swimDistance: clone.swimDistance,
+                    swimTime: clone.swimTime,
+                    restTime: clone.restTime,
+                    swimmerInterval: clone.swimmerInterval,
+                    type: clone.type || 0,
+                    repeat: clone.repeat || 0
+                };
+                payload.lane = toLane;
+                const ctrl = new AbortController();
+                const to = setTimeout(()=>ctrl.abort(), 10000);
+                const resp = await fetch('/enqueueSwimSet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    signal: ctrl.signal
+                });
+                clearTimeout(to);
+                if (resp.ok) {
+                    const j = await resp.json().catch(()=>null);
+                    if (j && j.uniqueId) clone.uniqueId = String(j.uniqueId).toLowerCase();
+                    clone.synced = true;
+                    clone.enqueuePending = false;
+                    updateQueueDisplay();
+                } else {
+                    console.warn('enqueue failed for copied set to lane', toLane, resp.status);
+                }
+            } catch (e) {
+                console.warn('network enqueue error for copied set', e && e.message ? e.message : e);
+                // leave enqueuePending true so retry logic can pick it up
+            }
+        }
+    }
+}
+
+// UI handlers
+function copyLeft() {
+    const lane = currentSettings.currentLane;
+    if (lane > 0) copyLaneQueueTo(lane, lane - 1);
+}
+function copyRight() {
+    const lane = currentSettings.currentLane;
+    if (currentSettings.numLanes && lane < (currentSettings.numLanes - 1)) copyLaneQueueTo(lane, lane + 1);
+}
+function repeatQueue() {
+    // not implemented yet (placeholder)
+    console.log('repeatQueue: not implemented');
 }
 
 // -----------------------------
