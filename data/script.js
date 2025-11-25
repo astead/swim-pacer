@@ -1200,6 +1200,7 @@ function queueSwimSet() {
     swimSetQueues[lane] = swimSetQueues[lane] || [];
     swimSetQueues[lane].push(local);
     updateQueueDisplay();
+    updatePacerButtons();
 
     console.log('queueSwimSet calling /enqueueSwimSet');
     fetch('/enqueueSwimSet', {
@@ -1231,15 +1232,11 @@ function queueSwimSet() {
         if (j && j.uniqueId) local.uniqueId = String(j.uniqueId).toLowerCase();
         local.enqueuePending = false;
         local.synced = true;
-        updateQueueDisplay();
-        updatePacerButtons(); // TODO: is this needed?
     }).catch(err => {
         console.warn('Initial enqueue network error for', payload.uniqueId, err);
         local.enqueuePending = true;
         local.enqueueRequestedAt = Date.now();
         local.synced = false;
-        updateQueueDisplay();
-        updatePacerButtons(); // TODO: is this needed?
     });
 }
 
