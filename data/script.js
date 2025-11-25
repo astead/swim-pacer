@@ -68,7 +68,10 @@ const ENQUEUE_RETRY_MS = 15000; // wait 15s before retrying a pending enqueue
 // Swim Set Queue Management - now lane-specific
 let swimSetQueues = [[], [], [], []]; // Array of queued swim sets for each lane
 let editingSwimSetIndexes = [-1, -1, -1, -1]; // Index of swim set being edited for each lane (-1 if creating new)
-let createdSwimSets = [null, null, null, null]; // Temporarily holds created set before queuing for each lane
+
+// single persistent working swim set info (keeps current UI values / edits)
+let workingSwimSetInfo = null; // never cleared; updated from UI, edits, or device values
+
 const swimmerColors = ['red', 'green', 'blue', 'yellow', 'purple', 'cyan', 'red', 'green', 'blue', 'yellow'];
 const colorHex = {
     'red': '#ff0000',
@@ -526,41 +529,32 @@ function updateIndividualSwimmerColorDueToNumSwimmers() {
 
 function setIndividualSwimmerTime(swimmerIndex, swimTime) {
     const lane = currentSettings.currentLane;
-    if (createdSwimSets[lane]) {
-        // if swimmerIndex is -1, then set all swimmers in createdSwimSets[currentLane]
-        if (swimmerIndex === -1) {
-            // reset createdSwimSets.swimmers swimTime for all swimmers in current lane
-            const swimmers = [];
-            for (let i = 0; i < currentSettings.numSwimmersPerLane[lane]; i++) {
-                swimmers.push({
-                    swimTime: swimTime,
-                });
-            }
-            createdSwimSets[lane].swimmers = swimmers;
-        } else {
-            // Set swimTime for individual swimmer
-            if (createdSwimSets[lane] && createdSwimSets[lane].swimmers && createdSwimSets[lane].swimmers[swimmerIndex]) {
-                createdSwimSets[lane].swimmers[swimmerIndex].swimTime = swimTime;
-            }
-        }
+    if (!workingSwimSetInfo) createOrUpdateFromConfig();
+    // if swimmerIndex is -1, set all swimmers; otherwise set specific swimmer
+    if (swimmerIndex === -1) {
+        const swimmers = [];
+        for (let i = 0; i < currentSettings.numSwimmersPerLane[lane]; i++) swimmers.push({ swimTime: swimTime });
+        workingSwimSetInfo.swimmers = swimmers;
+    } else if (workingSwimSetInfo && workingSwimSetInfo.swimmers && workingSwimSetInfo.swimmers[swimmerIndex]) {
+        workingSwimSetInfo.swimmers[swimmerIndex].swimTime = swimTime;
     }
 }
 
 function updateIndividualSwimmerTimeDueToNumSwimmers() {
     // number of swimmers for this lane may have changed; reset individual swimmer swim times
     const lane = currentSettings.currentLane;
-    if (!createdSwimSets[lane]) return;
-    if (!createdSwimSets[lane].swimmers) return;
+    if (!workingSwimSetInfo) createOrUpdateFromConfig();
+    if (!workingSwimSetInfo || !workingSwimSetInfo.swimmers) return;
     // Do we have more or less swimmers now?
-    const currentNumSwimmers = createdSwimSets[lane].swimmers.length;
+    const currentNumSwimmers = workingSwimSetInfo.swimmers.length;
     const desiredNumSwimmers = currentSettings.numSwimmersPerLane[lane];
     if (desiredNumSwimmers < currentNumSwimmers) {
         // Truncate the array
-        createdSwimSets[lane].swimmers = createdSwimSets[lane].swimmers.slice(0, desiredNumSwimmers);
+        workingSwimSetInfo.swimmers = workingSwimSetInfo.swimmers.slice(0, desiredNumSwimmers);
     } else if (desiredNumSwimmers > currentNumSwimmers) {
         // Add new swimmers with default swimTime
         for (let i = currentNumSwimmers; i < desiredNumSwimmers; i++) {
-            createdSwimSets[lane].swimmers.push({ swimTime: createdSwimSets[lane].swimTime });
+            workingSwimSetInfo.swimmers.push({ swimTime: workingSwimSetInfo.swimTime });
         }
     }
 }
@@ -568,17 +562,14 @@ function updateIndividualSwimmerTimeDueToNumSwimmers() {
 
 // TODO: I think there may be a race condition when clicking from this texbox
 //       directly to the Queue button, maybe this update doesn't make it into
-//       createdSwimSets before queuing? Need to check that.
+//       workingSwimSetInfo before queuing? Need to check that.
 //       Could be the same for all items below.
 function updateNumRounds() {
     const numRounds = document.getElementById('numRounds').value;
     currentSettings.numRounds = parseInt(numRounds);
-    if (createdSwimSets[currentSettings.currentLane]) {
-        createdSwimSets[currentSettings.currentLane].numRounds = numRounds;
-        createdSwimSets[currentSettings.currentLane].summary = generateSetSummary(currentSettings);
-    } else {
-        createOrUpdateFromConfig();
-    }
+    if (!workingSwimSetInfo) createOrUpdateFromConfig();
+    workingSwimSetInfo.numRounds = Number(numRounds);
+    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
     // Also send num rounds to device so it can be used as a default for swim-sets
     sendNumRounds(currentSettings.numRounds).catch(err => {
         console.debug('sendNumRounds failed (ignored):', err && err.message ? err.message : err);
@@ -588,12 +579,9 @@ function updateNumRounds() {
 function updateSwimDistance(triggerSave = true) {
     const swimDistance = parseInt(document.getElementById('swimDistance').value);
     currentSettings.swimDistance = swimDistance;
-    if (createdSwimSets[currentSettings.currentLane]) {
-        createdSwimSets[currentSettings.currentLane].swimDistance = swimDistance;
-        createdSwimSets[currentSettings.currentLane].summary = generateSetSummary(currentSettings);
-    } else {
-        createOrUpdateFromConfig();
-    }
+    if (!workingSwimSetInfo) createOrUpdateFromConfig();
+    workingSwimSetInfo.swimDistance = Number(swimDistance);
+    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
     // Updating swim distance is special because we might also be changing this
     // due to changing the pool dimensions. So we allow caller to specify whether to trigger a save.
     // TODO: Not sure if this is needed or not. Wouldn't we want to always save swim distance changes?
@@ -608,12 +596,9 @@ function updateSwimTime() {
     const swimTime = document.getElementById('swimTime').value;
     currentSettings.swimTime = parseTimeInput(swimTime);
     document.getElementById('swimTimeLabel').textContent = timeLabelFromString(swimTime);
-    if (createdSwimSets[currentSettings.currentLane]) {
-        createdSwimSets[currentSettings.currentLane].swimTime = currentSettings.swimTime;
-        createdSwimSets[currentSettings.currentLane].summary = generateSetSummary(currentSettings);
-    } else {
-        createOrUpdateFromConfig();
-    }
+    if (!workingSwimSetInfo) createOrUpdateFromConfig();
+    workingSwimSetInfo.swimTime = Number(currentSettings.swimTime);
+    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
     // Also send swim time to device so it can be used as a default for swim-sets
     sendSwimTime(currentSettings.swimTime).catch(err => {
         console.debug('sendSwimTime failed (ignored):', err && err.message ? err.message : err);
@@ -626,12 +611,9 @@ function updateRestTime() {
     const restTime = document.getElementById('restTime').value;
     currentSettings.restTime = parseTimeInput(restTime);
     document.getElementById('restTimeLabel').textContent = timeLabelFromString(restTime);
-    if (createdSwimSets[currentSettings.currentLane]) {
-        createdSwimSets[currentSettings.currentLane].restTime = currentSettings.restTime;
-        createdSwimSets[currentSettings.currentLane].summary = generateSetSummary(currentSettings);
-    } else {
-        createOrUpdateFromConfig();
-    }
+    if (!workingSwimSetInfo) createOrUpdateFromConfig();
+    workingSwimSetInfo.restTime = Number(currentSettings.restTime);
+    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
     // Also send rest time to device so it can be used as a default for swim-sets
     sendRestTime(currentSettings.restTime).catch(err => {
         console.debug('sendRestTime failed (ignored):', err && err.message ? err.message : err);
@@ -642,12 +624,9 @@ function updateSwimmerInterval() {
     const swimmerInterval = document.getElementById('swimmerInterval').value;
     currentSettings.swimmerInterval = parseTimeInput(swimmerInterval);
     document.getElementById('swimmerIntervalLabel').textContent = timeLabelFromString(swimmerInterval);
-    if (createdSwimSets[currentSettings.currentLane]) {
-        createdSwimSets[currentSettings.currentLane].swimmerInterval = currentSettings.swimmerInterval;
-        createdSwimSets[currentSettings.currentLane].summary = generateSetSummary(currentSettings);
-    } else {
-        createOrUpdateFromConfig();
-    }
+    if (!workingSwimSetInfo) createOrUpdateFromConfig();
+    workingSwimSetInfo.swimmerInterval = Number(currentSettings.swimmerInterval);
+    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
     // Also send swimmer interval to device so it can be used as a default for swim-sets
     sendSwimmerInterval(currentSettings.swimmerInterval).catch(err => {
         console.debug('sendSwimmerInterval failed (ignored):', err && err.message ? err.message : err);
@@ -739,8 +718,6 @@ function updateHideAfter() {
     } catch (e) {}
     sendUnderwaterSettings();
 }
-
-// -------------------
 
 function openColorPickerForUnderwater() {
     currentColorContext = 'underwater';
@@ -1082,35 +1059,27 @@ function updateStatus() {
     }
 }
 
-// TODO: Why do we ever clear this? Why not always have it, OR
-//       Why don't we just always build from currentSettings?
-//       It is nice to have a smaller structure to send to device though,
-//       so its nice to have this.
 function createOrUpdateFromConfig() {
-    console.log('createOrUpdateFromConfig ENTER');
+    // Build a working swim set object from currentSettings and keep it persistent
     const lane = currentSettings.currentLane;
-
-    // Build current set of swimmers for the current lane
     const individualSwimTimes = [];
     for (let i = 0; i < currentSettings.numSwimmersPerLane[lane]; i++) {
-        individualSwimTimes.push({
-            swimTime: currentSettings.swimTime,
-        });
+        individualSwimTimes.push({ swimTime: currentSettings.swimTime });
     }
 
-    // Keep createdSwimSets in sync so queuing/start paths can use it
-    createdSwimSets[currentSettings.currentLane] = {
-        lane: currentSettings.currentLane,
+    workingSwimSetInfo = {
+        lane: lane,
         swimmers: JSON.parse(JSON.stringify(individualSwimTimes)),
-        numRounds: currentSettings.numRounds,
-        swimDistance: currentSettings.swimDistance,
-        swimTime: currentSettings.swimTime,
-        restTime: currentSettings.restTime,
-        swimmerInterval: currentSettings.swimmerInterval,
+        numRounds: Number(currentSettings.numRounds),
+        swimDistance: Number(currentSettings.swimDistance),
+        swimTime: Number(currentSettings.swimTime),
+        restTime: Number(currentSettings.restTime),
+        swimmerInterval: Number(currentSettings.swimmerInterval),
         summary: generateSetSummary(currentSettings),
-
+        // keep uniqueId if already present (client may assign later)
+        uniqueId: workingSwimSetInfo && workingSwimSetInfo.uniqueId ? workingSwimSetInfo.uniqueId : undefined
     };
-    console.log('Existing swim set updated:', createdSwimSets[lane]);
+    console.log('createOrUpdateFromConfig -> workingSwimSetInfo updated:', workingSwimSetInfo);
 }
 
 // Resize data for a single lane to match device-reported swimmer count
@@ -1134,7 +1103,7 @@ function migrateSwimmerCountsToDeviceForLane(lane, deviceNumSwimmers) {
             document.getElementById('numSwimmers').value = deviceNumSwimmers;
             // Update swimmerColors array length for current lane
             updateIndividualSwimmerColorDueToNumSwimmers();
-            // Update createdSwimSets[lane] swimmers array length
+            // Update workingSwimSetInfo swimmers array length
             updateIndividualSwimmerTimeDueToNumSwimmers();
             displaySwimmerSet();
             updateQueueDisplay();
@@ -1235,32 +1204,32 @@ function shouldRetryEnqueue(local) {
 function queueSwimSet() {
     const lane = currentSettings.currentLane;
 
-    // Ensure we have a created set based on current inputs. If user is on the
+    // Ensure we have a working swim set based on current inputs. If user is on the
     // Swimmer Customizations tab but hasn't explicitly created a set, build it
     // from the current controls so we can queue what they're seeing.
     try {
-        if (!createdSwimSets[lane]) {
-            console.log('WARNING: We are queuing a new swim set, but it does not exist - Creating from config');
+        if (!workingSwimSetInfo) {
+            console.log('WARNING: No working swim set found, creating from current config');
             createOrUpdateFromConfig();
         }
     } catch (e) {
-        console.log('ERROR: Failed to auto-create set before queueing:', e);
+        console.log('ERROR: Failed to create working swim set before queueing:', e);
     }
 
-    if (!createdSwimSets[lane]) {
+    if (!workingSwimSetInfo) {
         alert('ERROR: No set to queue');
         return;
     }
 
     // Build minimal payload and send to device queue. Include lane so device
     // can enqueue into the correct per-lane queue.
-    console.log('queueSwimSet: buildMinimalSwimSetPayload:', createdSwimSets[lane]);
-    const payload = buildMinimalSwimSetPayload(createdSwimSets[lane]);
+    console.log('queueSwimSet: buildMinimalSwimSetPayload:', workingSwimSetInfo);
+    const payload = buildMinimalSwimSetPayload(workingSwimSetInfo);
     payload.lane = lane;
-    createdSwimSets[lane].summary = generateSetSummary(currentSettings);
+    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
 
     const uniqueId = generateUniqueId(16);
-    createdSwimSets[lane].uniqueId = uniqueId;
+    workingSwimSetInfo.uniqueId = uniqueId;
     payload.uniqueId = uniqueId;
 
     // optimistic local entry creation (or find existing local entry)
@@ -1307,12 +1276,6 @@ function queueSwimSet() {
         local.enqueueRequestedAt = Date.now();
         local.synced = false;
     });
-}
-
-function cancelSwimSet() {
-    const lane = currentSettings.currentLane;
-    createdSwimSets[lane] = null;
-    returnToConfigMode();
 }
 
 function returnToConfigMode() {
@@ -1757,7 +1720,7 @@ function loadSwimSetIntoConfig(swimSet) {
     // Copy settings into currentSettings (shallow copy) so we can modify freely
     Object.assign(currentSettings, JSON.parse(JSON.stringify(swimSet || {})));
 
-    // Put setting into createdSwimSets for the lane being edited
+    // Put setting into workingSwimSetInfo for the lane being edited
     createOrUpdateFromConfig();
 
     // Restore swimmer specific times
@@ -1768,7 +1731,7 @@ function loadSwimSetIntoConfig(swimSet) {
     }
 
     // Update all UI elements to reflect loaded settings
-    // TODO: Do we want to inly update a small subset of items?
+    // TODO: Do we want to only update a small subset of items?
     updateAllUIFromSettings();
 
     // Update visual selection after UI updates
@@ -1786,12 +1749,13 @@ function saveSwimSet() {
     // Prepare local copy of the queued entry
     const existing = swimSetQueues[lane][editingSwimSetIndexes[lane]] || {};
     const newEntry = JSON.parse(JSON.stringify(existing));
-    newEntry.swimmers = JSON.parse(JSON.stringify(createdSwimSets[lane].swimmers));
-    newEntry.numRounds = createdSwimSets[lane].numRounds;
-    newEntry.swimDistance = createdSwimSets[lane].swimDistance;
-    newEntry.swimTime = createdSwimSets[lane].swimTime;
-    newEntry.restTime = createdSwimSets[lane].restTime;
-    newEntry.swimmerInterval = createdSwimSets[lane].swimmerInterval;
+    if (!workingSwimSetInfo) createOrUpdateFromConfig();
+    newEntry.swimmers = JSON.parse(JSON.stringify(workingSwimSetInfo.swimmers));
+    newEntry.numRounds = workingSwimSetInfo.numRounds;
+    newEntry.swimDistance = workingSwimSetInfo.swimDistance;
+    newEntry.swimTime = workingSwimSetInfo.swimTime;
+    newEntry.restTime = workingSwimSetInfo.restTime;
+    newEntry.swimmerInterval = workingSwimSetInfo.swimmerInterval;
     newEntry.summary = generateSetSummary(newEntry);
     newEntry.uniqueId = existing.uniqueId;
 
@@ -1815,7 +1779,6 @@ function saveSwimSet() {
             newEntry.updateRequestedAt = Date.now();
             swimSetQueues[lane][editingSwimSetIndexes[lane]] = newEntry;
             editingSwimSetIndexes[lane] = -1;
-            createdSwimSets[lane] = null;
             returnToConfigMode();
             updateQueueDisplay();
         }
@@ -1828,7 +1791,6 @@ function saveSwimSet() {
         console.log("updated successfully on server, replacing local with ", newEntry);
         // Clear editing state and return to create mode
         editingSwimSetIndexes[lane] = -1;
-        createdSwimSets[lane] = null;
         returnToConfigMode();
         updateQueueDisplay();
     }).catch(err => {
@@ -1839,7 +1801,6 @@ function saveSwimSet() {
         newEntry.updateRequestedAt = Date.now();
         swimSetQueues[lane][editingSwimSetIndexes[lane]] = newEntry;
         editingSwimSetIndexes[lane] = -1;
-        createdSwimSets[lane] = null;
         returnToConfigMode();
         updateQueueDisplay();
     });
@@ -1849,8 +1810,6 @@ function cancelEdit() {
     const currentLane = currentSettings.currentLane;
     // Discard edits and return to configuring a new swim set
     editingSwimSetIndexes[currentLane] = -1;
-    // Clear any created/edited temporary set so user returns to blank/new state
-    createdSwimSets[currentLane] = null;
     returnToConfigMode();
 }
 
@@ -2235,14 +2194,15 @@ function cycleSwimmerColor(swimmerIndex) {
 
 function updateSwimmerSwimTime(swimmerIndex, newSwimTime) {
     const lane = currentSettings.currentLane;
-    if (createdSwimSets[lane] &&
-        createdSwimSets[lane].swimmers &&
+    if (!workingSwimSetInfo) createOrUpdateFromConfig();
+    if (workingSwimSetInfo &&
+        workingSwimSetInfo.swimmers &&
         swimmerIndex >= 0 &&
-        swimmerIndex < createdSwimSets[lane].swimmers.length) {
+        swimmerIndex < workingSwimSetInfo.swimmers.length) {
 
         // parseTimeInput supports both seconds and M:SS formats
         const parsed = parseTimeInput(String(newSwimTime));
-        createdSwimSets[lane].swimmers[swimmerIndex].swimTime = parsed;
+        workingSwimSetInfo.swimmers[swimmerIndex].swimTime = parsed;
         // Refresh display to update unit labels if needed
         updateSwimmerSetDisplay();
     }
@@ -2285,7 +2245,7 @@ function updateAllUIFromSettings() {
         currentSettings.numSwimmersPerLane[currentSettings.currentLane];
     // Update swimmerColors array length for current lane
     updateIndividualSwimmerColorDueToNumSwimmers();
-    // Update createdSwimSets[lane] swimmers array length
+    // Update workingSwimSetInfo swimmers array length
     updateIndividualSwimmerTimeDueToNumSwimmers();
 
     document.getElementById('numRounds').value = currentSettings.numRounds;
@@ -2666,7 +2626,7 @@ function setCreateTab(tabName, silent) {
             const lane = currentSettings.currentLane;
 
             // set created swim sets if not already done
-            if (!createdSwimSets[lane]) {
+            if (!workingSwimSetInfo) {
                createOrUpdateFromConfig()
             }
 
