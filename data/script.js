@@ -1108,6 +1108,7 @@ function createOrUpdateFromConfig() {
         restTime: currentSettings.restTime,
         swimmerInterval: currentSettings.swimmerInterval,
         summary: generateSetSummary(currentSettings),
+
     };
     console.log('Existing swim set updated:', createdSwimSets[lane]);
 }
@@ -1154,7 +1155,10 @@ function generateSetSummary(settings) {
     const numRounds = settings.numRounds;
     const lane = settings.lane;
 
-    if (settings.type == SWIMSET_TYPE) {
+    // Treat missing type as a regular swim set (common for optimistic/local objects)
+    const type = (typeof settings.type === 'undefined') ? SWIMSET_TYPE : settings.type;
+
+    if (type == SWIMSET_TYPE) {
         // distance label: use "50's" for plural numRounds, "50'" for a single round (no "'s")
         const distanceLabel = (numRounds === 1) ? `${swimDistance}` : `${swimDistance}'s`;
 
@@ -1164,7 +1168,7 @@ function generateSetSummary(settings) {
 
         return `${numRounds} x ${distanceLabel} on the ${SwimTimeDisplay} with ${restDisplay} rest`;
     }
-    if (settings.type == LOOP_TYPE) {
+    if (type == LOOP_TYPE) {
         // Try to resolve the loop start in the current queue using the stable uniqueId.
         let ll = '?';
         if (settings.loopFromUniqueId) {
