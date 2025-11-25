@@ -203,7 +203,7 @@ function updateNumLanes() {
     sendNumLanes(numLanes);
 }
 
-function updateCurrentLane() {
+async function updateCurrentLane() {
     const newLane = parseInt(document.getElementById('currentLane').value);
     console.log('updateCurrentLane: switching lanes: ' +
         currentSettings.currentLane + ' -> ' + newLane);
@@ -219,6 +219,20 @@ function updateCurrentLane() {
     document.getElementById('numSwimmers').value =
         currentSettings.numSwimmersPerLane[newLane];
     updatePacerButtons();
+
+    // Immediately refresh the queue for the newly selected lane so the UI
+    // reflects the device state without waiting for the periodic reconcile.
+    if (!isStandaloneMode) {
+        const queueListEl = document.getElementById('queueList');
+        try {
+            if (queueListEl) queueListEl.classList.add('loading'); // optional visual cue
+            await reconcileQueueWithDevice();
+        } catch (e) {
+            console.warn('updateCurrentLane: reconcileQueueWithDevice failed', e);
+        } finally {
+            if (queueListEl) queueListEl.classList.remove('loading');
+        }
+    }
 }
 
 function updateLaneSelector() {
