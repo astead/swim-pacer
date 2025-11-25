@@ -157,9 +157,13 @@ struct SwimSet {
   uint16_t swimmerInterval; // interval between swimmers (seconds)
   uint8_t status;           // status flags (bitmask)
   uint8_t type;             // SwimSetType
-  uint8_t repeat;           // repeat metadata for LOOP_TYPE
   uint32_t id;              // device-assigned canonical id (0 = not assigned)
   unsigned long long uniqueId; // client-supplied unique id for reconciliation (0 = none)
+  // loop metadata (client-supplied stable identifier for loop start)
+  unsigned long long loopFromUniqueId;
+  // remaining repeat iterations (server authoritative)
+  int repeatRemaining;
+
 };
 
 // Simple fixed-size in-memory per-lane queues
@@ -284,6 +288,31 @@ bool getSwimSetByIndex(SwimSet &out, int lane, int index) {
   int actualIndex = (swimSetQueueHead[lane] + index) % SWIMSET_QUEUE_MAX;
   out = swimSetQueue[lane][actualIndex];
   return true;
+}
+
+bool getSwimSetByUniqueId(SwimSet &out, int lane, unsigned long long uniqueId) {
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
+
+  for (int i = 0; i < swimSetQueueCount[lane]; i++) {
+    int index = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
+    if (swimSetQueue[lane][index].uniqueId == uniqueId) {
+      out = swimSetQueue[lane][index];
+      return true;
+    }
+  }
+  return false;
+}
+
+int findSwimSetIndexByUniqueId(int lane, unsigned long long uniqueId) {
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return -1;
+
+  for (int i = 0; i < swimSetQueueCount[lane]; i++) {
+    int index = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
+    if (swimSetQueue[lane][index].uniqueId == uniqueId) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 // Minimal JSON extractor helpers (no ArduinoJson dependency)
@@ -1215,10 +1244,10 @@ void handleEnqueueSwimSet() {
   s.restTime = (uint16_t)extractJsonLong(body, "restTime", swimSetSettings.restTimeSeconds);
   s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
   s.type = (uint8_t)extractJsonLong(body, "type", SWIMSET_TYPE);
-  s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
-  s.uniqueId = 0ULL;
   s.status = SWIMSET_STATUS_PENDING;
+  s.repeatRemaining = (uint8_t)extractJsonLong(body, "repeatRemaining", 0);
 
+  s.uniqueId = 0ULL;
   String uniqueIdStr = extractJsonString(body, "uniqueId", "");
   if (uniqueIdStr.length() > 0) {
     unsigned long long parsed = parseUniqueIdHex(uniqueIdStr);
@@ -1235,6 +1264,20 @@ void handleEnqueueSwimSet() {
     return;
   }
 
+  s.loopFromUniqueId = 0ULL;
+  String loopFromUniqueIdStr = extractJsonString(body, "loopFromUniqueId", "");
+  if (loopFromUniqueIdStr.length() > 0 && loopFromUniqueIdStr != "0") {
+    unsigned long long parsed = parseUniqueIdHex(loopFromUniqueIdStr);
+    if (parsed != 0ULL) {
+      s.loopFromUniqueId = parsed;
+    } else {
+      Serial.println(" Warning: invalid loopFromUniqueId format: " + loopFromUniqueIdStr);
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid loopFromUniqueId format\"}");
+      return;
+    }
+  }
+
+
   int result = enqueueSwimSet(s, lane);
   Serial.println(" Enqueue result: " + String((result == QUEUE_INSERT_SUCCESS) ? "OK" : "FAILED"));
   Serial.println("  Enqueued swim set: ");
@@ -1245,7 +1288,8 @@ void handleEnqueueSwimSet() {
   Serial.println("   restTime=" + String(s.restTime));
   Serial.println("   swimmerInterval=" + String(s.swimmerInterval));
   Serial.println("   type=" + String(s.type));
-  Serial.println("   repeat=" + String(s.repeat));
+  Serial.println("   loopFromUniqueId=" + uniqueIdToHex(s.loopFromUniqueId));
+  Serial.println("   repeatRemaining=" + String(s.repeatRemaining));
   Serial.println("   uniqueId=" + uniqueIdToHex(s.uniqueId));
 
   if (result == QUEUE_INSERT_SUCCESS) {
@@ -1284,7 +1328,7 @@ void handleUpdateSwimSet() {
   s.restTime = (uint16_t)extractJsonLong(body, "restTime", swimSetSettings.restTimeSeconds);
   s.swimmerInterval = (uint16_t)extractJsonLong(body, "swimmerInterval", swimSetSettings.swimmerIntervalSeconds);
   s.type = (uint8_t)extractJsonLong(body, "type", 0);
-  s.repeat = (uint8_t)extractJsonLong(body, "repeat", 0);
+  s.repeatRemaining = (uint8_t)extractJsonLong(body, "repeatRemaining", 0);
 
   String uniqueIdStr = extractJsonString(body, "uniqueId", "");
   unsigned long long uniqueId = 0ULL;
@@ -1294,6 +1338,12 @@ void handleUpdateSwimSet() {
     Serial.println(" Warning: missing uniqueId");
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing uniqueId\"}");
     return;
+  }
+
+  String loopFromUniqueIdStr = extractJsonString(body, "loopFromUniqueId", "");
+  s.loopFromUniqueId = 0ULL;
+  if (loopFromUniqueIdStr.length() > 0) {
+    s.loopFromUniqueId = parseUniqueIdHex(loopFromUniqueIdStr);
   }
 
 
@@ -1309,7 +1359,8 @@ void handleUpdateSwimSet() {
   Serial.print(" restTime="); Serial.println(s.restTime);
   Serial.print(" swimmerInterval="); Serial.println(s.swimmerInterval);
   Serial.print(" type="); Serial.println(s.type);
-  Serial.print(" repeat="); Serial.println(s.repeat);
+  Serial.print(" repeatRemaining="); Serial.println(s.repeatRemaining);
+  Serial.print(" loopFromUniqueId="); Serial.println(uniqueIdToHex(s.loopFromUniqueId));
   Serial.print(" uniqueId="); Serial.println(uniqueIdToHex(uniqueId));
 
   Serial.println(" Searching queue for matching entry...");
@@ -1326,7 +1377,8 @@ void handleUpdateSwimSet() {
       entry.restTime = s.restTime;
       entry.swimmerInterval = s.swimmerInterval;
       entry.type = s.type;
-      entry.repeat = s.repeat;
+      entry.repeatRemaining = s.repeatRemaining;
+      entry.loopFromUniqueId = s.loopFromUniqueId;
       found = true;
     }
 
@@ -1573,7 +1625,8 @@ void handleGetSwimQueue() {
     item["restTime"] = s.restTime;
     item["swimmerInterval"] = s.swimmerInterval;
     item["type"] = s.type;
-    item["repeat"] = s.repeat;
+    item["loopFromUniqueId"] = uniqueIdToHex(s.loopFromUniqueId);
+    item["repeatRemaining"] = s.repeatRemaining;
     // numeric status bitmask
     item["status"] = (int)s.status;
 
@@ -2555,6 +2608,45 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           // Try to get the next swim set in queue (queueIndex + 1)
           SwimSet nextSet;
           if (getSwimSetByIndex(nextSet, laneIndex, swimmer->queueIndex + 1)) {
+            // Check if this is a repeat Swim Set
+            if (nextSet.type == LOOP_TYPE &&
+              nextSet.loopFromUniqueId != 0 &&
+              nextSet.repeatRemaining > 0) {
+                // Find the swim set we should go to next based on the loopFrom UniqueId
+                SwimSet loopFromSet;
+                if (getSwimSetByUniqueId(loopFromSet, laneIndex, nextSet.loopFromUniqueId)) {
+                  // Get a pointer to the swim set we just finished
+                  SwimSet lastSet;
+                  if (getSwimSetByIndex(lastSet, laneIndex, swimmer->queueIndex)) {
+
+                    // Loop through swim sets starting from the loopFromUniqueId to the set we just
+                    // finished, and if any are loop sets, we should re-set those repeatRemaining counters
+                    // Start by getting the index of where the loop starts, so the index value
+                    // for the swim set with loopFromUniqueId as the uniqueId
+                    int loopIndex = findSwimSetIndexByUniqueId(laneIndex, nextSet.loopFromUniqueId);
+
+                    // Loop through swim sets starting from the loopFromUniqueId to the set we just
+                    // finished, and if any are loop sets, we should re-set those repeatRemaining counters
+                    while (loopIndex != -1 && loopIndex != swimmer->queueIndex + 1) {
+                      // Calculate the actual queue position accounting for circular buffer
+                      loopIndex = (swimSetQueueHead[laneIndex] + loopIndex) % SWIMSET_QUEUE_MAX;
+                      if (swimSetQueue[laneIndex][loopIndex].type == LOOP_TYPE &&
+                        swimSetQueue[laneIndex][loopIndex].repeatRemaining == 0) {
+
+                          swimSetQueue[laneIndex][loopIndex].repeatRemaining =
+                            swimSetQueue[laneIndex][loopIndex].numRounds;
+                      }
+                      loopIndex++;
+                    }
+                  } else {
+                    Serial.print("Error: Could not find last swim set with index: ");
+                    Serial.println(swimmer->queueIndex);
+                  }
+
+                  nextSet.repeatRemaining--;
+                  nextSet = loopFromSet;
+                }
+            }
             if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
               Serial.println("  *** AUTO-ADVANCING TO NEXT SWIM SET ***");
               Serial.print("    Next set ID: ");

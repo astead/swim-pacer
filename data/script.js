@@ -1152,15 +1152,34 @@ function generateSetSummary(settings) {
     const swimTime = settings.swimTime;
     const restTime = settings.restTime;
     const numRounds = settings.numRounds;
+    const lane = settings.lane;
 
-    // distance label: use "50's" for plural numRounds, "50'" for a single round (no "'s")
-    const distanceLabel = (numRounds === 1) ? `${swimDistance}` : `${swimDistance}'s`;
+    if (settings.type == SWIMSET_TYPE) {
+        // distance label: use "50's" for plural numRounds, "50'" for a single round (no "'s")
+        const distanceLabel = (numRounds === 1) ? `${swimDistance}` : `${swimDistance}'s`;
 
-    // Display swim/rest time using compact formatting: 'Ns' for <=60s, 'M:SS' for >60s
-    const avgSwimTimeDisplay = formatCompactTime(swimTime);
-    const restDisplay = formatCompactTime(restTime);
+        // Display swim/rest time using compact formatting: 'Ns' for <=60s, 'M:SS' for >60s
+        const SwimTimeDisplay = formatCompactTime(swimTime);
+        const restDisplay = formatCompactTime(restTime);
 
-    return `${numRounds} x ${distanceLabel} on the ${avgSwimTimeDisplay} with ${restDisplay} rest`;
+        return `${numRounds} x ${distanceLabel} on the ${SwimTimeDisplay} with ${restDisplay} rest`;
+    }
+    if (settings.type == LOOP_TYPE) {
+        // Try to resolve the loop start in the current queue using the stable uniqueId.
+        let lf = '?', ll = '?';
+        if (settings.loopFromUniqueId) {
+            const q = swimSetQueues[lane] || [];
+            const startIdx = q.findIndex(it => normalizeUniqueId(it.uniqueId) === normalizeUniqueId(settings.loopFromUniqueId));
+            if (startIdx !== -1) {
+                // loop entry is at current position 'idx'; block length is items between startIdx and idx (exclusive)
+                lf = startIdx + 1;
+                ll = Math.max(0, idx - startIdx);
+            }
+            return `Repeat last ${ll} set(s) x ${numRounds}`;
+        } else {
+            return `Repeat some previous sets x ${numRounds}`;
+        }
+    }
 }
 
 function normalizeUniqueId(v) {
@@ -1330,22 +1349,17 @@ function updateQueueDisplay() {
         // Special case for LOOP_TYPE entries so they appear descriptive
         if (entry.type === LOOP_TYPE) {
             // Try to resolve the loop start in the current queue using the stable uniqueId.
-            let lf = '?', ll = '?';
+            let ll = '?';
             if (entry.loopFromUniqueId) {
                 const q = swimSetQueues[lane] || [];
                 const startIdx = q.findIndex(it => normalizeUniqueId(it.uniqueId) === normalizeUniqueId(entry.loopFromUniqueId));
                 if (startIdx !== -1) {
                     // loop entry is at current position 'idx'; block length is items between startIdx and idx (exclusive)
-                    lf = startIdx + 1;
                     ll = Math.max(0, idx - startIdx);
                 }
-            } else if (entry.loopFromIndex !== undefined) {
-                // backwards-compatible fallback if older payloads still contain an index
-                lf = entry.loopFromIndex + 1;
-                ll = entry.loopLength || Math.max(0, idx - entry.loopFromIndex);
             }
-            const iters = entry.repeat || 0;
-            label.textContent = entry.summary || `Repeat ${ll} item(s) from #${lf} x ${iters}`;
+            const iters = entry.numRounds || 0;
+            label.textContent = entry.summary || `Repeat last ${ll} set(s) x ${iters}`;
         } else {
             label.textContent = entry.summary || (`${entry.numRounds} x ${entry.swimDistance}'s`);
         }
@@ -1532,41 +1546,42 @@ function repeatModalConfirm() {
         return;
     }
     const startIndex = (typeof repeatModalSelectedStart === 'number') ? repeatModalSelectedStart : 0;
-    const maxLen = queue.length - startIndex;
-    const length = maxLen;
     const itersEl = document.getElementById('repeatIterations');
     let iterations = itersEl ? parseInt(itersEl.value, 10) : 1;
     if (isNaN(iterations) || iterations < 1) iterations = 1;
 
-    enqueueLoopEntry(lane, startIndex, length, iterations);
+    // compute stable uniqueId for loop start and enqueue using that id
+    const loopFromUniqueId = queue[startIndex] && queue[startIndex].uniqueId ? String(queue[startIndex].uniqueId) : undefined;
+    enqueueLoopEntry(lane, loopFromUniqueId, iterations);
     hideRepeatModal();
 }
 
 // Create and enqueue LOOP_TYPE entry (optimistic local entry + POST)
-function enqueueLoopEntry(lane, loopFromIndex, loopLength, iterations) {
+function enqueueLoopEntry(lane, loopFromUniqueId, iterations) {
     const part1 = Date.now().toString(16);
     const part2 = Math.floor(Math.random() * 0xFFFFFF).toString(16);
     const raw = (part1 + part2).padEnd(16, '0').slice(0, 16);
     const uniqueId = raw.toLowerCase();
 
-    // Prefer sending a stable identifier for the loop start so server can re-resolve
-    // the actual indices after reorders. The length is derivable (loop entry position - start position).
-    const loopFromUniqueId = (swimSetQueues[lane] && swimSetQueues[lane][loopFromIndex] && swimSetQueues[lane][loopFromIndex].uniqueId)
-        ? String(swimSetQueues[lane][loopFromIndex].uniqueId)
-        : undefined;
+    // Resolve a human-friendly summary by locating the start item in the current queue
+    const q = swimSetQueues[lane] || [];
+    const startIdx = (loopFromUniqueId ? q.findIndex(it => normalizeUniqueId(it.uniqueId) === normalizeUniqueId(loopFromUniqueId)) : -1);
+    const blockLen = (startIdx >= 0) ? Math.max(0, q.length - startIdx) : '?';
+    const summary = (startIdx >= 0)
+        ? `Repeat last ${blockLen} set${blockLen !== 1 ? 's' : ''} x ${iterations}`
+        : `Repeat x ${iterations}`;
 
     const payload = {
         lane: lane,
-        numRounds: 0,
+        numRounds: iterations,
         swimDistance: 0,
         swimTime: 0,
         restTime: 0,
         swimmerInterval: 0,
         type: LOOP_TYPE,
-        repeat: iterations,
-        // send the stable uniqueId of the loop start (server can resolve actual indices)
+        repeatRemaining: iterations,
         loopFromUniqueId: loopFromUniqueId,
-        summary: `Repeat last ${swimSetQueues[lane].length - loopFromIndex} set${swimSetQueues[lane].length - loopFromIndex !== 1 ? 's' : ''} x ${iterations}`,
+        summary: summary,
         uniqueId: uniqueId
     };
 
@@ -1940,7 +1955,7 @@ async function retryPendingUpdates() {
                         restTime: it.settings.restTime || it.restTime,
                         swimmerInterval: it.settings.swimmerInterval || it.swimmerInterval,
                         type: it.type || 0,
-                        repeat: it.repeat || 0,
+                        repeatRemaining: it.repeatRemaining || 0,
                     };
                     const ctrl = new AbortController();
                     const to = setTimeout(() => ctrl.abort(), 7000);
@@ -2223,12 +2238,12 @@ function buildMinimalSwimSetPayload(createdSet) {
         restTime: Number(createdSet.restTime),
         swimmerInterval: Number(createdSet.swimmerInterval),
         type: 0,
-        repeat: 0,
         swimmers: createdSet.swimmers.map(swimmer => ({
             color: swimmer.color,
             swimTime: Number(swimmer.swimTime)
         })),
         summary: createdSet.summary,
+        repeatRemaining: 0
     };
     console.log('buildMinimalSwimSetPayload generated payload:', newSet);
     return newSet;
@@ -2841,15 +2856,7 @@ async function copyLaneQueueTo(fromLane, toLane) {
         // attempt to enqueue on server (sequential, best-effort). If standalone, skip.
         if (!isStandaloneMode) {
             try {
-                const payload = (typeof buildMinimalSwimSetPayload === 'function') ? buildMinimalSwimSetPayload(clone) : {
-                    numRounds: clone.numRounds,
-                    swimDistance: clone.swimDistance,
-                    swimTime: clone.swimTime,
-                    restTime: clone.restTime,
-                    swimmerInterval: clone.swimmerInterval,
-                    type: clone.type || 0,
-                    repeat: clone.repeat || 0
-                };
+                const payload = buildMinimalSwimSetPayload(clone);
                 payload.lane = toLane;
                 const ctrl = new AbortController();
                 const to = setTimeout(()=>ctrl.abort(), 10000);
