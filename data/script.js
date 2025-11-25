@@ -569,7 +569,6 @@ function updateNumRounds() {
     currentSettings.numRounds = parseInt(numRounds);
     if (!workingSwimSetInfo) createOrUpdateFromConfig();
     workingSwimSetInfo.numRounds = Number(numRounds);
-    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
     // Also send num rounds to device so it can be used as a default for swim-sets
     sendNumRounds(currentSettings.numRounds).catch(err => {
         console.debug('sendNumRounds failed (ignored):', err && err.message ? err.message : err);
@@ -581,7 +580,6 @@ function updateSwimDistance(triggerSave = true) {
     currentSettings.swimDistance = swimDistance;
     if (!workingSwimSetInfo) createOrUpdateFromConfig();
     workingSwimSetInfo.swimDistance = Number(swimDistance);
-    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
     // Updating swim distance is special because we might also be changing this
     // due to changing the pool dimensions. So we allow caller to specify whether to trigger a save.
     // TODO: Not sure if this is needed or not. Wouldn't we want to always save swim distance changes?
@@ -598,7 +596,6 @@ function updateSwimTime() {
     document.getElementById('swimTimeLabel').textContent = timeLabelFromString(swimTime);
     if (!workingSwimSetInfo) createOrUpdateFromConfig();
     workingSwimSetInfo.swimTime = Number(currentSettings.swimTime);
-    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
     // Also send swim time to device so it can be used as a default for swim-sets
     sendSwimTime(currentSettings.swimTime).catch(err => {
         console.debug('sendSwimTime failed (ignored):', err && err.message ? err.message : err);
@@ -613,7 +610,6 @@ function updateRestTime() {
     document.getElementById('restTimeLabel').textContent = timeLabelFromString(restTime);
     if (!workingSwimSetInfo) createOrUpdateFromConfig();
     workingSwimSetInfo.restTime = Number(currentSettings.restTime);
-    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
     // Also send rest time to device so it can be used as a default for swim-sets
     sendRestTime(currentSettings.restTime).catch(err => {
         console.debug('sendRestTime failed (ignored):', err && err.message ? err.message : err);
@@ -626,7 +622,6 @@ function updateSwimmerInterval() {
     document.getElementById('swimmerIntervalLabel').textContent = timeLabelFromString(swimmerInterval);
     if (!workingSwimSetInfo) createOrUpdateFromConfig();
     workingSwimSetInfo.swimmerInterval = Number(currentSettings.swimmerInterval);
-    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
     // Also send swimmer interval to device so it can be used as a default for swim-sets
     sendSwimmerInterval(currentSettings.swimmerInterval).catch(err => {
         console.debug('sendSwimmerInterval failed (ignored):', err && err.message ? err.message : err);
@@ -1075,7 +1070,7 @@ function createOrUpdateFromConfig() {
         swimTime: Number(currentSettings.swimTime),
         restTime: Number(currentSettings.restTime),
         swimmerInterval: Number(currentSettings.swimmerInterval),
-        summary: generateSetSummary(currentSettings),
+        summary: "",
         // keep uniqueId if already present (client may assign later)
         uniqueId: workingSwimSetInfo && workingSwimSetInfo.uniqueId ? workingSwimSetInfo.uniqueId : undefined
     };
@@ -1490,7 +1485,7 @@ function showRepeatModal() {
         r.dataset.index = String(idx);
         r.onclick = () => setRepeatModalStart(idx);
         const lbl = document.createElement('label');
-        lbl.textContent = `${idx + 1}. ${entry.summary || (typeof generateSetSummary === 'function' ? generateSetSummary(entry) : '')}`;
+        lbl.textContent = `${idx + 1}. ${entry.summary || generateSetSummary(entry)}`;
         r.appendChild(lbl);
         body.appendChild(r);
     });
@@ -1745,11 +1740,13 @@ function saveSwimSet() {
 
     if (editingSwimSetIndexes[lane] === -1) return;
 
-
     // Prepare local copy of the queued entry
     const existing = swimSetQueues[lane][editingSwimSetIndexes[lane]] || {};
     const newEntry = JSON.parse(JSON.stringify(existing));
-    if (!workingSwimSetInfo) createOrUpdateFromConfig();
+    if (!workingSwimSetInfo) {
+        console.log("ERROR: saveSwimSet: workingSwimSetInfo is not defined");
+        createOrUpdateFromConfig();
+    }
     newEntry.swimmers = JSON.parse(JSON.stringify(workingSwimSetInfo.swimmers));
     newEntry.numRounds = workingSwimSetInfo.numRounds;
     newEntry.swimDistance = workingSwimSetInfo.swimDistance;
@@ -2384,6 +2381,7 @@ async function reconcileQueueWithDevice() {
                 if (matchedDevice.currentRound !== undefined) local.currentRound = Number(matchedDevice.currentRound);
                 if (matchedDevice.startedAt) local.startedAt = matchedDevice.startedAt;
                 if (matchedDevice.completedAt) local.completedAt = matchedDevice.completedAt;
+                // TODO: what about missing items: type, repeatRemaining, etc
                 // Reset summary
                 local.summary = generateSetSummary(local);
 
@@ -2467,6 +2465,7 @@ async function reconcileQueueWithDevice() {
                 swimmerInterval: Number(d.swimmerInterval || 0),
                 status: d.status !== undefined ? d.status : 0,
                 synced: true,
+                // TODO: what about missing items: type, repeatRemaining, etc
             };
             newEntry.summary = generateSetSummary(newEntry);
 
