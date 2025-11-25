@@ -2400,15 +2400,32 @@ async function reconcileQueueWithDevice() {
                 console.log('Merging fields from matched device:', matchedDevice);
                 local.synced = true;
                 if (matchedDevice.uniqueId !== undefined) local.uniqueId = String(matchedDevice.uniqueId);
+                // status & runtime fields
                 if (matchedDevice.completed !== undefined) local.completed = !!matchedDevice.completed;
-                // Accept server-side status if present (could be numeric bitmask or string)
                 if (matchedDevice.status !== undefined) local.status = matchedDevice.status;
-                // Merge runtime progress fields if provided
                 if (matchedDevice.currentRound !== undefined) local.currentRound = Number(matchedDevice.currentRound);
                 if (matchedDevice.startedAt) local.startedAt = matchedDevice.startedAt;
                 if (matchedDevice.completedAt) local.completedAt = matchedDevice.completedAt;
-                // TODO: what about missing items: type, repeatRemaining, etc
-                // Reset summary
+                // authoritative swim-set parameters (coerce to numbers)
+                if (matchedDevice.numRounds !== undefined) local.numRounds = Number(matchedDevice.numRounds);
+                if (matchedDevice.swimDistance !== undefined) local.swimDistance = Number(matchedDevice.swimDistance);
+                if (matchedDevice.swimTime !== undefined) local.swimTime = Number(matchedDevice.swimTime);
+                if (matchedDevice.restTime !== undefined) local.restTime = Number(matchedDevice.restTime);
+                if (matchedDevice.swimmerInterval !== undefined) local.swimmerInterval = Number(matchedDevice.swimmerInterval);
+                // loop/repeat metadata
+                if (matchedDevice.loopFromUniqueId !== undefined) local.loopFromUniqueId = String(matchedDevice.loopFromUniqueId);
+                // accept either 'repeat' or server-side 'repeatRemaining' field names
+                if (matchedDevice.repeat !== undefined) local.repeatRemaining = Number(matchedDevice.repeat);
+                else if (matchedDevice.repeatRemaining !== undefined) local.repeatRemaining = Number(matchedDevice.repeatRemaining);
+                // type
+                if (matchedDevice.type !== undefined) local.type = Number(matchedDevice.type);
+                // swimmers array (preserve color + swimTime)
+                if (Array.isArray(matchedDevice.swimmers)) {
+                    local.swimmers = matchedDevice.swimmers.map(s => ({
+                        swimTime: Number(s.swimTime || local.swimTime)
+                    }));
+                }
+                // recompute/generate summary from authoritative fields
                 local.summary = generateSetSummary(local);
 
                 //debug output
@@ -2457,8 +2474,14 @@ async function reconcileQueueWithDevice() {
                 restTime: Number(d.restTime || 0),
                 swimmerInterval: Number(d.swimmerInterval || 0),
                 status: d.status !== undefined ? d.status : 0,
+                type: d.type !== undefined ? Number(d.type) : SWIMSET_TYPE,
+                repeatRemaining: d.repeatRemaining !== undefined ? Number(d.repeatRemaining) : 0,
+                loopFromUniqueId: d.loopFromUniqueId !== undefined ? String(d.loopFromUniqueId) : "",
+                swimmers: Array.isArray(d.swimmers) ? d.swimmers.map(s => ({ swimTime: Number(s.swimTime||d.swimTime||0) })) : [],
+                currentRound: d.currentRound !== undefined ? Number(d.currentRound) : undefined,
+                startedAt: d.startedAt !== undefined ? d.startedAt : undefined,
+                completedAt: d.completedAt !== undefined ? d.completedAt : undefined,
                 synced: true,
-                // TODO: what about missing items: type, repeatRemaining, etc
             };
             newEntry.summary = generateSetSummary(newEntry);
 
