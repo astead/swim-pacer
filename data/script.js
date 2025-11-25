@@ -1192,6 +1192,30 @@ function generateSetSummary(settings) {
     return '';
 }
 
+// Helper: generate a compact hex uniqueId (default 16 hex chars, no '0x')
+function generateUniqueId(len = 16) {
+    // start with time component for some ordering
+    let s = Date.now().toString(16);
+    try {
+        // append crypto-quality random bytes when available
+        const need = Math.ceil((len - s.length) / 2);
+        if (need > 0 && window && window.crypto && window.crypto.getRandomValues) {
+            const rnd = new Uint8Array(need);
+            window.crypto.getRandomValues(rnd);
+            const rndHex = Array.from(rnd).map(b => b.toString(16).padStart(2, '0')).join('');
+            s += rndHex;
+        } else {
+            // fallback to Math.random
+            while (s.length < len) s += Math.floor(Math.random() * 0xFFFFFFFF).toString(16);
+        }
+    } catch (e) {
+        // fallback safe path
+        while (s.length < len) s += Math.floor(Math.random() * 0xFFFFFFFF).toString(16);
+    }
+    s = s.padEnd(len, '0').slice(0, len);
+    return s.toLowerCase();
+}
+
 function normalizeUniqueId(v) {
     if (v === undefined || v === null) return '';
     let s = String(v).toLowerCase().trim();
@@ -1235,11 +1259,7 @@ function queueSwimSet() {
     payload.lane = lane;
     createdSwimSets[lane].summary = generateSetSummary(currentSettings);
 
-    // Create a compact uniqueId (16-char lowercase hex, no 0x) for deterministic reconciliation
-    const part1 = Date.now().toString(16);
-    const part2 = Math.floor(Math.random() * 0xFFFFFF).toString(16);
-    const raw = (part1 + part2).padEnd(16, '0').slice(0, 16);
-    const uniqueId = raw.toLowerCase();
+    const uniqueId = generateUniqueId(16);
     createdSwimSets[lane].uniqueId = uniqueId;
     payload.uniqueId = uniqueId;
 
@@ -1568,10 +1588,7 @@ function repeatModalConfirm() {
 
 // Create and enqueue LOOP_TYPE entry (optimistic local entry + POST)
 function enqueueLoopEntry(lane, loopFromUniqueId, iterations) {
-    const part1 = Date.now().toString(16);
-    const part2 = Math.floor(Math.random() * 0xFFFFFF).toString(16);
-    const raw = (part1 + part2).padEnd(16, '0').slice(0, 16);
-    const uniqueId = raw.toLowerCase();
+    const uniqueId = generateUniqueId(16);
 
     // Resolve a human-friendly summary by locating the start item in the current queue
     const q = swimSetQueues[lane] || [];
