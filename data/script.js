@@ -1956,12 +1956,13 @@ async function retryPendingUpdates() {
                 try {
                     const body = {
                         matchUniqueId: it.uniqueId || undefined,
+                        uniqueId: it.uniqueId || undefined,
                         lane: lane,
-                        numRounds: it.settings.numRounds || it.numRounds,
-                        swimDistance: it.settings.swimDistance || it.swimDistance,
-                        swimTime: it.settings.swimTime || it.swimTime || it.swimTime,
-                        restTime: it.settings.restTime || it.restTime,
-                        swimmerInterval: it.settings.swimmerInterval || it.swimmerInterval,
+                        numRounds: it.numRounds,
+                        swimDistance: it.swimDistance,
+                        swimTime: it.swimTime,
+                        restTime: it.restTime,
+                        swimmerInterval: it.swimmerInterval,
                         type: it.type || 0,
                         repeatRemaining: it.repeatRemaining || 0,
                     };
