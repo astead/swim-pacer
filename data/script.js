@@ -1329,8 +1329,21 @@ function updateQueueDisplay() {
         label.style.minWidth = '0';
         // Special case for LOOP_TYPE entries so they appear descriptive
         if (entry.type === LOOP_TYPE) {
-            const lf = (entry.loopFromIndex !== undefined) ? (entry.loopFromIndex + 1) : '?';
-            const ll = entry.loopLength || '?';
+            // Try to resolve the loop start in the current queue using the stable uniqueId.
+            let lf = '?', ll = '?';
+            if (entry.loopFromUniqueId) {
+                const q = swimSetQueues[lane] || [];
+                const startIdx = q.findIndex(it => normalizeUniqueId(it.uniqueId) === normalizeUniqueId(entry.loopFromUniqueId));
+                if (startIdx !== -1) {
+                    // loop entry is at current position 'idx'; block length is items between startIdx and idx (exclusive)
+                    lf = startIdx + 1;
+                    ll = Math.max(0, idx - startIdx);
+                }
+            } else if (entry.loopFromIndex !== undefined) {
+                // backwards-compatible fallback if older payloads still contain an index
+                lf = entry.loopFromIndex + 1;
+                ll = entry.loopLength || Math.max(0, idx - entry.loopFromIndex);
+            }
             const iters = entry.repeat || 0;
             label.textContent = entry.summary || `Repeat ${ll} item(s) from #${lf} x ${iters}`;
         } else {
@@ -1536,6 +1549,12 @@ function enqueueLoopEntry(lane, loopFromIndex, loopLength, iterations) {
     const raw = (part1 + part2).padEnd(16, '0').slice(0, 16);
     const uniqueId = raw.toLowerCase();
 
+    // Prefer sending a stable identifier for the loop start so server can re-resolve
+    // the actual indices after reorders. The length is derivable (loop entry position - start position).
+    const loopFromUniqueId = (swimSetQueues[lane] && swimSetQueues[lane][loopFromIndex] && swimSetQueues[lane][loopFromIndex].uniqueId)
+        ? String(swimSetQueues[lane][loopFromIndex].uniqueId)
+        : undefined;
+
     const payload = {
         lane: lane,
         numRounds: 0,
@@ -1545,10 +1564,9 @@ function enqueueLoopEntry(lane, loopFromIndex, loopLength, iterations) {
         swimmerInterval: 0,
         type: LOOP_TYPE,
         repeat: iterations,
-        // client-side metadata for display and later reconciliation
-        loopFromIndex: loopFromIndex,
-        loopLength: loopLength,
-        summary: `Repeat ${loopLength} item(s) from #${loopFromIndex + 1} x ${iterations}`,
+        // send the stable uniqueId of the loop start (server can resolve actual indices)
+        loopFromUniqueId: loopFromUniqueId,
+        summary: `Repeat last ${swimSetQueues[lane].length - loopFromIndex} set${swimSetQueues[lane].length - loopFromIndex !== 1 ? 's' : ''} x ${iterations}`,
         uniqueId: uniqueId
     };
 
