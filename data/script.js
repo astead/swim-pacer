@@ -1166,20 +1166,26 @@ function generateSetSummary(settings) {
     }
     if (settings.type == LOOP_TYPE) {
         // Try to resolve the loop start in the current queue using the stable uniqueId.
-        let lf = '?', ll = '?';
+        let ll = '?';
         if (settings.loopFromUniqueId) {
             const q = swimSetQueues[lane] || [];
             const startIdx = q.findIndex(it => normalizeUniqueId(it.uniqueId) === normalizeUniqueId(settings.loopFromUniqueId));
             if (startIdx !== -1) {
-                // loop entry is at current position 'idx'; block length is items between startIdx and idx (exclusive)
-                lf = startIdx + 1;
-                ll = Math.max(0, idx - startIdx);
+                // Try to find the loop entry position in the same queue; if present compute block length,
+                // otherwise assume the loop covers from startIdx to the end of the queue.
+                const loopIdx = q.findIndex(it => normalizeUniqueId(it.uniqueId) === normalizeUniqueId(settings.uniqueId));
+                if (loopIdx !== -1 && loopIdx > startIdx) {
+                    ll = Math.max(0, loopIdx - startIdx);
+                } else {
+                    ll = Math.max(0, q.length - startIdx);
+                }
             }
             return `Repeat last ${ll} set(s) x ${numRounds}`;
         } else {
             return `Repeat some previous sets x ${numRounds}`;
         }
     }
+    return '';
 }
 
 function normalizeUniqueId(v) {
