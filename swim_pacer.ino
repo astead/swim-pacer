@@ -220,7 +220,6 @@ CRGB underwaterSurfaceColor;     // Color for underwater surface indicators
 // ========== GLOBAL VARIABLES ==========
 CRGB* renderedLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
 CRGB* scanoutLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
-unsigned long lastUpdate = 0;
 bool needsRecalculation = true;
 
 // Helper: parse lane from POST JSON body (returns -1 when missing)
@@ -325,7 +324,8 @@ String extractJsonString(const String &json, const char *key, const char *fallba
 // ========== MULTI-SWIMMER VARIABLES ==========
 struct Swimmer {
   int position;
-  unsigned long lastUpdate;
+  unsigned long lastPositionUpdate; // time of last position integration/update (ms)
+  unsigned long swimStartTime;      // absolute millis() when swimmer is allowed to start (0 = already started)
   CRGB color;
   bool hasStarted;  // Track if this swimmer has had their first start
 
@@ -422,7 +422,8 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
   for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
     //swimmers[lane][i].position = 0; This should continue from previous position
     swimmers[lane][i].hasStarted = false;  // Initialize as not started
-    swimmers[lane][i].lastUpdate = currentMillis;
+    swimmers[lane][i].lastPositionUpdate = currentMillis;
+    swimmers[lane][i].swimStartTime = 0; // will be set when rest completes (or 0 means start immediately)
 
     // Initialize round and rest tracking
     swimmers[lane][i].currentRound = 1;
@@ -2198,7 +2199,8 @@ void initializeSwimmers() {
   for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
       swimmers[lane][i].position = 0;
       swimmers[lane][i].hasStarted = false;  // Initialize as not started
-      swimmers[lane][i].lastUpdate = 0;
+      swimmers[lane][i].lastPositionUpdate = 0;
+      swimmers[lane][i].swimStartTime = 0; // will be set when rest completes (or 0 means start immediately)
 
       // Initialize round and rest tracking
       swimmers[lane][i].currentRound = 0;
@@ -2310,16 +2312,17 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       swimmer->expectedStartTime = 0;
 
       long actualStartTime = swimmer->restStartTime + swimmer->expectedRestDuration;
+      // Set swimStartTime to the logical start instant (accounting for overshoot)
+      swimmer->swimStartTime = currentTime - actualStartTime;
+      // Reset the position-update clock so the next delta is measured from now
+      swimmer->lastPositionUpdate = currentTime;
       // Set total distance to 0.0
       // We don't account for distance traveled since rest period ended
       // because we will handle that in the swimming logic below
-      // That is why we adjust last update time below to when the rest ended
+      // That is why we adjust swimStartTime above to when the rest ended
       // TODO: The down side is we may not handle this position update till
       // the next frame, causing a small jump in position
       swimmer->totalDistance = 0.0;
-      // Set last updated time to account for any overshootInDistance
-      // TODO: I don't like how we are co-opting lastUpdate for this purpose
-      swimmer->lastUpdate = currentTime - actualStartTime;
 
       // Start underwater phase when leaving the wall
       if (globalConfigSettings.underwatersEnabled) {
@@ -2357,7 +2360,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
   // We don't use an else here because the swimmer may have just finished resting
   // ------------------------------ SWIMMER SWIMMING LOGIC ------------------------------
   // Swimmer is actively swimming
-  if (currentTime - swimmer->lastUpdate >= delayMS) {
+  if (currentTime - swimmer->lastPositionUpdate >= delayMS) {
     // Print debug info only once when entering swimming state
     if (DEBUG_ENABLED && !swimmer->debugSwimmingPrinted && swimmerIndex < laneSwimmerCount) {
       Serial.println("------------------------------------------------");
@@ -2386,8 +2389,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     }
 
     // Calculate time elapsed since last position update
-    float deltaSeconds = (currentTime - swimmer->lastUpdate) / 1000.0;
-    swimmer->lastUpdate = currentTime;
+    float deltaSeconds = (currentTime - swimmer->lastPositionUpdate) / 1000.0;
+    swimmer->lastPositionUpdate = currentTime;
 
     // Calculate distance traveled this frame in pool's native units
     // Convert speed (meters/sec) to pool's native units
@@ -2886,8 +2889,8 @@ void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
     return;
   }
 
-  // Only draw if swimmer should be active (start time has passed)
-  if (millis() < swimmer->lastUpdate) {
+  // Only draw if swimmer should be active (start time has passed). swimStartTime==0 means already allowed.
+  if (swimmer->swimStartTime > 0 && millis() < swimmer->swimStartTime) {
     return; // Swimmer hasn't started yet
   }
 
