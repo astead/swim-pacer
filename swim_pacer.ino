@@ -741,7 +741,7 @@ void handleGetSettings() {
     if (li < MAX_LANES_SUPPORTED - 1) json += ",";
   }
   json += "],";
-  json += "\"gapBetweenStrips\":" + String(globalConfigSettings.gapBetweenStrips, 2) + ",";
+  json += "\"gapBetweenStrips\":" + String(globalConfigSettings.gapBetweenStrips) + ",";
   json += "\"pulseWidthFeet\":" + String(globalConfigSettings.pulseWidthFeet, 2) + ",";
   // Return swim speed in feet/sec (legacy) but include a named field for clarity
   // Return speed in meters per second for consistent units with the client
@@ -1829,7 +1829,7 @@ void saveGlobalConfigSettings() {
     String key = String("numLedStrips") + String(li);
     preferences.putInt(key.c_str(), globalConfigSettings.numLedStrips[li]);
   }
-  preferences.putFloat("gapBetweenStrips", globalConfigSettings.gapBetweenStrips);
+  preferences.putInt("gapBetweenStrips", globalConfigSettings.gapBetweenStrips);
   preferences.putFloat("pulseWidthFeet", globalConfigSettings.pulseWidthFeet);
   for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     String key = String("swimLane") + String(li);
@@ -1880,12 +1880,12 @@ void loadGlobalConfigSettings() {
   globalConfigSettings.numLanes = preferences.getFloat("numLanes", 1);  // 1 lane default
   globalConfigSettings.poolLength = preferences.getFloat("poolLength", 25.0);  // 25 yards default
   globalConfigSettings.poolUnitsYards = preferences.getBool("poolUnitsYards", true);  // Default to yards
-  globalConfigSettings.stripLengthMeters = preferences.getFloat("stripLengthM", 23.0);
+  globalConfigSettings.stripLengthMeters = preferences.getFloat("stripLengthM", 5.0);
   for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     String key = String("numLedStrips") + String(li);
     globalConfigSettings.numLedStrips[li] = preferences.getInt(key.c_str(), 1);
   }
-  globalConfigSettings.gapBetweenStrips = preferences.getFloat("gapBetweenStrips", 0.0);
+  globalConfigSettings.gapBetweenStrips = preferences.getInt("gapBetweenStrips", 23);
   globalConfigSettings.ledsPerMeter = preferences.getInt("ledsPerMeter", 30);
   globalConfigSettings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
   // Keep preference fallbacks consistent with struct defaults
