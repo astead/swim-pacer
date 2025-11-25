@@ -1196,6 +1196,71 @@ function shouldRetryEnqueue(local) {
     return (Date.now() - local.enqueueRequestedAt) >= ENQUEUE_RETRY_MS;
 }
 
+// central helper to send enqueue requests and update local optimistic entry state
+async function sendEnqueuePayload(payload, local) {
+    // payload: object to POST to /enqueueSwimSet
+    // local: local optimistic entry in swimSetQueues[lane] that should be updated
+    if (isStandaloneMode) {
+        // nothing to do in standalone mode
+        return { suppressed: true };
+    }
+
+    try {
+        const resp = await fetch('/enqueueSwimSet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) {
+            if (resp.errorCode) {
+                switch (resp.errorCode) {
+                    case 1:
+                        console.log('sendEnqueuePayload ERROR from /enqueueSwimSet: Swim set already exists on device.');
+                        break;
+                    case 2:
+                        console.log('sendEnqueuePayload ERROR from /enqueueSwimSet: Device queue is full; cannot enqueue swim set.');
+                        break;
+                    case 3:
+                        console.log('sendEnqueuePayload ERROR from /enqueueSwimSet: Invalid lane.');
+                        break;
+                    default:
+                        console.log('sendEnqueuePayload ERROR from /enqueueSwimSet: Failed to enqueue swim set on device with error code:', resp.errorCode);
+                        break;
+                }
+            } else {
+                console.log('sendEnqueuePayload ERROR from /enqueueSwimSet: No error code, uniqueId:', payload.uniqueId);
+            }
+            // keep local marked pending so retry logic can resend later
+            if (local) {
+                local.enqueuePending = true;
+                local.enqueueRequestedAt = Date.now();
+                local.synced = false;
+                updateQueueDisplay();
+            }
+            return { ok: false, status: resp.status };
+        }
+
+        const j = await resp.json().catch(()=>null);
+        if (local && j && j.uniqueId) local.uniqueId = String(j.uniqueId).toLowerCase();
+        if (local) {
+            local.enqueuePending = false;
+            local.synced = true;
+            updateQueueDisplay();
+        }
+        return { ok: true, json: j };
+    } catch (err) {
+        console.warn('sendEnqueuePayload: network error enqueueing', payload.uniqueId, err);
+        if (local) {
+            local.enqueuePending = true;
+            local.enqueueRequestedAt = Date.now();
+            local.synced = false;
+            updateQueueDisplay();
+        }
+        return { ok: false, error: err };
+    }
+}
+
 function queueSwimSet() {
     const lane = currentSettings.currentLane;
 
@@ -1220,56 +1285,33 @@ function queueSwimSet() {
     // can enqueue into the correct per-lane queue.
     console.log('queueSwimSet: buildMinimalSwimSetPayload:', workingSwimSetInfo);
     const payload = buildMinimalSwimSetPayload(workingSwimSetInfo);
+    const local = {...payload};
+    local.lane = lane;
     payload.lane = lane;
-    workingSwimSetInfo.summary = generateSetSummary(currentSettings);
 
-    const uniqueId = generateUniqueId(16);
-    workingSwimSetInfo.uniqueId = uniqueId;
-    payload.uniqueId = uniqueId;
+    local.summary = generateSetSummary(currentSettings);
+    workingSwimSetInfo.summary = local.summary;
+
+    local.uniqueId = generateUniqueId(16);
+    payload.uniqueId = local.uniqueId;
 
     // optimistic local entry creation (or find existing local entry)
-    const local = { ...payload, synced: false, enqueuePending: true, enqueueRequestedAt: Date.now() };
+    local.synced = false;
+    local.enqueuePending = true;
+    local.enqueueRequestedAt = Date.now();
+
     // push into local queue UI/state as you already do
     swimSetQueues[lane] = swimSetQueues[lane] || [];
     swimSetQueues[lane].push(local);
     updateQueueDisplay();
     updatePacerButtons();
 
-    console.log('queueSwimSet calling /enqueueSwimSet');
-    fetch('/enqueueSwimSet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    }).then(async resp => {
-        if (!resp.ok) {
-            if (resp.errorCode) {
-                switch (resp.errorCode) {
-                    case 1:
-                        console.log('QueueSwimSet ERROR from /enqueueSwimSet: Swim set already exists on device.');
-                        break;
-                    case 2:
-                        console.log('QueueSwimSet ERROR from /enqueueSwimSet: Device queue is full; cannot enqueue swim set.');
-                        break;
-                    case 3:
-                        console.log('QueueSwimSet ERROR from /enqueueSwimSet: Invalid lane.');
-                        break;
-                    default:
-                        console.log('QueueSwimSet ERROR from /enqueueSwimSet: Failed to enqueue swim set on device with error code:', resp.errorCode);
-                        break;
-                }
-            } else {
-                console.log('QueueSwimSet ERROR from /enqueueSwimSet: No error code, uniqueId:', payload.uniqueId);
-            }
+    // Send using centralized helper
+    sendEnqueuePayload(payload, local).then(result => {
+        if (!result.ok) {
+            // Optionally inspect result.status to provide finer UX messages
+            console.log('queueSwimSet: enqueue request returned not-ok', result.status || result.error);
         }
-        const j = await resp.json().catch(()=>null);
-        if (j && j.uniqueId) local.uniqueId = String(j.uniqueId).toLowerCase();
-        local.enqueuePending = false;
-        local.synced = true;
-    }).catch(err => {
-        console.warn('Initial enqueue network error for', payload.uniqueId, err);
-        local.enqueuePending = true;
-        local.enqueueRequestedAt = Date.now();
-        local.synced = false;
     });
 }
 
@@ -1570,38 +1612,21 @@ function enqueueLoopEntry(lane, loopFromUniqueId, iterations) {
         uniqueId: uniqueId
     };
 
-    const local = { ...payload, synced: false, enqueuePending: true, enqueueRequestedAt: Date.now() };
+    const local = {...payload};
+    local.synced = false;
+    local.enqueuePending = true;
+    local.enqueueRequestedAt = Date.now();
+
     swimSetQueues[lane] = swimSetQueues[lane] || [];
     swimSetQueues[lane].push(local);
     updateQueueDisplay();
     updatePacerButtons();
 
-    if (isStandaloneMode) return;
-
-    fetch('/enqueueSwimSet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    }).then(async resp => {
-        if (!resp.ok) {
-            console.warn('enqueueLoopEntry: server enqueue failed', resp.status);
-            local.enqueuePending = true;
-            local.enqueueRequestedAt = Date.now();
-            local.synced = false;
-            updateQueueDisplay();
-            return;
+    // Delegate network enqueue to helper
+    sendEnqueuePayload(payload, local).then(result => {
+        if (!result.ok) {
+            console.log('enqueueLoopEntry: enqueue failed', result.status || result.error);
         }
-        const j = await resp.json().catch(()=>null);
-        if (j && j.uniqueId) local.uniqueId = String(j.uniqueId).toLowerCase();
-        local.enqueuePending = false;
-        local.synced = true;
-        updateQueueDisplay();
-    }).catch(err => {
-        console.warn('enqueueLoopEntry: network error enqueueing loop item', err);
-        local.enqueuePending = true;
-        local.enqueueRequestedAt = Date.now();
-        local.synced = false;
-        updateQueueDisplay();
     });
 }
 
@@ -2405,45 +2430,12 @@ async function reconcileQueueWithDevice() {
                 payload.lane = lane;
                 payload.uniqueId = local.uniqueId;
 
-                // Send this queue item again
-                fetch('/enqueueSwimSet', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    }).then(async resp => {
-                        if (!resp.ok) {
-                            if (resp.errorCode) {
-                                switch (resp.errorCode) {
-                                    case 1:
-                                        console.log('reconcileQueueWithDevice Error from /enqueueSwimSet: Swim set already exists on device.');
-                                        local.synced = true; // mark as synced since it exists
-                                        swimSetQueues[lane][i] = local;
-                                        break;
-                                    case 2:
-                                        console.log('reconcileQueueWithDevice Error from /enqueueSwimSet: Device queue is full; cannot enqueue swim set.');
-                                        break;
-                                    case 3:
-                                        console.log('reconcileQueueWithDevice Error from /enqueueSwimSet: Invalid lane.');
-                                        break;
-                                    default:
-                                        console.log('reconcileQueueWithDevice Error from /enqueueSwimSet: Failed to enqueue swim set on device with error code:', resp.errorCode);
-                                        break;
-                                }
-                            } else {
-                                console.log('reconcileQueueWithDevice Error from /enqueueSwimSet: No error code, uniqueId:', local.uniqueId);
-                            }
-                            console.log('re-enqueue request failed for local swim set with uniqueId', local.uniqueId);
-                        } else {
-                            const j = await resp.json().catch(()=>null);
-                            if (j && j.uniqueId) local.uniqueId = String(j.uniqueId);
-                            local.synced = true;
-                            local.enqueuePending = false;
-                            swimSetQueues[lane][i] = local;
-                            console.log('Re-enqueued local swim set successfully on server:', local.uniqueId);
-                        }
-                    }).catch(err => {
-                        console.log('re-enqueue request failed for local swim set with uniqueId', local.uniqueId, err);
-                    });
+                // Send this queue item again, using centralized enqueue helper
+                sendEnqueuePayload(payload, local).then(result => {
+                    if (!result.ok) {
+                        console.log('reconcile: re-enqueue failed', result.status || result.error);
+                    }
+                });
             }
         }
 
@@ -2824,8 +2816,9 @@ async function copyLaneQueueTo(fromLane, toLane) {
         // shallow clone then normalize fields
         const clone = JSON.parse(JSON.stringify(item));
         clone.lane = toLane;
-        // remove server-side identity so server treats this as a new enqueue
-        delete clone.uniqueId;
+        clone.summary = generateSetSummary(item);
+        // Create a new uniqueId as this will be a new entry
+        clone.uniqueId = generateUniqueId();
         clone.synced = false;
         clone.enqueuePending = true;
         clone.enqueueRequestedAt = Date.now();
@@ -2833,39 +2826,22 @@ async function copyLaneQueueTo(fromLane, toLane) {
         // push locally
         if (swimSetQueues && Array.isArray(swimSetQueues) && Array.isArray(swimSetQueues[toLane])) {
             swimSetQueues[toLane].push(clone);
-        } else if (typeof swimSetQueue !== 'undefined' && Array.isArray(swimSetQueue)) {
-            swimSetQueue.push(clone);
         }
 
         updateQueueDisplay();
 
         // attempt to enqueue on server (sequential, best-effort). If standalone, skip.
         if (!isStandaloneMode) {
-            try {
-                const payload = buildMinimalSwimSetPayload(clone);
-                payload.lane = toLane;
-                const ctrl = new AbortController();
-                const to = setTimeout(()=>ctrl.abort(), 10000);
-                const resp = await fetch('/enqueueSwimSet', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                    signal: ctrl.signal
-                });
-                clearTimeout(to);
-                if (resp.ok) {
-                    const j = await resp.json().catch(()=>null);
-                    if (j && j.uniqueId) clone.uniqueId = String(j.uniqueId).toLowerCase();
-                    clone.synced = true;
-                    clone.enqueuePending = false;
-                    updateQueueDisplay();
-                } else {
-                    console.warn('enqueue failed for copied set to lane', toLane, resp.status);
+            const payload = buildMinimalSwimSetPayload(clone);
+            // TODO: Lane should be part of the above function
+            payload.lane = toLane;
+            payload.uniqueId = clone.uniqueId;
+            // Use centralized helper to send enqueue and update the local optimistic entry
+            sendEnqueuePayload(payload, clone).then(result => {
+                if (!result.ok) {
+                    console.warn('enqueue failed for copied set to lane', toLane, result.status || result.error);
                 }
-            } catch (e) {
-                console.warn('network enqueue error for copied set', e && e.message ? e.message : e);
-                // leave enqueuePending true so retry logic can pick it up
-            }
+            });
         }
     }
 }
