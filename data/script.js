@@ -57,6 +57,12 @@ const SWIMSET_STATUS_ACTIVE     = 0x1 << 1;
 const SWIMSET_STATUS_COMPLETED  = 0x1 << 2;
 const SWIMSET_STATUS_STOPPED    = 0x1 << 3;
 
+// swim set type constants (match server enum)
+const SWIMSET_TYPE = 0;
+const REST_TYPE = 1;
+const LOOP_TYPE = 2;
+const MOVE_TYPE = 3;
+
 const ENQUEUE_RETRY_MS = 15000; // wait 15s before retrying a pending enqueue
 
 // Swim Set Queue Management - now lane-specific
@@ -1291,6 +1297,19 @@ function updateQueueDisplay() {
     queue.forEach((entry, idx) => {
         const row = document.createElement('div');
         row.className = 'queue-item';
+        // Ensure queue row is a horizontal flex container so left + actions align
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.justifyContent = 'space-between';
+
+        // Left area wrapper so spacing/layout remains predictable
+        const leftWrap = document.createElement('div');
+        leftWrap.className = 'queue-left';
+        // Allow left area to flex and shrink so the actions remain visible
+        leftWrap.style.display = 'flex';
+        leftWrap.style.alignItems = 'center';
+        leftWrap.style.flex = '1 1 auto';
+        leftWrap.style.minWidth = '0'; // required for overflow to work inside flex item
 
         // Status is a number (bitmask)
         const statusVal = entry.status;
@@ -1299,47 +1318,65 @@ function updateQueueDisplay() {
         const isDeletedPending = !!entry.deletedPending;
         const isStopped = !!(statusVal & SWIMSET_STATUS_STOPPED);
 
+        // Normal label generation (reuse previous logic but inside leftWrap)
+        const label = document.createElement('span');
+        label.className = 'queue-label';
+        // Prevent label from pushing action buttons off-screen; ellipsize long text
+        label.style.overflow = 'hidden';
+        label.style.textOverflow = 'ellipsis';
+        label.style.whiteSpace = 'nowrap';
+        label.style.display = 'inline-block';
+        label.style.minWidth = '0';
+        // Special case for LOOP_TYPE entries so they appear descriptive
+        if (entry.type === LOOP_TYPE) {
+            const lf = (entry.loopFromIndex !== undefined) ? (entry.loopFromIndex + 1) : '?';
+            const ll = entry.loopLength || '?';
+            const iters = entry.repeat || 0;
+            label.textContent = entry.summary || `Repeat ${ll} item(s) from #${lf} x ${iters}`;
+        } else {
+            label.textContent = entry.summary || (`${entry.numRounds} x ${entry.swimDistance}'s`);
+        }
+        leftWrap.appendChild(label);
+
+        // Build rest of row (reuse existing actions code but moved to be flexible)
+        const actions = document.createElement('span');
+        actions.className = 'queue-actions';
+        // Keep actions fixed (no shrinking) and laid out horizontally
+        actions.style.display = 'flex';
+        actions.style.gap = '8px';
+        actions.style.flex = '0 0 auto';
+        actions.style.marginLeft = '12px';
+
         // Completed
         if (isCompleted && !isActive) {
             row.classList.add('completed');
-            const label = document.createElement('span');
-            label.className = 'queue-label';
-            label.textContent = (entry.summary || (`${entry.numRounds} x ${entry.swimDistance}'s`));
-            row.appendChild(label);
-
             const info = document.createElement('span');
             info.className = 'queue-info';
             info.textContent = 'Completed';
-            row.appendChild(info);
+            leftWrap.appendChild(info);
 
-            const actions = document.createElement('span');
-            actions.className = 'queue-actions';
-
-            // Allow removal of completed sets (delete) but disable edit/run
             const removeBtn = document.createElement('button');
             removeBtn.textContent = 'Remove';
             removeBtn.onclick = () => { deleteSwimSet(idx); };
             actions.appendChild(removeBtn);
 
+            row.appendChild(leftWrap);
             row.appendChild(actions);
             listEl.appendChild(row);
             return;
         }
 
-        // Running / Active
+        // Active / stopped / pending-delete / normal branches follow the same structure
+        // (for brevity keep the rest of your existing action buttons)
         if (isActive) {
             row.classList.add('running');
-            const label = document.createElement('span');
-            label.className = 'queue-label';
-            label.textContent = (entry.summary || (`${entry.numRounds} x ${entry.swimDistance}'s`)) + ' — Running';
-            row.appendChild(label);
-
             const statusSpan = document.createElement('span');
             statusSpan.className = 'queue-status';
             const roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : 'In progress';
             statusSpan.textContent = roundText;
-            row.appendChild(statusSpan);
+            leftWrap.appendChild(statusSpan);
 
+            row.appendChild(leftWrap);
             listEl.appendChild(row);
             return;
         }
@@ -1347,19 +1384,11 @@ function updateQueueDisplay() {
         // Stopped
         if (isStopped) {
             row.classList.add('stopped');
-            const label = document.createElement('span');
-            label.className = 'queue-label';
-            label.textContent = (entry.summary || (`${entry.numRounds} x ${entry.swimDistance}'s`)) + ' — Stopped';
-            row.appendChild(label);
-
             const statusSpan = document.createElement('span');
             statusSpan.className = 'queue-status';
             const roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : '';
             statusSpan.textContent = roundText;
-            row.appendChild(statusSpan);
-
-            const actions = document.createElement('span');
-            actions.className = 'queue-actions';
+            leftWrap.appendChild(statusSpan);
 
             const editBtn = document.createElement('button');
             editBtn.textContent = 'Edit';
@@ -1376,8 +1405,8 @@ function updateQueueDisplay() {
             delBtn.onclick = () => { deleteSwimSet(idx); };
             actions.appendChild(delBtn);
 
+            row.appendChild(leftWrap);
             row.appendChild(actions);
-
             listEl.appendChild(row);
             return;
         }
@@ -1385,38 +1414,23 @@ function updateQueueDisplay() {
         // If this entry is marked as pending deletion, render as such (but keep visible).
         if (entry.deletedPending) {
             row.classList.add('pending-delete');
-            const label = document.createElement('span');
-            label.className = 'queue-label';
-            label.textContent = entry.summary || (`${entry.numRounds} x ${entry.swimDistance}'s`);
-            row.appendChild(label);
-
             const status = document.createElement('span');
             status.className = 'queue-status';
             status.textContent = 'Deleting...';
-            row.appendChild(status);
+            leftWrap.appendChild(status);
 
-            // Disabled controls placeholder so layout doesn't shift
-            const btnArea = document.createElement('span');
-            btnArea.className = 'queue-actions';
             const disabledBtn = document.createElement('button');
             disabledBtn.textContent = 'Delete';
             disabledBtn.disabled = true;
-            btnArea.appendChild(disabledBtn);
-            row.appendChild(btnArea);
+            actions.appendChild(disabledBtn);
 
+            row.appendChild(leftWrap);
+            row.appendChild(actions);
             listEl.appendChild(row);
             return;
         }
 
-        // Normal (not pending/completed) rendering
-        const label = document.createElement('span');
-        label.className = 'queue-label';
-        label.textContent = entry.summary || (`${entry.numRounds} x ${entry.swimDistance}'s`);
-        row.appendChild(label);
-
-        const actions = document.createElement('span');
-        actions.className = 'queue-actions';
-
+        // Normal row: Edit / Run / Delete
         const editBtn = document.createElement('button');
         editBtn.textContent = 'Edit';
         editBtn.onclick = () => { editSwimSet(idx); };
@@ -1432,13 +1446,155 @@ function updateQueueDisplay() {
         delBtn.onclick = () => { deleteSwimSet(idx); };
         actions.appendChild(delBtn);
 
+        row.appendChild(leftWrap);
         row.appendChild(actions);
-
         listEl.appendChild(row);
     });
 }
 
+// Show the repeat selection modal and populate with current queue items
+function showRepeatModal() {
+    console.log('showRepeatModal called');
+    const lane = currentSettings.currentLane || 0;
+    const queue = swimSetQueues[lane] || [];
+    const body = document.getElementById('repeatModalBody');
+    const modal = document.getElementById('repeatModal');
+    if (!body || !modal) return;
+
+    body.innerHTML = '';
+    repeatModalSelectedStart = 0;
+
+    queue.forEach((entry, idx) => {
+        const r = document.createElement('div');
+        r.className = 'repeat-row';
+        r.dataset.index = String(idx);
+        r.onclick = () => setRepeatModalStart(idx);
+        const lbl = document.createElement('label');
+        lbl.textContent = `${idx + 1}. ${entry.summary || (typeof generateSetSummary === 'function' ? generateSetSummary(entry) : '')}`;
+        r.appendChild(lbl);
+        body.appendChild(r);
+    });
+
+    // default iterations = 1
+    const itersEl = document.getElementById('repeatIterations');
+    if (itersEl) itersEl.value = 1;
+
+    // initial visual update (highlight full queue)
+    updateRepeatModalSelectionVisual();
+
+    modal.style.display = 'flex';
+}
+
+function setRepeatModalStart(idx) {
+    repeatModalSelectedStart = idx;
+    updateRepeatModalSelectionVisual();
+}
+
+function updateRepeatModalSelectionVisual() {
+    const body = document.getElementById('repeatModalBody');
+    if (!body) return;
+    const rows = body.querySelectorAll('.repeat-row');
+    rows.forEach(r => {
+        const i = parseInt(r.dataset.index, 10);
+        if (!isNaN(i) && i >= repeatModalSelectedStart) {
+            r.classList.add('repeat-selected');
+        } else {
+            r.classList.remove('repeat-selected');
+        }
+    });
+}
+
+// Hide modal
+function hideRepeatModal() {
+    const modal = document.getElementById('repeatModal');
+    if (modal) modal.style.display = 'none';
+}
+
+// Called when modal "Create Repeat" pressed
+function repeatModalConfirm() {
+    const lane = currentSettings.currentLane || 0;
+    const queue = swimSetQueues[lane] || [];
+    if (!queue || queue.length === 0) {
+        hideRepeatModal();
+        return;
+    }
+    const startIndex = (typeof repeatModalSelectedStart === 'number') ? repeatModalSelectedStart : 0;
+    const maxLen = queue.length - startIndex;
+    const length = maxLen;
+    const itersEl = document.getElementById('repeatIterations');
+    let iterations = itersEl ? parseInt(itersEl.value, 10) : 1;
+    if (isNaN(iterations) || iterations < 1) iterations = 1;
+
+    enqueueLoopEntry(lane, startIndex, length, iterations);
+    hideRepeatModal();
+}
+
+// Create and enqueue LOOP_TYPE entry (optimistic local entry + POST)
+function enqueueLoopEntry(lane, loopFromIndex, loopLength, iterations) {
+    const part1 = Date.now().toString(16);
+    const part2 = Math.floor(Math.random() * 0xFFFFFF).toString(16);
+    const raw = (part1 + part2).padEnd(16, '0').slice(0, 16);
+    const uniqueId = raw.toLowerCase();
+
+    const payload = {
+        lane: lane,
+        numRounds: 0,
+        swimDistance: 0,
+        swimTime: 0,
+        restTime: 0,
+        swimmerInterval: 0,
+        type: LOOP_TYPE,
+        repeat: iterations,
+        // client-side metadata for display and later reconciliation
+        loopFromIndex: loopFromIndex,
+        loopLength: loopLength,
+        summary: `Repeat ${loopLength} item(s) from #${loopFromIndex + 1} x ${iterations}`,
+        uniqueId: uniqueId
+    };
+
+    const local = { ...payload, synced: false, enqueuePending: true, enqueueRequestedAt: Date.now() };
+    swimSetQueues[lane] = swimSetQueues[lane] || [];
+    swimSetQueues[lane].push(local);
+    updateQueueDisplay();
+    updatePacerButtons();
+
+    if (isStandaloneMode) return;
+
+    fetch('/enqueueSwimSet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(async resp => {
+        if (!resp.ok) {
+            console.warn('enqueueLoopEntry: server enqueue failed', resp.status);
+            local.enqueuePending = true;
+            local.enqueueRequestedAt = Date.now();
+            local.synced = false;
+            updateQueueDisplay();
+            return;
+        }
+        const j = await resp.json().catch(()=>null);
+        if (j && j.uniqueId) local.uniqueId = String(j.uniqueId).toLowerCase();
+        local.enqueuePending = false;
+        local.synced = true;
+        updateQueueDisplay();
+    }).catch(err => {
+        console.warn('enqueueLoopEntry: network error enqueueing loop item', err);
+        local.enqueuePending = true;
+        local.enqueueRequestedAt = Date.now();
+        local.synced = false;
+        updateQueueDisplay();
+    });
+}
+
+// Replace old repeatQueue invocation with modal opener
+function repeatQueue() {
+    console.log('repeatQueue called');
+    showRepeatModal();
+}
+
 function updatePacerButtons() {
+    console.log('UpdatePacerButtons ENTER');
     const currentLane = currentSettings.currentLane;
     const pacerButtons = document.getElementById('pacerButtons');
     const startBtn = document.getElementById('startBtn');
@@ -1463,15 +1619,33 @@ function updatePacerButtons() {
             stopBtn.style.display = 'none';
         }
 
+        console.log('We have queue items, should be showing copy and repeat buttons');
         // show/hide copy buttons but preserve layout by toggling visibility
-        if (copyLeftBtn) copyLeftBtn.style.visibility = (currentLane > 0 ? 'visible' : 'hidden');
-        if (copyRightBtn) copyRightBtn.style.visibility = (currentSettings.numLanes && currentLane < (currentSettings.numLanes - 1) ? 'visible' : 'hidden');
-        if (repeatBtn) repeatBtn.style.visibility = 'visible';
+        if (copyLeftBtn) {
+            if (currentLane > 0) {
+                copyLeftBtn.style.visibility = 'visible';
+            } else {
+                copyLeftBtn.style.visibility = 'hidden';
+            }
+        }
+        if (copyRightBtn) {
+            if (currentSettings.numLanes && currentLane < (currentSettings.numLanes - 1)) {
+                copyRightBtn.style.visibility = 'visible';
+            } else {
+                copyRightBtn.style.visibility = 'hidden';
+            }
+        }
+        if (repeatBtn) {
+            console.log('found repeatBtn element, setting visibility to visible');
+            repeatBtn.style.visibility = 'visible';
+        } else {
+            console.log('could not find repeatBtn element');
+        }
     } else {
         pacerButtons.style.display = 'none';
-        copyLeftBtn.style.display = 'none';
-        copyRightBtn.style.display = 'none';
-        repeatBtn.style.display = 'none';
+        copyLeftBtn.style.visibility = 'hidden';
+        copyRightBtn.style.visibility = 'hidden';
+        repeatBtn.style.visibility = 'hidden';
     }
 }
 
@@ -2614,8 +2788,7 @@ async function fetchDeviceSettingsAndApply() {
 async function copyLaneQueueTo(fromLane, toLane) {
     if (fromLane === toLane) return;
     // source queue (support both per-lane and global queue setups)
-    let source = (swimSetQueues && Array.isArray(swimSetQueues) && Array.isArray(swimSetQueues[fromLane])) ? swimSetQueues[fromLane] :
-                 (typeof getLaneQueue === 'function' ? getLaneQueue(fromLane) : []);
+    let source = (swimSetQueues && Array.isArray(swimSetQueues) && Array.isArray(swimSetQueues[fromLane])) ? swimSetQueues[fromLane] : [];
     if (!source || source.length === 0) return;
 
     // ensure destination exists for per-lane shape
@@ -2694,10 +2867,6 @@ function copyLeft() {
 function copyRight() {
     const lane = currentSettings.currentLane;
     if (currentSettings.numLanes && lane < (currentSettings.numLanes - 1)) copyLaneQueueTo(lane, lane + 1);
-}
-function repeatQueue() {
-    // not implemented yet (placeholder)
-    console.log('repeatQueue: not implemented');
 }
 
 // -----------------------------

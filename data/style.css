@@ -417,12 +417,50 @@ input:checked + .toggle-slider:before {
     align-items: center;
 }
 
-/* Queue list styling - compact row layout to match prior UI */
-#queueList {
-    padding: 6px;
-    margin: 0;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+/* Queue layout fixes: ensure radio/button widths don't inherit global 100% and label ellipsizes */
+#queueList .queue-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
+
+#queueList .queue-left {
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0; /* allow child to shrink for text-overflow */
+}
+
+#queueList .queue-left input[type="radio"] {
+    width: auto !important;
+    flex: 0 0 auto;
+    padding: 0;
+    margin-right: 8px;
+    box-sizing: content-box;
+}
+
+#queueList .queue-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    min-width: 0;
+}
+
+#queueList .queue-actions {
+    display: flex;
+    gap: 8px;
+    flex: 0 0 auto;
+    margin-left: 12px;
+}
+
+#queueList .queue-actions button,
+#queueList .queue-actions input[type="button"] {
+    width: auto !important;
+    padding: 6px 10px;
+    box-sizing: border-box;
+}
+/* End queue layout fixes */
 
 /* Each queue row: label/info on left, actions on right */
 .queue-item {
@@ -528,7 +566,7 @@ button[disabled], .small-button[disabled] {
 }
 
 /* Running row: visually prominent */
-.queue-item.stoped {
+.queue-item.stopped {
     background: #f0f8ff;
     border-left: 4px solid #721c24;
 }
@@ -551,6 +589,54 @@ button[disabled], .small-button[disabled] {
     background: #f6f6f6;
     color: #222;
     border: 1px solid rgba(0,0,0,0.06);
+}
+
+/* Modal for repeat selection */
+.modal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+}
+.modal-content {
+  background: #fff;
+  padding: 14px;
+  border-radius: 8px;
+  width: 640px;
+  max-width: calc(100% - 32px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
+/* keep modal list tidy */
+#repeatModalBody .repeat-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  transition: background-color 0.12s, border-left-color 0.12s;
+}
+#repeatModalBody .repeat-row label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#repeatModalBody .repeat-row.repeat-selected {
+  background: rgba(0, 123, 255, 0.10);
+  border-left: 4px solid #007bff;
+  padding-left: 8px;
+}
+
+/* Hover affordance */
+#repeatModalBody .repeat-row:hover {
+  background: rgba(0,0,0,0.03);
 }
 
 /* Responsive tiny screens */

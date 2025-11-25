@@ -342,6 +342,25 @@
             </div>
             <button onclick="closeColorPicker()" style="width: 100%; padding: 8px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">Close</button>
         </div>
-    </div><script src="script.js"></script>
+    </div>
+
+    <!-- Repeat modal: choose start index, contiguous length and iterations -->
+    <div id="repeatModal" class="modal" style="display:none;">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="repeatModalTitle">
+            <h3 id="repeatModalTitle">Create Repeat block</h3>
+            <div id="repeatModalBody" style="max-height:320px; overflow:auto; margin-top:8px;"></div>
+            <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                <label style="min-width:120px;">Iterations</label>
+                <input id="repeatIterations" type="number" min="1" value="1" style="width:80px;">
+            </div>
+            <div style="margin-top:12px; display:flex; justify-content:flex-end; gap:8px;">
+                <button onclick="hideRepeatModal()">Cancel</button>
+                <button onclick="repeatModalConfirm()">Create Repeat</button>
+            </div>
+        </div>
+    </div>
+    <!-- end repeat modal -->
+
+    <script src="script.js"></script>
 </body>
 </html>
