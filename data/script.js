@@ -1744,9 +1744,8 @@ function loadSwimSetIntoConfig(swimSet) {
         });
     }
 
-    // Update all UI elements to reflect loaded settings
-    // TODO: Do we want to only update a small subset of items?
-    updateAllUIFromSettings();
+    // Update swim set settings
+    updateSwimSetUIFromSettings();
 
     // Update visual selection after UI updates
     // This selects swimmer color option (individual colors or same color)
@@ -2246,6 +2245,17 @@ function buildMinimalSwimSetPayload(createdSet) {
     return newSet;
 }
 
+function updateSwimSetUIFromSettings() {
+    // Update workingSwimSetInfo swimmers array length
+    updateIndividualSwimmerTimeDueToNumSwimmers();
+
+    document.getElementById('numRounds').value = currentSettings.numRounds;
+    document.getElementById('swimDistance').value = currentSettings.swimDistance;
+    document.getElementById('swimTime').value = currentSettings.swimTime;
+    document.getElementById('restTime').value = currentSettings.restTime;
+    document.getElementById('swimmerInterval').value = currentSettings.swimmerInterval;
+}
+
 // Helper function to update all UI elements from settings
 function updateAllUIFromSettings() {
     // Update input fields
@@ -2255,17 +2265,9 @@ function updateAllUIFromSettings() {
         currentSettings.numSwimmersPerLane[currentSettings.currentLane];
     // Update swimmerColors array length for current lane
     updateIndividualSwimmerColorDueToNumSwimmers();
-    // Update workingSwimSetInfo swimmers array length
-    updateIndividualSwimmerTimeDueToNumSwimmers();
 
-    document.getElementById('numRounds').value = currentSettings.numRounds;
-    document.getElementById('swimDistance').value = currentSettings.swimDistance;
     const percent = Math.round(((currentSettings.brightness - 20) * 100) / (255 - 20));
     const clamped = Math.max(0, Math.min(100, percent));
-    document.getElementById('swimTime').value = currentSettings.swimTime;
-    document.getElementById('restTime').value = currentSettings.restTime;
-    document.getElementById('swimmerInterval').value = currentSettings.swimmerInterval;
-
     document.getElementById('brightness').value = clamped;
     document.getElementById('brightnessValue').textContent = clamped + '%';
     document.getElementById('pulseWidth').value = currentSettings.pulseWidth;
@@ -2300,6 +2302,9 @@ function updateAllUIFromSettings() {
     document.getElementById('hideAfter').value = currentSettings.hideAfter;
     document.getElementById('hideAfterUnit').textContent =
         currentSettings.hideAfter === 1 ? ' second' : ' seconds';
+
+    // Update swim set fields
+    updateSwimSetUIFromSettings();
 
     // Update visual selections
     updateVisualSelection();
