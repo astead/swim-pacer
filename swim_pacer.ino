@@ -45,6 +45,20 @@
 #endif
 #endif
 
+// Compile-time switch to enable debug logs
+#ifndef DEBUG_SERIAL
+  // set to 1 to enable Serial debug output, 0 to disable (default: disabled for performance)
+  #define DEBUG_SERIAL 0
+#endif
+
+#if DEBUG_SERIAL
+  #define LOG(...) Serial.printf(__VA_ARGS__)
+  #define LOGLN(...) do { LOG(__VA_ARGS__); LOGLN(); } while(0)
+#else
+  #define LOG(...) do {} while(0)
+  #define LOGLN(...) do {} while(0)
+#endif
+
 // ========== HARDWARE CONFIGURATION ==========
 //#define LED_TYPE        WS2812B     // LED strip type
 #define LED_TYPE        WS2815
@@ -180,6 +194,46 @@ uint32_t nextSwimSetId = 0;
 // track the queue index (0 = head) of the set currently started for each lane
 int laneActiveQueueIndex[MAX_LANES_SUPPORTED] = {-1, -1, -1, -1};
 
+// --- Simple embedded profiler (low memory) ---
+struct ProfEntry {
+  const char* name;
+  unsigned long totalMicros;
+  unsigned long count;
+  unsigned long lastStart;
+  bool running;
+};
+const int PROF_MAX = 16;
+static ProfEntry profiler[PROF_MAX];
+
+static ProfEntry* profGet(const char* name) {
+  for (int i=0;i<PROF_MAX;i++) if (profiler[i].name && strcmp(profiler[i].name, name)==0) return &profiler[i];
+  for (int i=0;i<PROF_MAX;i++) if (!profiler[i].name) { profiler[i].name = name; profiler[i].totalMicros=0; profiler[i].count=0; profiler[i].running=false; return &profiler[i]; }
+  return NULL;
+}
+static void profStart(const char* name) {
+  ProfEntry* e = profGet(name);
+  if (!e) return;
+  e->lastStart = micros();
+  e->running = true;
+}
+static void profEnd(const char* name) {
+  ProfEntry* e = profGet(name);
+  if (!e || !e->running) return;
+  unsigned long delta = micros() - e->lastStart;
+  e->totalMicros += delta;
+  e->count++;
+  e->running = false;
+}
+static void profPrintReport() {
+  Serial.printf("=== PROFILER REPORT ===\n");
+  for (int i=0;i<PROF_MAX;i++) {
+    if (!profiler[i].name) continue;
+    unsigned long avg = profiler[i].count ? (profiler[i].totalMicros / profiler[i].count) : 0;
+    Serial.printf("%-22s count=%6lu total=%8luus avg=%6luus\n", profiler[i].name, profiler[i].count, profiler[i].totalMicros, avg);
+  }
+  Serial.printf("=======================\n");
+}
+
 // Forward declarations for functions used below
 float convertPoolToMeters(float distanceInPoolUnits);
 void loadSettings();
@@ -237,13 +291,13 @@ static int parseLaneFromBody(const String &body) {
 
 // The queue arrays are declared earlier but we define the helpers here for readability.
 int enqueueSwimSet(const SwimSet &s, int lane) {
-  if (DEBUG_ENABLED) Serial.println("enqueueSwimSet(): called");
+  if (DEBUG_ENABLED) LOGLN("enqueueSwimSet(): called");
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-    if (DEBUG_ENABLED) Serial.println("  invalid lane, rejecting set");
+    if (DEBUG_ENABLED) LOGLN("  invalid lane, rejecting set");
     return QUEUE_INVALID_LANE;
   }
   if (swimSetQueueCount[lane] >= SWIMSET_QUEUE_MAX) {
-    if (DEBUG_ENABLED) Serial.println("  queue full, rejecting set");
+    if (DEBUG_ENABLED) LOGLN("  queue full, rejecting set");
     return QUEUE_INSERT_FULL;
   }
   // Check if we already have a set with the same uniqueId in the queue
@@ -251,32 +305,32 @@ int enqueueSwimSet(const SwimSet &s, int lane) {
     int index = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
     if (swimSetQueue[lane][index].uniqueId == s.uniqueId && s.uniqueId != 0ULL) {
       if (DEBUG_ENABLED) {
-        Serial.print("  duplicate uniqueId found in queue, rejecting set: ");
-        Serial.println(s.uniqueId);
+        LOG("  duplicate uniqueId found in queue, rejecting set: ");
+        LOGLN(s.uniqueId);
       }
       return QUEUE_INSERT_DUPLICATE;
     }
   }
   if (DEBUG_ENABLED) {
-    Serial.print("enqueueSwimSet(): received set for lane:");
-    Serial.print(lane);
-    Serial.print("  [");
-    Serial.print(s.numRounds);
-    Serial.print("x");
-    Serial.print(s.swimDistance);
-    Serial.print(" on ");
-    Serial.print(s.swimTime);
-    Serial.print(" rest:");
-    Serial.print(s.restTime);
-    Serial.print(" interval:");
-    Serial.print(s.swimmerInterval);
-    Serial.println("]");
+    LOG("enqueueSwimSet(): received set for lane:");
+    LOG(lane);
+    LOG("  [");
+    LOG(s.numRounds);
+    LOG("x");
+    LOG(s.swimDistance);
+    LOG(" on ");
+    LOG(s.swimTime);
+    LOG(" rest:");
+    LOG(s.restTime);
+    LOG(" interval:");
+    LOG(s.swimmerInterval);
+    LOGLN("]");
   }
   swimSetQueue[lane][swimSetQueueTail[lane]] = s;
   swimSetQueueTail[lane] = (swimSetQueueTail[lane] + 1) % SWIMSET_QUEUE_MAX;
   swimSetQueueCount[lane]++;
   if (DEBUG_ENABLED) {
-    Serial.print("  Queue Count After Insert="); Serial.println(swimSetQueueCount[lane]);
+    LOG("  Queue Count After Insert="); LOGLN(swimSetQueueCount[lane]);
   }
   return QUEUE_INSERT_SUCCESS;
 }
@@ -418,14 +472,14 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
 
   // Debug: print swim set being applied
   if (DEBUG_ENABLED) {
-    Serial.println("applySwimSetToSettings(): applying set:");
-    Serial.print("  lane="); Serial.println(lane);
-    Serial.print("  numRounds="); Serial.println(s.numRounds);
-    Serial.print("  swimDistance="); Serial.println(s.swimDistance);
-    Serial.print("  swimTime="); Serial.println(s.swimTime);
-    Serial.print("  restTime="); Serial.println(s.restTime);
-    Serial.print("  swimmerIntervalSeconds="); Serial.println(s.swimmerInterval);
-    Serial.print("  computed speedMPS="); Serial.println(speedMPS, 4);
+    LOGLN("applySwimSetToSettings(): applying set:");
+    LOG("  lane="); LOGLN(lane);
+    LOG("  numRounds="); LOGLN(s.numRounds);
+    LOG("  swimDistance="); LOGLN(s.swimDistance);
+    LOG("  swimTime="); LOGLN(s.swimTime);
+    LOG("  restTime="); LOGLN(s.restTime);
+    LOG("  swimmerIntervalSeconds="); LOGLN(s.swimmerInterval);
+    LOG("  computed speedMPS="); LOGLN(speedMPS, 4);
   }
 
   // Defensive check: ensure swimmer interval is sane (non-zero). If it's zero
@@ -434,9 +488,9 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
   // avoid persisting an invalid zero value until we've validated all fields.
   if (swimSetSettings.swimmerIntervalSeconds <= 0) {
     if (DEBUG_ENABLED) {
-      Serial.print("Warning: swimmerIntervalSeconds <= 0 (value=");
-      Serial.print(swimSetSettings.swimmerIntervalSeconds);
-      Serial.println(") - resetting to default 4 seconds (will be persisted)");
+      LOG("Warning: swimmerIntervalSeconds <= 0 (value=");
+      LOG(swimSetSettings.swimmerIntervalSeconds);
+      LOGLN(") - resetting to default 4 seconds (will be persisted)");
     }
     swimSetSettings.swimmerIntervalSeconds = 4;
   }
@@ -445,7 +499,7 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
   saveSwimSetSettings();
 
   if (DEBUG_ENABLED) {
-    Serial.print("  swimmerIntervalSeconds="); Serial.println(swimSetSettings.swimmerIntervalSeconds);
+    LOG("  swimmerIntervalSeconds="); LOGLN(swimSetSettings.swimmerIntervalSeconds);
   }
 
   // Initialize swimmers for the current lane to start fresh
@@ -508,21 +562,21 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
 
   // Debug: dump swimmer state for current lane after initialization (first 3 swimmers)
   if (DEBUG_ENABLED) {
-    Serial.println("  swimmer state after applying the swim set:");
+    LOGLN("  swimmer state after applying the swim set:");
     for (int i = 0; i < MAX_SWIMMERS_SUPPORTED; i++) {
       Swimmer &sw = swimmers[lane][i];
-      Serial.print("  swimmer="); Serial.print(i);
-      Serial.print(" pos="); Serial.print(sw.position);
-      Serial.print(" hasStarted="); Serial.print(sw.hasStarted ? 1 : 0);
-      Serial.print(" currentRound="); Serial.print(sw.currentRound);
-      Serial.print(" currentLap="); Serial.print(sw.currentLap);
-      Serial.print(" lapsPerRound="); Serial.print(sw.lapsPerRound);
-      Serial.print(" isResting="); Serial.print(sw.isResting ? 1 : 0);
-      Serial.print(" restStartTime="); Serial.print(sw.restStartTime);
-      Serial.print(" expectedRestDuration="); Serial.print(sw.expectedRestDuration / 1000.0);
-      Serial.print(" startAtMillis="); Serial.print(sw.expectedStartTime);
-      Serial.print(" totalDistance="); Serial.print(sw.totalDistance, 3);
-      Serial.print(" lapDirection="); Serial.println(sw.lapDirection);
+      LOG("  swimmer="); LOG(i);
+      LOG(" pos="); LOG(sw.position);
+      LOG(" hasStarted="); LOG(sw.hasStarted ? 1 : 0);
+      LOG(" currentRound="); LOG(sw.currentRound);
+      LOG(" currentLap="); LOG(sw.currentLap);
+      LOG(" lapsPerRound="); LOG(sw.lapsPerRound);
+      LOG(" isResting="); LOG(sw.isResting ? 1 : 0);
+      LOG(" restStartTime="); LOG(sw.restStartTime);
+      LOG(" expectedRestDuration="); LOG(sw.expectedRestDuration / 1000.0);
+      LOG(" startAtMillis="); LOG(sw.expectedStartTime);
+      LOG(" totalDistance="); LOG(sw.totalDistance, 3);
+      LOG(" lapDirection="); LOGLN(sw.lapDirection);
     }
   }
 
@@ -551,8 +605,8 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
 void setup() {
   pinMode(2, OUTPUT); // On many ESP32 dev boards the on-board LED is on GPIO2
   Serial.begin(115200);
-  Serial.print("ESP32 Swim Pacer Starting... build=");
-  Serial.println(BUILD_TAG);
+  LOG("ESP32 Swim Pacer Starting... build=");
+  LOGLN(BUILD_TAG);
 
   // Initialize preferences (flash storage)
   preferences.begin("swim_pacer", false);
@@ -576,13 +630,17 @@ void setup() {
   // Initialize swimmers
   initializeSwimmers();
 
-  Serial.println("Setup complete!");
-  Serial.println("Connect to WiFi: " + String(ssid));
-  Serial.println("Open browser to: http://192.168.4.1");
+  LOGLN("Setup complete!");
+  LOGLN("Connect to WiFi: " + String(ssid));
+  LOGLN("Open browser to: http://192.168.4.1");
 }
+
+// call profPrintReport periodically (e.g., every 30s) in loop() or expose an HTTP handler
+unsigned long lastProfPrint = 0;
 
 void loop() {
   server.handleClient();  // Handle web requests
+  unsigned long now = millis();
 
   // Blink the LED to give an easy to see message the program is working.
   digitalWrite(2, HIGH);
@@ -590,6 +648,12 @@ void loop() {
   if (globalConfigSettings.isRunning) {
     updateLEDEffect();
     //printPeriodicStatus(); // Print status update every few seconds
+  }
+
+  // periodic profiler print (adjust interval as needed)
+  if (now - lastProfPrint > 30000) {
+    lastProfPrint = now;
+    profPrintReport();
   }
 
   // Recalculate if globalConfigSettings changed
@@ -607,10 +671,10 @@ void loop() {
 }
 
 void setupWiFi() {
-  Serial.println("Setting up WiFi Access Point...");
+  LOGLN("Setting up WiFi Access Point...");
   // Try to reduce peak power draw: disable Bluetooth
 #if defined(ESP_BT_CONTROLLER_INIT_CONFIG) || defined(CONFIG_BT_ENABLED)
-  Serial.println("DEBUG: Disabling BT controller");
+  LOGLN("DEBUG: Disabling BT controller");
   esp_bt_controller_disable();
 #endif
 
@@ -618,32 +682,32 @@ void setupWiFi() {
   WiFi.softAPConfig(local_IP, gateway, subnet);
   WiFi.softAP(ssid, password);
 
-  Serial.println("WiFi AP Started");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.softAPIP());
+  LOGLN("WiFi AP Started");
+  LOG("IP address: ");
+  LOGLN(WiFi.softAPIP());
 }
 
 void setupWebServer() {
   // Initialize SPIFFS
   if (!SPIFFS.begin(true)) {
-    Serial.println("SPIFFS Mount Failed");
+    LOGLN("SPIFFS Mount Failed");
     return;
   }
-  Serial.println("SPIFFS mounted successfully");
+  LOGLN("SPIFFS mounted successfully");
 
   // List SPIFFS contents for debugging
-  Serial.println("SPIFFS Directory listing:");
+  LOGLN("SPIFFS Directory listing:");
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
   while (file) {
-    Serial.print("  ");
-    Serial.print(file.name());
-    Serial.print(" (");
-    Serial.print(file.size());
-    Serial.println(" bytes)");
+    LOG("  ");
+    LOG(file.name());
+    LOG(" (");
+    LOG(file.size());
+    LOGLN(" bytes)");
     file = root.openNextFile();
   }
-  Serial.println("End of SPIFFS listing");
+  LOGLN("End of SPIFFS listing");
 
   // Serve the main configuration page
   server.on("/", handleRoot);
@@ -652,7 +716,7 @@ void setupWebServer() {
   server.on("/style.css", []() {
     File file = SPIFFS.open("/style.css", "r");
     if (!file) {
-      Serial.println("ERROR: Could not open /style.css from SPIFFS");
+      LOGLN("ERROR: Could not open /style.css from SPIFFS");
       server.send(404, "text/plain", "CSS file not found");
       return;
     }
@@ -664,7 +728,7 @@ void setupWebServer() {
   server.on("/script.js", []() {
     File file = SPIFFS.open("/script.js", "r");
     if (!file) {
-      Serial.println("ERROR: Could not open /script.js from SPIFFS");
+      LOGLN("ERROR: Could not open /script.js from SPIFFS");
       server.send(404, "text/plain", "JavaScript file not found");
       return;
     }
@@ -709,13 +773,13 @@ void setupWebServer() {
   server.on("/resetLane", HTTP_POST, handleResetLane);
 
   server.begin();
-  Serial.println("Web server started");
+  LOGLN("Web server started");
 }
 
 // Web Handlers ******************************************
 
 void handleRoot() {
-  Serial.println("handleRoot() called - serving main page");
+  LOGLN("handleRoot() called - serving main page");
 
   // Enhanced SPIFFS debugging
   if (SPIFFS.begin()) {
@@ -728,11 +792,11 @@ void handleRoot() {
     }
     if (file) file.close();
   } else {
-    Serial.println("ERROR: SPIFFS.begin() failed!");
+    LOGLN("ERROR: SPIFFS.begin() failed!");
   }
 
   // Fallback if SPIFFS fails
-  Serial.println("SPIFFS file not found, serving fallback HTML");
+  LOGLN("SPIFFS file not found, serving fallback HTML");
   String html = "<!DOCTYPE html><html><head><title>ESP32 Swim Pacer</title></head>";
   html += "<body><h1>ESP32 Swim Pacer</h1>";
   html += "<p>SPIFFS files need to be uploaded.</p>";
@@ -765,13 +829,13 @@ void handleGetSettings() {
   json += "\"numLanes\":" + String(globalConfigSettings.numLanes) + ",";
   // Build array for per-lane swimmer counts
   json += "\"numSwimmersPerLane\": [";
-  Serial.print(" handleGetSettings: numSwimmersPerLane:");
+  LOG(" handleGetSettings: numSwimmersPerLane:");
   for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     json += String(globalConfigSettings.numSwimmersPerLane[li]);
     if (li < MAX_LANES_SUPPORTED - 1) json += ",";
-    Serial.print(" " + String(globalConfigSettings.numSwimmersPerLane[li]));
+    LOG(" " + String(globalConfigSettings.numSwimmersPerLane[li]));
   }
-  Serial.println();
+  LOGLN();
   json += "],";
   json += "\"poolLength\":" + String(globalConfigSettings.poolLength, 2) + ",";
   // poolLengthUnits should be a JSON string
@@ -799,8 +863,8 @@ void handleSetBrightness() {
   if (server.hasArg("brightness")) {
     globalConfigSettings.brightness = server.arg("brightness").toInt();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetBrightness: updated brightness=");
-      Serial.println(globalConfigSettings.brightness);
+      LOG("handleSetBrightness: updated brightness=");
+      LOGLN(globalConfigSettings.brightness);
     }
     FastLED.setBrightness(globalConfigSettings.brightness);
     saveGlobalConfigSettings();
@@ -814,8 +878,8 @@ void handleSetPulseWidth() {
   if (server.hasArg("pulseWidth")) {
     globalConfigSettings.pulseWidthFeet = server.arg("pulseWidth").toFloat();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetPulseWidth: updated pulseWidthFeet=");
-      Serial.println(globalConfigSettings.pulseWidthFeet);
+      LOG("handleSetPulseWidth: updated pulseWidthFeet=");
+      LOGLN(globalConfigSettings.pulseWidthFeet);
     }
     saveGlobalConfigSettings();
     server.send(200, "text/plain", "Pulse width updated");
@@ -828,8 +892,8 @@ void handleSetStripLength() {
   if (server.hasArg("stripLengthMeters")) {
     globalConfigSettings.stripLengthMeters = server.arg("stripLengthMeters").toFloat();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetStripLength: updated stripLengthMeters=");
-      Serial.println(globalConfigSettings.stripLengthMeters);
+      LOG("handleSetStripLength: updated stripLengthMeters=");
+      LOGLN(globalConfigSettings.stripLengthMeters);
     }
     saveGlobalConfigSettings();
     needsRecalculation = true;
@@ -845,8 +909,8 @@ void handleSetNumLedStrips() {
     if (lane >= 0 && lane < MAX_LANES_SUPPORTED) {
       globalConfigSettings.numLedStrips[lane] = server.arg("numLedStrips").toInt();
       if (DEBUG_ENABLED) {
-        Serial.print("handleSetNumLedStrips: updated numLedStrips=");
-        Serial.println(globalConfigSettings.numLedStrips[lane]);
+        LOG("handleSetNumLedStrips: updated numLedStrips=");
+        LOGLN(globalConfigSettings.numLedStrips[lane]);
       }
       saveGlobalConfigSettings();
       needsRecalculation = true;
@@ -863,8 +927,8 @@ void handleSetGapBetweenStrips() {
   if (server.hasArg("gapBetweenStrips")) {
     globalConfigSettings.gapBetweenStrips = server.arg("gapBetweenStrips").toInt();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetGapBetweenStrips: updated gapBetweenStrips=");
-      Serial.println(globalConfigSettings.gapBetweenStrips);
+      LOG("handleSetGapBetweenStrips: updated gapBetweenStrips=");
+      LOGLN(globalConfigSettings.gapBetweenStrips);
     }
     saveGlobalConfigSettings();
     needsRecalculation = true;
@@ -887,9 +951,9 @@ void handleSetPoolLength() {
     globalConfigSettings.poolLength = poolLength;
     globalConfigSettings.poolUnitsYards = !isMeters; // true if yards, false if meters
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetPoolLength: updated poolLength=");
-      Serial.print(globalConfigSettings.poolLength);
-      Serial.println(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
+      LOG("handleSetPoolLength: updated poolLength=");
+      LOG(globalConfigSettings.poolLength);
+      LOGLN(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
     }
 
     saveGlobalConfigSettings();
@@ -906,8 +970,8 @@ void handleSetLedsPerMeter() {
   if (server.hasArg("ledsPerMeter")) {
     globalConfigSettings.ledsPerMeter = server.arg("ledsPerMeter").toInt();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetLedsPerMeter: updated ledsPerMeter=");
-      Serial.println(globalConfigSettings.ledsPerMeter);
+      LOG("handleSetLedsPerMeter: updated ledsPerMeter=");
+      LOGLN(globalConfigSettings.ledsPerMeter);
     }
     saveGlobalConfigSettings();
     needsRecalculation = true;
@@ -921,8 +985,8 @@ void handleSetNumLanes() {
   if (server.hasArg("numLanes")) {;
     globalConfigSettings.numLanes = server.arg("numLanes").toInt();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetNumLanes: updated numLanes=");
-      Serial.println(globalConfigSettings.numLanes);
+      LOG("handleSetNumLanes: updated numLanes=");
+      LOGLN(globalConfigSettings.numLanes);
     }
     saveGlobalConfigSettings();
     server.send(200, "text/plain", "Number of lanes updated");
@@ -935,8 +999,8 @@ void handleSetSwimTime() {
   if (server.hasArg("swimTime")) {
     swimSetSettings.swimTimeSeconds = server.arg("swimTime").toInt();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetSwimTime: updated swimTime=");
-      Serial.println(swimSetSettings.swimTimeSeconds);
+      LOG("handleSetSwimTime: updated swimTime=");
+      LOGLN(swimSetSettings.swimTimeSeconds);
     }
     saveSwimSetSettings();
     server.send(200, "text/plain", "Swim time updated");
@@ -949,8 +1013,8 @@ void handleSetRestTime() {
   if (server.hasArg("restTime")) {
     swimSetSettings.restTimeSeconds = server.arg("restTime").toInt();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetRestTime: updated restTime=");
-      Serial.println(swimSetSettings.restTimeSeconds);
+      LOG("handleSetRestTime: updated restTime=");
+      LOGLN(swimSetSettings.restTimeSeconds);
     }
     saveSwimSetSettings();
     server.send(200, "text/plain", "Rest time updated");
@@ -963,8 +1027,8 @@ void handleSetSwimDistance() {
   if (server.hasArg("swimDistance")) {
     swimSetSettings.swimSetDistance = server.arg("swimDistance").toInt();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetSwimDistance: updated swimDistance=");
-      Serial.println(swimSetSettings.swimSetDistance);
+      LOG("handleSetSwimDistance: updated swimDistance=");
+      LOGLN(swimSetSettings.swimSetDistance);
     }
     saveSwimSetSettings();
     server.send(200, "text/plain", "Swim distance updated");
@@ -977,8 +1041,8 @@ void handleSetSwimmerInterval() {
   if (server.hasArg("swimmerInterval")) {
     swimSetSettings.swimmerIntervalSeconds = server.arg("swimmerInterval").toInt();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetSwimmerInterval: updated swimmerInterval=");
-      Serial.println(swimSetSettings.swimmerIntervalSeconds);
+      LOG("handleSetSwimmerInterval: updated swimmerInterval=");
+      LOGLN(swimSetSettings.swimmerIntervalSeconds);
     }
     saveSwimSetSettings();
     server.send(200, "text/plain", "Swimmer interval updated");
@@ -991,8 +1055,8 @@ void handleSetDelayIndicators() {
   if (server.hasArg("enabled")) {
     globalConfigSettings.delayIndicatorsEnabled = (server.arg("enabled") == "true");
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetDelayIndicators: updated delayIndicatorsEnabled=");
-      Serial.println(globalConfigSettings.delayIndicatorsEnabled);
+      LOG("handleSetDelayIndicators: updated delayIndicatorsEnabled=");
+      LOGLN(globalConfigSettings.delayIndicatorsEnabled);
     }
     saveGlobalConfigSettings();
     server.send(200, "text/plain", "Delay indicators updated");
@@ -1007,8 +1071,8 @@ void handleSetNumSwimmers() {
     if (lane >= 0 && lane < MAX_LANES_SUPPORTED) {
       globalConfigSettings.numSwimmersPerLane[lane] = server.arg("numSwimmers").toInt();
       if (DEBUG_ENABLED) {
-        Serial.print("handleSetNumSwimmers: updated numSwimmers for lane "); Serial.print(lane);
-        Serial.print(" to "); Serial.println(globalConfigSettings.numSwimmersPerLane[lane]);
+        LOG("handleSetNumSwimmers: updated numSwimmers for lane "); LOG(lane);
+        LOG(" to "); LOGLN(globalConfigSettings.numSwimmersPerLane[lane]);
       }
       saveGlobalConfigSettings();
       server.send(200, "text/plain", "Number of swimmers updated");
@@ -1024,8 +1088,8 @@ void handleSetNumRounds() {
   if (server.hasArg("numRounds")) {
     swimSetSettings.numRounds = server.arg("numRounds").toInt();
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetNumRounds: updated numRounds=");
-      Serial.println(swimSetSettings.numRounds);
+      LOG("handleSetNumRounds: updated numRounds=");
+      LOGLN(swimSetSettings.numRounds);
     }
     saveSwimSetSettings();
     server.send(200, "text/plain", "Number of numRounds updated");
@@ -1070,8 +1134,8 @@ void handleSetColorMode() {
     // Update globalConfigSettings based on color mode
     globalConfigSettings.sameColorMode = (server.arg("colorMode") == "same");
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetColorMode: updated sameColorMode=");
-      Serial.println(globalConfigSettings.sameColorMode);
+      LOG("handleSetColorMode: updated sameColorMode=");
+      LOGLN(globalConfigSettings.sameColorMode);
     }
     saveGlobalConfigSettings();
 
@@ -1107,10 +1171,10 @@ void handleSetSwimmerColor() {
     globalConfigSettings.colorGreen = g;
     globalConfigSettings.colorBlue = b;
     if (DEBUG_ENABLED) {
-      Serial.print("handleSetSwimmerColor: updated color=[");
-      Serial.print(r); Serial.print(",");
-      Serial.print(g); Serial.print(",");
-      Serial.print(b); Serial.println("]");
+      LOG("handleSetSwimmerColor: updated color=[");
+      LOG(r); LOG(",");
+      LOG(g); LOG(",");
+      LOG(b); LOGLN("]");
     }
     saveGlobalConfigSettings();
 
@@ -1214,7 +1278,7 @@ void handleSetUnderwaterSettings() {
 
     saveGlobalConfigSettings();
   } else {
-    Serial.println(false);
+    LOGLN(false);
   }
   server.send(200, "text/plain", "Underwater globalConfigSettings updated");
 }
@@ -1241,7 +1305,7 @@ static String uniqueIdToHex(unsigned long long v) {
 }
 
 void handleEnqueueSwimSet() {
-  Serial.println("/enqueueSwimSet ENTER");
+  LOGLN("/enqueueSwimSet ENTER");
   // Read raw body
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
@@ -1266,12 +1330,12 @@ void handleEnqueueSwimSet() {
     if (parsed != 0ULL) {
       s.uniqueId = parsed;
     } else {
-      Serial.println(" Warning: invalid uniqueId format: " + uniqueIdStr);
+      LOGLN(" Warning: invalid uniqueId format: " + uniqueIdStr);
       server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid uniqueId format\"}");
       return;
     }
   } else {
-    Serial.println(" Warning: missing uniqueId");
+    LOGLN(" Warning: missing uniqueId");
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing uniqueId\"}");
     return;
   }
@@ -1283,7 +1347,7 @@ void handleEnqueueSwimSet() {
     if (parsed != 0ULL) {
       s.loopFromUniqueId = parsed;
     } else {
-      Serial.println(" Warning: invalid loopFromUniqueId format: " + loopFromUniqueIdStr);
+      LOGLN(" Warning: invalid loopFromUniqueId format: " + loopFromUniqueIdStr);
       server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid loopFromUniqueId format\"}");
       return;
     }
@@ -1318,18 +1382,18 @@ void handleEnqueueSwimSet() {
   }
 
   int result = enqueueSwimSet(s, lane);
-  Serial.println(" Enqueue result: " + String((result == QUEUE_INSERT_SUCCESS) ? "OK" : "FAILED"));
-  Serial.println("  Enqueued swim set: ");
-  Serial.println("   lane=" + String(lane));
-  Serial.println("   numRounds=" + String(s.numRounds));
-  Serial.println("   swimDistance=" + String(s.swimDistance));
-  Serial.println("   swimTime=" + String(s.swimTime));
-  Serial.println("   restTime=" + String(s.restTime));
-  Serial.println("   swimmerInterval=" + String(s.swimmerInterval));
-  Serial.println("   type=" + String(s.type));
-  Serial.println("   loopFromUniqueId=" + uniqueIdToHex(s.loopFromUniqueId));
-  Serial.println("   repeatRemaining=" + String(s.repeatRemaining));
-  Serial.println("   uniqueId=" + uniqueIdToHex(s.uniqueId));
+  LOGLN(" Enqueue result: " + String((result == QUEUE_INSERT_SUCCESS) ? "OK" : "FAILED"));
+  LOGLN("  Enqueued swim set: ");
+  LOGLN("   lane=" + String(lane));
+  LOGLN("   numRounds=" + String(s.numRounds));
+  LOGLN("   swimDistance=" + String(s.swimDistance));
+  LOGLN("   swimTime=" + String(s.swimTime));
+  LOGLN("   restTime=" + String(s.restTime));
+  LOGLN("   swimmerInterval=" + String(s.swimmerInterval));
+  LOGLN("   type=" + String(s.type));
+  LOGLN("   loopFromUniqueId=" + uniqueIdToHex(s.loopFromUniqueId));
+  LOGLN("   repeatRemaining=" + String(s.repeatRemaining));
+  LOGLN("   uniqueId=" + uniqueIdToHex(s.uniqueId));
 
   if (result == QUEUE_INSERT_SUCCESS) {
     int qCount = swimSetQueueCount[lane];
@@ -1349,15 +1413,15 @@ void handleEnqueueSwimSet() {
 // will be used to replace the entry. Optionally provide uniqueId to update the
 // stored uniqueId for future reconciliation.
 void handleUpdateSwimSet() {
-  Serial.println("/updateSwimSet ENTER");
+  LOGLN("/updateSwimSet ENTER");
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
     return;
   }
-  Serial.println(" Raw body:");
-  Serial.println(body);
+  LOGLN(" Raw body:");
+  LOGLN(body);
 
   // Parse required fields from JSON body (no form-encoded fallback)
   SwimSet s;
@@ -1374,7 +1438,7 @@ void handleUpdateSwimSet() {
   if (uniqueIdStr.length() > 0) {
     uniqueId = parseUniqueIdHex(uniqueIdStr);
   } else {
-    Serial.println(" Warning: missing uniqueId");
+    LOGLN(" Warning: missing uniqueId");
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing uniqueId\"}");
     return;
   }
@@ -1411,18 +1475,18 @@ void handleUpdateSwimSet() {
     }
   }
 
-  Serial.println("  received payload to update set: ");
-  Serial.print(" numRounds="); Serial.println(s.numRounds);
-  Serial.print(" swimDistance="); Serial.println(s.swimDistance);
-  Serial.print(" swimTime="); Serial.println(s.swimTime);
-  Serial.print(" restTime="); Serial.println(s.restTime);
-  Serial.print(" swimmerInterval="); Serial.println(s.swimmerInterval);
-  Serial.print(" type="); Serial.println(s.type);
-  Serial.print(" repeatRemaining="); Serial.println(s.repeatRemaining);
-  Serial.print(" loopFromUniqueId="); Serial.println(uniqueIdToHex(s.loopFromUniqueId));
-  Serial.print(" uniqueId="); Serial.println(uniqueIdToHex(uniqueId));
+  LOGLN("  received payload to update set: ");
+  LOG(" numRounds="); LOGLN(s.numRounds);
+  LOG(" swimDistance="); LOGLN(s.swimDistance);
+  LOG(" swimTime="); LOGLN(s.swimTime);
+  LOG(" restTime="); LOGLN(s.restTime);
+  LOG(" swimmerInterval="); LOGLN(s.swimmerInterval);
+  LOG(" type="); LOGLN(s.type);
+  LOG(" repeatRemaining="); LOGLN(s.repeatRemaining);
+  LOG(" loopFromUniqueId="); LOGLN(uniqueIdToHex(s.loopFromUniqueId));
+  LOG(" uniqueId="); LOGLN(uniqueIdToHex(uniqueId));
 
-  Serial.println(" Searching queue for matching entry...");
+  LOGLN(" Searching queue for matching entry...");
     // Find matching entry in the lane queue and update fields
   bool found = false;
   for (int i = 0; i < swimSetQueueCount[lane]; i++) {
@@ -1455,21 +1519,21 @@ void handleUpdateSwimSet() {
     }
   } // end for
 
-  Serial.println(" No matching entry found in queue");
+  LOGLN(" No matching entry found in queue");
   server.send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}");
 }
 
 // Delete a swim set by uniqueId for a lane.
 // Accepts form-encoded or JSON: matchUniqueId=<hex>, and lane=<n>
 void handleDeleteSwimSet() {
-  Serial.println("/deleteSwimSet ENTER");
+  LOGLN("/deleteSwimSet ENTER");
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
     return;
   }
-  Serial.println(" Received raw body: " + body);
+  LOGLN(" Received raw body: " + body);
 
   // Expect application/json body
   if (body.length() == 0) {
@@ -1482,19 +1546,19 @@ void handleDeleteSwimSet() {
   if (matchUniqueIdStr.length() > 0) {
     matchUniqueId = parseUniqueIdHex(matchUniqueIdStr);
   } else {
-    Serial.println(" Warning: missing matchUniqueId");
+    LOGLN(" Warning: missing matchUniqueId");
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing matchUniqueId\"}");
     return;
   }
 
   // Validate lane...
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-    Serial.println(" Invalid lane");
+    LOGLN(" Invalid lane");
     server.send(400, "application/json", "{\"ok\":false, \"error\":\"Invalid lane\"}");
     return;
   }
-  Serial.println("  lane=" + String(lane));
-  Serial.print("  matchUniqueId="); Serial.println(matchUniqueIdStr);
+  LOGLN("  lane=" + String(lane));
+  LOG("  matchUniqueId="); LOGLN(matchUniqueIdStr);
 
   // Build vector of existing entries
   std::vector<SwimSet> existing;
@@ -1509,7 +1573,7 @@ void handleDeleteSwimSet() {
   if (!found && matchUniqueId != 0ULL) {
     for (size_t i = 0; i < existing.size(); i++) {
       if (existing[i].uniqueId == matchUniqueId) {
-        Serial.println(" deleteSwimSet: matched by uniqueId=" + String((unsigned long long)existing[i].uniqueId));
+        LOGLN(" deleteSwimSet: matched by uniqueId=" + String((unsigned long long)existing[i].uniqueId));
         existing.erase(existing.begin() + i);
         found = true;
         break;
@@ -1529,18 +1593,18 @@ void handleDeleteSwimSet() {
 
   // Perform removal logic (match by uniqueId) and respond with JSON
   if (found) {
-    Serial.print(" deleteSwimSet: deleted entry, new queue count=");
-    Serial.println(swimSetQueueCount[lane]);
+    LOG(" deleteSwimSet: deleted entry, new queue count=");
+    LOGLN(swimSetQueueCount[lane]);
     server.send(200, "application/json", "{\"ok\":true, \"message\":\"deleted\"}");
   } else {
-    Serial.print(" deleteSwimSet: no matching entry found, nothing to delete, queue count=");
-    Serial.println(String(swimSetQueueCount[lane]));
+    LOG(" deleteSwimSet: no matching entry found, nothing to delete, queue count=");
+    LOGLN(String(swimSetQueueCount[lane]));
     server.send(200, "application/json", "{\"ok\":true, \"message\":\"not found\"}");
   }
 }
 
 void handleStartSwimSet() {
-  Serial.println("/startSwimSet ENTER");
+  LOGLN("/startSwimSet ENTER");
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
@@ -1554,7 +1618,7 @@ void handleStartSwimSet() {
   if (matchUniqueIdStr.length() > 0) {
     matchUniqueId = parseUniqueIdHex(matchUniqueIdStr);
   } else {
-    Serial.println(" Warning: missing matchUniqueId");
+    LOGLN(" Warning: missing matchUniqueId");
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing matchUniqueId\"}");
     return;
   }
@@ -1592,7 +1656,7 @@ void handleStartSwimSet() {
 
   // record which queue index we started (will be used by applySwimSetToSettings)
   laneActiveQueueIndex[lane] = matchedQueueIndex;
-  Serial.println("/startSwimSet: calling applySwimSetToSettings()");
+  LOGLN("/startSwimSet: calling applySwimSetToSettings()");
   applySwimSetToSettings(s, lane);
 
   // Respond with uniqueId so client can reconcile
@@ -1620,8 +1684,8 @@ void handleStopSwimSet() {// determine lane from query/form or JSON body
       server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
       return;
   }
-  Serial.print("handleStopSwimSet: for lane: ");
-  Serial.println(lane);
+  LOG("handleStopSwimSet: for lane: ");
+  LOGLN(lane);
   // Toggle the specified lane's running state
   globalConfigSettings.laneRunning[lane] = false;
 
@@ -1634,7 +1698,7 @@ void handleStopSwimSet() {// determine lane from query/form or JSON body
   }
 
   // Clear lights on this lane to black
-  Serial.println("filling lane with all black LEDs");
+  LOGLN("filling lane with all black LEDs");
   if (scanoutLEDs[lane] != nullptr && visibleLEDs[lane] > 0) {
     fill_solid(scanoutLEDs[lane], visibleLEDs[lane], CRGB::Black);
   }
@@ -1660,7 +1724,7 @@ void handleStopSwimSet() {// determine lane from query/form or JSON body
 }
 
 void handleGetSwimQueue() {
-  //Serial.println("/getSwimQueue ENTER");
+  //LOGLN("/getSwimQueue ENTER");
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
@@ -1732,8 +1796,8 @@ void handleGetSwimQueue() {
   serializeJson(doc, out);
 
   if (DEBUG_ENABLED) {
-    //Serial.println(" getSwimQueue -> payload:");
-    //Serial.println(out);
+    //LOGLN(" getSwimQueue -> payload:");
+    //LOGLN(out);
   }
 
   // Return combined payload { queue: [...], status: {...} }
@@ -1745,7 +1809,7 @@ void handleGetSwimQueue() {
 // uniqueId values should be uniqueId strings. Entries not matched
 // will be appended at the end in their existing order.
 void handleReorderSwimQueue() {
-  Serial.println("/reorderSwimQueue ENTER");
+  LOGLN("/reorderSwimQueue ENTER");
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
@@ -1842,7 +1906,7 @@ void handleReorderSwimQueue() {
   }
 
   if (DEBUG_ENABLED) {
-    Serial.print("reorderSwimQueue: lane "); Serial.print(lane); Serial.print(" newCount="); Serial.println(swimSetQueueCount[lane]);
+    LOG("reorderSwimQueue: lane "); LOG(lane); LOG(" newCount="); LOGLN(swimSetQueueCount[lane]);
   }
 
   String json = "{";
@@ -1929,7 +1993,7 @@ void saveSwimSetSettings() {
   // Sanitize swimmer interval before persisting to avoid storing invalid (<=0) values
   int si = swimSetSettings.swimmerIntervalSeconds;
   if (si <= 0) {
-    Serial.println("saveSwimSetSettings: invalid swimmerIntervalSeconds <= 0, resetting to 4");
+    LOGLN("saveSwimSetSettings: invalid swimmerIntervalSeconds <= 0, resetting to 4");
     si = 4; // enforce safe default
   }
   preferences.putInt("swimmerInterval", si);
@@ -1955,13 +2019,13 @@ void loadGlobalConfigSettings() {
   globalConfigSettings.pulseWidthFeet = preferences.getFloat("pulseWidthFeet", 1.0);
   // Keep preference fallbacks consistent with struct defaults
   // Load per-lane counts if present (key changed to "swimLaneX" to fit 15-char NVS limit)
-  Serial.print(" loadGlobalConfigSettings: numSwimmersPerLane:");
+  LOG(" loadGlobalConfigSettings: numSwimmersPerLane:");
   for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     String key = String("swimLane") + String(li);
     globalConfigSettings.numSwimmersPerLane[li] = preferences.getInt(key.c_str(), DEFAULT_NUM_SWIMMERS);
-    Serial.print(" " + String(globalConfigSettings.numSwimmersPerLane[li]));
+    LOG(" " + String(globalConfigSettings.numSwimmersPerLane[li]));
   }
-  Serial.println();
+  LOGLN();
   globalConfigSettings.colorRed = preferences.getUChar("colorRed", 0);      // Default to blue
   globalConfigSettings.colorGreen = preferences.getUChar("colorGreen", 0);
   globalConfigSettings.colorBlue = preferences.getUChar("colorBlue", 255);
@@ -2013,7 +2077,7 @@ void calculateUnderwatersColors() {
 }
 
 void recalculateValues(int lane) {
-  Serial.print("recalculateValues: lane="); Serial.println(lane);
+  LOG("recalculateValues: lane="); LOGLN(lane);
 
   if (lane >= globalConfigSettings.numLanes) {
     if (scanoutLEDs[lane] != nullptr) {
@@ -2037,8 +2101,8 @@ void recalculateValues(int lane) {
   int totalMissingLEDs = ledsPerGap * (globalConfigSettings.numLedStrips[lane] - 1);
   // Subtract total missing LEDs from full length total
   if (visibleLEDs[lane] != fullLengthLEDs[lane] - totalMissingLEDs) {
-    Serial.print(" visibleLEDs changed from "); Serial.print(visibleLEDs[lane]);
-    Serial.print(" to "); Serial.println(fullLengthLEDs[lane] - totalMissingLEDs);
+    LOG(" visibleLEDs changed from "); LOG(visibleLEDs[lane]);
+    LOG(" to "); LOGLN(fullLengthLEDs[lane] - totalMissingLEDs);
     // TODO: Should we reset FastLED?
   }
   visibleLEDs[lane] = fullLengthLEDs[lane] - totalMissingLEDs;
@@ -2079,15 +2143,15 @@ void recalculateValues(int lane) {
 
   // Ensure reasonable bounds
   delayMS = max(10, min(delayMS, 1000));
-  Serial.println("################################");
-  Serial.print("render delayMS="); Serial.println(delayMS);
-  Serial.print("visibleLEDs="); Serial.println(visibleLEDs[lane]);
-  Serial.print("fullLengthLEDs="); Serial.println(fullLengthLEDs[lane]);
-  Serial.print("ledsPerStrip="); Serial.println(ledsPerStrip);
-  Serial.print("ledsPerGap="); Serial.println(ledsPerGap);
-  Serial.print("totalMissingLEDs="); Serial.println(totalMissingLEDs);
-  Serial.print("gapLEDs count="); Serial.println(gapLEDs[lane].size());
-  Serial.println("################################");
+  LOGLN("################################");
+  LOG("render delayMS="); LOGLN(delayMS);
+  LOG("visibleLEDs="); LOGLN(visibleLEDs[lane]);
+  LOG("fullLengthLEDs="); LOGLN(fullLengthLEDs[lane]);
+  LOG("ledsPerStrip="); LOGLN(ledsPerStrip);
+  LOG("ledsPerGap="); LOGLN(ledsPerGap);
+  LOG("totalMissingLEDs="); LOGLN(totalMissingLEDs);
+  LOG("gapLEDs count="); LOGLN(gapLEDs[lane].size());
+  LOGLN("################################");
 
   // Allocate LED array dynamically for this lane
   if (scanoutLEDs[lane] != nullptr) {
@@ -2157,6 +2221,7 @@ float convertPoolToMeters(float distanceInPoolUnits) {
 
 // TODO: Seems like the name is misleading since we are also updating swimmer positions here
 void updateLEDEffect() {
+  profStart("updateLEDEffect");
   // Update LEDs for all active lanes
   for (int lane = 0; lane < globalConfigSettings.numLanes; lane++) {
     if (scanoutLEDs[lane] != nullptr && renderedLEDs[lane] != nullptr) {
@@ -2202,19 +2267,22 @@ void updateLEDEffect() {
 
   // Update FastLED
   FastLED.show();
+  profEnd("updateLEDEffect");
 }
 
 void spliceOutGaps(int lane) {
-  //Serial.print("spliceOutGaps: lane="); Serial.println(lane);
+  //LOG("spliceOutGaps: lane="); LOGLN(lane);
   // If no gaps, copy exactly visibleLEDs[lane] entries (safe)
   if (gapLEDs[lane].size() == 0) {
-    //Serial.println("No gaps, copying visible LEDs directly");
+    //LOGLN("No gaps, copying visible LEDs directly");
+    profStart("spliceOutGaps - memcopy");
     memcpy(scanoutLEDs[lane], renderedLEDs[lane], visibleLEDs[lane] * sizeof(CRGB));
+    profEnd("spliceOutGaps - memcopy");
     return;
   } else {
-    //Serial.print("Gaps present, count="); Serial.println(gapLEDs[lane].size());
+    //LOG("Gaps present, count="); LOGLN(gapLEDs[lane].size());
   }
-
+  profStart("spliceOutGaps");
   // gapLEDs[lane] must be sorted ascending for this to work. Ensure it is.
   std::sort(gapLEDs[lane].begin(), gapLEDs[lane].end());
 
@@ -2238,13 +2306,16 @@ void spliceOutGaps(int lane) {
   for (int i = scanoutIndex; i < visibleLEDs[lane]; ++i) {
     scanoutLEDs[lane][i] = CRGB::Black;
   }
+  profEnd("spliceOutGaps");
 }
 
 bool drawDelayIndicators(int laneIndex, int swimmerIndex) {
+  profStart("drawDelayIndicators");
   Swimmer* swimmer = &swimmers[laneIndex][swimmerIndex];
 
   // Only consider swimmers who are resting
   if (!swimmer->isResting || swimmer->finished) {
+    profEnd("drawDelayIndicators");
     return false;
   }
 
@@ -2301,16 +2372,18 @@ bool drawDelayIndicators(int laneIndex, int swimmerIndex) {
       }
     }
 
+    profEnd("drawDelayIndicators");
     return true;
   } else {
     // No delay to draw for this swimmer
+    profEnd("drawDelayIndicators");
     return false;
   }
 }
 
 void initializeSwimmers() {
   if (DEBUG_ENABLED) {
-    Serial.println("\n========== INITIALIZING SWIMMERS ==========");
+    LOGLN("\n========== INITIALIZING SWIMMERS ==========");
   }
 
   for (int lane = 0; lane < MAX_LANES_SUPPORTED; lane++) {
@@ -2370,13 +2443,18 @@ void updateSwimmerColors() {
 }
 
 void updateSwimmer(int swimmerIndex, int laneIndex) {
+  profStart("updateSwimmer");
   // If the lane is not running just exit
   if (!globalConfigSettings.laneRunning[laneIndex]) {
+    profEnd("updateSwimmer");
     return;
   }
   Swimmer* swimmer = &swimmers[laneIndex][swimmerIndex];
   // If swimmer has already completed all numRounds, do nothing
-  if (swimmer->finished) return;
+  if (swimmer->finished) {
+    profEnd("updateSwimmer");
+    return;
+  }
   unsigned long currentTime = millis();
 
   int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[laneIndex];
@@ -2384,6 +2462,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
   if (laneSwimmerCount < 1) laneSwimmerCount = 1;
   if (laneSwimmerCount > MAX_SWIMMERS_SUPPORTED) laneSwimmerCount = MAX_SWIMMERS_SUPPORTED;
 
+  profStart("updateSwimmer - isResting");
   // Check if swimmer is resting
   // ------------------------------ SWIMMER RESTING LOGIC ------------------------------
   if (swimmer->isResting) {
@@ -2393,7 +2472,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     // What is our target rest duration (in milliseconds)?
     if (swimmer->expectedRestDuration == 0) {
       // TODO: We should never hit this, if we were resting we should have already set expectedRestDuration
-      Serial.println("WARNING: swimmer expectedRestDuration was 0 during rest phase, calculating now");
+      LOGLN("WARNING: swimmer expectedRestDuration was 0 during rest phase, calculating now");
       if (swimmer->currentRound == 1) {
         // First round: staggered start using swimmerInterval as the base delay.
         // First swimmer starts after swimmerInterval, second after 2*swimmerInterval, etc.
@@ -2407,17 +2486,17 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     if (restElapsed >= swimmer->expectedRestDuration) {
       // Rest period complete, resume swimming
       if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
-        Serial.println("------------------------------------------------");
-        Serial.print("Lane ");
-        Serial.print(laneIndex);
-        Serial.print(", Swimmer ");
-        Serial.print(swimmerIndex);
-        Serial.println(" - REST COMPLETE, starting to swim");
-        Serial.print("  Rest duration: ");
-        Serial.print(restElapsed / 1000.0);
-        Serial.print(" sec (target: ");
-        Serial.print(swimmer->expectedRestDuration / 1000.0);
-        Serial.println(" sec)");
+        LOGLN("------------------------------------------------");
+        LOG("Lane ");
+        LOG(laneIndex);
+        LOG(", Swimmer ");
+        LOG(swimmerIndex);
+        LOGLN(" - REST COMPLETE, starting to swim");
+        LOG("  Rest duration: ");
+        LOG(restElapsed / 1000.0);
+        LOG(" sec (target: ");
+        LOG(swimmer->expectedRestDuration / 1000.0);
+        LOGLN(" sec)");
       }
 
       // Reset rest tracking
@@ -2453,54 +2532,57 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
 
       // Print debug info only once when entering rest state
       if (DEBUG_ENABLED && !swimmer->debugRestingPrinted && swimmerIndex < laneSwimmerCount) {
-        Serial.println("================================================");
-        Serial.print("Lane ");
-        Serial.print(laneIndex);
-        Serial.print(", Swimmer ");
-        Serial.print(swimmerIndex);
-        Serial.print(" - Round ");
-        Serial.print(swimmer->currentRound);
-        Serial.println(" - RESTING at wall");
-        Serial.print("  Target rest duration: ");
-        Serial.print(swimmer->expectedRestDuration / 1000.0);
-        Serial.println(" seconds");
-        Serial.print("  Elapsed rest time: ");
-        Serial.print(restElapsed / 1000.0);
-        Serial.println(" seconds");
+        LOGLN("================================================");
+        LOG("Lane ");
+        LOG(laneIndex);
+        LOG(", Swimmer ");
+        LOG(swimmerIndex);
+        LOG(" - Round ");
+        LOG(swimmer->currentRound);
+        LOGLN(" - RESTING at wall");
+        LOG("  Target rest duration: ");
+        LOG(swimmer->expectedRestDuration / 1000.0);
+        LOGLN(" seconds");
+        LOG("  Elapsed rest time: ");
+        LOG(restElapsed / 1000.0);
+        LOGLN(" seconds");
         swimmer->debugRestingPrinted = true;
         swimmer->debugSwimmingPrinted = false; // Reset for next swim phase
       }
+      profEnd("updateSwimmer");
       return;
     }
   }
+  profEnd("updateSwimmer - isResting");
 
   // We don't use an else here because the swimmer may have just finished resting
   // ------------------------------ SWIMMER SWIMMING LOGIC ------------------------------
   // Swimmer is actively swimming
   if (currentTime - swimmer->lastPositionUpdate >= delayMS) {
+    profStart("updateSwimmer - isSwimming calcs");
     // Print debug info only once when entering swimming state
     if (DEBUG_ENABLED && !swimmer->debugSwimmingPrinted && swimmerIndex < laneSwimmerCount) {
-      Serial.println("------------------------------------------------");
-      Serial.print("Lane ");
-      Serial.print(laneIndex);
-      Serial.print(", Swimmer ");
-      Serial.print(swimmerIndex);
-      Serial.print(" - SWIMMING - ");
-      Serial.print("QI: ");
-      Serial.print(swimmer->queueIndex);
-      Serial.print(", R: ");
-      Serial.print(swimmer->currentRound);
-      Serial.print(", L: ");
-      Serial.print(swimmer->currentLap);
-      Serial.print("/");
-      Serial.print(swimmer->lapsPerRound);
-      Serial.print(", dir: ");
-      Serial.print(swimmer->lapDirection == 1 ? "away from start" : "towards start");
-      Serial.print(", pos: ");
-      Serial.print(swimmer->position);
-      Serial.print(", Dist: ");
-      Serial.print(swimmer->totalDistance);
-      Serial.println(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
+      LOGLN("------------------------------------------------");
+      LOG("Lane ");
+      LOG(laneIndex);
+      LOG(", Swimmer ");
+      LOG(swimmerIndex);
+      LOG(" - SWIMMING - ");
+      LOG("QI: ");
+      LOG(swimmer->queueIndex);
+      LOG(", R: ");
+      LOG(swimmer->currentRound);
+      LOG(", L: ");
+      LOG(swimmer->currentLap);
+      LOG("/");
+      LOG(swimmer->lapsPerRound);
+      LOG(", dir: ");
+      LOG(swimmer->lapDirection == 1 ? "away from start" : "towards start");
+      LOG(", pos: ");
+      LOG(swimmer->position);
+      LOG(", Dist: ");
+      LOG(swimmer->totalDistance);
+      LOGLN(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
       swimmer->debugSwimmingPrinted = true;
       swimmer->debugRestingPrinted = false; // Reset for next rest phase
     }
@@ -2530,27 +2612,27 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
 
     // distance for current length/lap
     float distanceForCurrentLength = swimmer->totalDistance - ((calculatedLap - 1) * globalConfigSettings.poolLength);
-
+    profEnd("updateSwimmer - isSwimming calcs");
     // ---------------------------------- HANDLE WALL TURN ----------------------------------
     if (calculatedLap > swimmer->currentLap) {
       float overshootInDistance = swimmer->totalDistance - (swimmer->currentLap * globalConfigSettings.poolLength);
       long overshootInMilliseconds = (long)(overshootInDistance / swimmer->cachedSpeedMPS * 1000.0);
 
       if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
-        Serial.println("  *** WALL TURN ***");
-        Serial.print("    calculatedLap based on distance: ");
-        Serial.print(calculatedLap);
-        Serial.print(", Current lap: ");
-        Serial.print(swimmer->currentLap);
-        Serial.print(", Total distance: ");
-        Serial.print(swimmer->totalDistance);
-        Serial.print(", Distance for current length: ");
-        Serial.print(distanceForCurrentLength);
-        Serial.print(", overshootInDistance: ");
-        Serial.print(overshootInDistance);
-        Serial.print(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
-        Serial.print(", overshootInMilliseconds: ");
-        Serial.println(overshootInMilliseconds);
+        LOGLN("  *** WALL TURN ***");
+        LOG("    calculatedLap based on distance: ");
+        LOG(calculatedLap);
+        LOG(", Current lap: ");
+        LOG(swimmer->currentLap);
+        LOG(", Total distance: ");
+        LOG(swimmer->totalDistance);
+        LOG(", Distance for current length: ");
+        LOG(distanceForCurrentLength);
+        LOG(", overshootInDistance: ");
+        LOG(overshootInDistance);
+        LOG(globalConfigSettings.poolUnitsYards ? " yards" : " meters");
+        LOG(", overshootInMilliseconds: ");
+        LOGLN(overshootInMilliseconds);
       }
 
       // Change lapDirection
@@ -2567,18 +2649,19 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         swimmer->totalDistance = 0.0;
 
         if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
-          Serial.println("  *** ROUND COMPLETE ***");
-          Serial.print("    Completed round ");
-          Serial.println(swimmer->currentRound);
-          Serial.print("    Current lap reset to ");
-          Serial.println(swimmer->currentLap);
-          Serial.print("    Total distance reset to ");
-          Serial.println(swimmer->totalDistance);
+          LOGLN("  *** ROUND COMPLETE ***");
+          LOG("    Completed round ");
+          LOGLN(swimmer->currentRound);
+          LOG("    Current lap reset to ");
+          LOGLN(swimmer->currentLap);
+          LOG("    Total distance reset to ");
+          LOGLN(swimmer->totalDistance);
         }
 
         // -------------------------------- STILL MORE ROUNDS TO GO --------------------------------
         // Only rest if we haven't completed all numRounds yet
         if (swimmer->currentRound < swimmer->cachedNumRounds) {
+          profStart("updateSwimmer - more rounds");
           swimmer->currentRound++;
           swimmer->isResting = true;
           // Rest start time should be calculated from when they were
@@ -2603,25 +2686,27 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           // TODO: we may want to verify we are not already past expectedStartTime due to overshoot
 
           if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
-            Serial.println("  *** MORE ROUNDS TO GO IN SET ***");
-            Serial.print("    Now on round ");
-            Serial.println(swimmer->currentRound);
-            Serial.println("    isResting set to true");
-            Serial.print("    restStartTime to ");
-            Serial.print(swimmer->restStartTime);
-            Serial.print(" (accounting for overshootInDistance of ");
-            Serial.println((overshootInDistance / swimmer->cachedSpeedMPS * 1000.0));
+            LOGLN("  *** MORE ROUNDS TO GO IN SET ***");
+            LOG("    Now on round ");
+            LOGLN(swimmer->currentRound);
+            LOGLN("    isResting set to true");
+            LOG("    restStartTime to ");
+            LOG(swimmer->restStartTime);
+            LOG(" (accounting for overshootInDistance of ");
+            LOGLN((overshootInDistance / swimmer->cachedSpeedMPS * 1000.0));
           }
+          profEnd("updateSwimmer - more rounds");
         } else {
+          profStart("updateSwimmer - done rounds");
           // -------------------------------- ALL ROUNDS COMPLETE --------------------------------
           // All numRounds complete for this swim set
           if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
-            Serial.println("  *** ALL ROUNDS COMPLETE FOR CURRENT SET ***");
-            Serial.print("    Swimmer ");
-            Serial.print(swimmerIndex);
-            Serial.print(" finished swim set (queue index ");
-            Serial.print(swimmer->queueIndex);
-            Serial.println(")");
+            LOGLN("  *** ALL ROUNDS COMPLETE FOR CURRENT SET ***");
+            LOG("    Swimmer ");
+            LOG(swimmerIndex);
+            LOG(" finished swim set (queue index ");
+            LOG(swimmer->queueIndex);
+            LOGLN(")");
           }
 
           // ---------------------------- ALL SWIMMERS COMPLETE -----------------------------
@@ -2630,10 +2715,10 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           // However, we still need to check if there are more sets in the queue.
           if (swimmerIndex >= laneSwimmerCount - 1) {
             if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
-              Serial.print("    Swimmer ");
-              Serial.print(swimmerIndex);
-              Serial.print(" is the last swimmer in the lane. ");
-              Serial.println("Marking swim set as complete for the lane.");
+              LOG("    Swimmer ");
+              LOG(swimmerIndex);
+              LOG(" is the last swimmer in the lane. ");
+              LOGLN("Marking swim set as complete for the lane.");
             }
             // Mark the queue entry (by this swimmer's queueIndex) as completed.
             int qidx = swimmer->queueIndex;
@@ -2663,7 +2748,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               swimmers[laneIndex][si].totalDistance = 0.0;
             }
           }
-
+          profEnd("updateSwimmer - done rounds");
+          profStart("updateSwimmer - load next round");
           // ---------------------------- LOAD NEXT SWIM SET IF AVAILABLE ----------------------------
           // Try to get the next swim set in queue (queueIndex + 1)
           SwimSet nextSet;
@@ -2699,8 +2785,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
                       loopIndex++;
                     }
                   } else {
-                    Serial.print("Error: Could not find last swim set with index: ");
-                    Serial.println(swimmer->queueIndex);
+                    LOG("Error: Could not find last swim set with index: ");
+                    LOGLN(swimmer->queueIndex);
                   }
 
                   nextSet.repeatRemaining--;
@@ -2708,19 +2794,19 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
                 }
             }
             if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
-              Serial.println("  *** AUTO-ADVANCING TO NEXT SWIM SET ***");
-              Serial.print("queue index: ");
-              Serial.print(swimmer->queueIndex + 1);
-              Serial.print(", numRounds: ");
-              Serial.print(nextSet.numRounds);
-              Serial.print(", swimDistance: ");
-              Serial.print(nextSet.swimDistance);
-              Serial.print(", swim seconds: ");
-              Serial.print(nextSet.swimTime);
-              Serial.print(", rest seconds: ");
-              Serial.print(nextSet.restTime);
-              Serial.print(", status: ");
-              Serial.println(nextSet.status);
+              LOGLN("  *** AUTO-ADVANCING TO NEXT SWIM SET ***");
+              LOG("queue index: ");
+              LOG(swimmer->queueIndex + 1);
+              LOG(", numRounds: ");
+              LOG(nextSet.numRounds);
+              LOG(", swimDistance: ");
+              LOG(nextSet.swimDistance);
+              LOG(", swim seconds: ");
+              LOG(nextSet.swimTime);
+              LOG(", rest seconds: ");
+              LOG(nextSet.restTime);
+              LOG(", status: ");
+              LOGLN(nextSet.status);
             }
 
             // Calculate new settings for the next set
@@ -2790,9 +2876,9 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             }
 
             if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
-              Serial.print("    Swimmer ");
-              Serial.print(swimmerIndex);
-              Serial.println(" starting rest before next set");
+              LOG("    Swimmer ");
+              LOG(swimmerIndex);
+              LOGLN(" starting rest before next set");
             }
 
             // ---------------------------- SETUP REMAINING INACTIVE SWIMMERS FOR NEW SET ----------------------------
@@ -2829,12 +2915,12 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             swimmer->expectedRestDuration = 0;
             swimmer->expectedStartTime = 0;
             if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
-              Serial.println("  *** NO MORE SETS IN QUEUE ***");
-              Serial.print("    Swimmer ");
-              Serial.print(swimmerIndex);
-              Serial.print(" completed all ");
-              Serial.print(swimmer->queueIndex + 1);
-              Serial.println(" sets!");
+              LOGLN("  *** NO MORE SETS IN QUEUE ***");
+              LOG("    Swimmer ");
+              LOG(swimmerIndex);
+              LOG(" completed all ");
+              LOG(swimmer->queueIndex + 1);
+              LOGLN(" sets!");
             }
 
             // ---------------------------- ALL SWIMMERS COMPLETE FULL QUEUE -----------------------------
@@ -2865,6 +2951,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               saveGlobalConfigSettings();
             }
           }
+          profEnd("updateSwimmer - done rounds");
         }
 
         // We finished a round, so we need to position the swimmer at the wall
@@ -2885,6 +2972,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         }
 
       } else {
+        profStart("updateSwimmer - regular lap turn");
         // -------------------------------- LAP TURN STILL IN THE SAME ROUND --------------------------------
         // Lap turn - Still in the same round
         // Start underwater phase at wall
@@ -2907,8 +2995,10 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           int ledEnd = (int)roundf(poolLengthInMeters * globalConfigSettings.ledsPerMeter) - 1;
           swimmer->position = max(0, ledEnd - overshootLEDs);
         }
+        profEnd("updateSwimmer - regular lap turn");
       }
     } else {
+      profStart("updateSwimmer - normal swimming");
       // -------------------------------- NORMAL MOVEMENT WITHIN POOL LENGTH --------------------------------
       // Normal movement within the same pool length
       // distanceForCurrentLength is the distance traveled in the current lap
@@ -2925,6 +3015,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
         float positionInMeters = poolLengthInMeters - distanceInMeters;
         swimmer->position = (int)roundf(positionInMeters * globalConfigSettings.ledsPerMeter);
       }
+      profEnd("updateSwimmer - normal swimming");
     }
 
     // TODO: maybe this should be in the sections above, although then it would be
@@ -2932,6 +3023,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
     // ------------------------------ UNDERWATER LIGHT LOGIC ------------------------------
     // Track distance for underwater calculations
     if (swimmer->underwaterActive) {
+      profStart("updateSwimmer - underwaters");
       // Which underwater values to use based on if it's the first lap or not
       // First lap of each round uses firstUnderwaterDistance (off the wall)
       // Second lap uses regular underwaterDistance
@@ -2967,8 +3059,10 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           }
         }
       }
+      profEnd("updateSwimmer - underwaters");
     }
   }
+  profEnd("updateSwimmer");
 }
 
 // Print periodic status for all swimmers (called from loop)
@@ -2988,72 +3082,75 @@ void printPeriodicStatus() {
     }
   }
   if (isSomethingRunning) {
-    Serial.println("\n========== STATUS UPDATE ==========");
+    LOGLN("\n========== STATUS UPDATE ==========");
     for (int lane = 0; lane < globalConfigSettings.numLanes; lane++) {
       if (globalConfigSettings.laneRunning[lane]) {
-        Serial.print("Lane ");
-        Serial.print(lane);
-        Serial.println(":");
+        LOG("Lane ");
+        LOG(lane);
+        LOGLN(":");
         int laneSwimmerCount = globalConfigSettings.numSwimmersPerLane[lane];
         if (laneSwimmerCount < 1) laneSwimmerCount = 1;
         if (laneSwimmerCount > MAX_SWIMMERS_SUPPORTED) laneSwimmerCount = MAX_SWIMMERS_SUPPORTED;
         for (int i = 0; i < laneSwimmerCount; i++) {
           Swimmer* s = &swimmers[lane][i];
-          Serial.print("  Swimmer ");
-          Serial.print(i);
-          Serial.print(": ");
+          LOG("  Swimmer ");
+          LOG(i);
+          LOG(": ");
           if (s->isResting) {
-            Serial.print("RESTING (");
-            Serial.print((currentTime - s->restStartTime) / 1000.0);
-            Serial.print("s)");
-            Serial.print(" targetRest:");
-            Serial.print(s->expectedRestDuration / 1000.0);
-            Serial.print(" QI:");
-            Serial.print(s->queueIndex);
-            Serial.print(" hasStarted=");
-            Serial.print(s->hasStarted);
+            LOG("RESTING (");
+            LOG((currentTime - s->restStartTime) / 1000.0);
+            LOG("s)");
+            LOG(" targetRest:");
+            LOG(s->expectedRestDuration / 1000.0);
+            LOG(" QI:");
+            LOG(s->queueIndex);
+            LOG(" hasStarted=");
+            LOG(s->hasStarted);
           } else {
-            Serial.print("Swimming - ");
+            LOG("Swimming - ");
 
-            Serial.print(" QI:");
-            Serial.print(s->queueIndex);
-            Serial.print(" R");
-            Serial.print(s->currentRound);
-            Serial.print("/");
-            Serial.print(swimSetSettings.numRounds);
-            Serial.print(" L");
-            Serial.print(s->currentLap);
-            Serial.print("/");
-            Serial.print(s->lapsPerRound);
+            LOG(" QI:");
+            LOG(s->queueIndex);
+            LOG(" R");
+            LOG(s->currentRound);
+            LOG("/");
+            LOG(swimSetSettings.numRounds);
+            LOG(" L");
+            LOG(s->currentLap);
+            LOG("/");
+            LOG(s->lapsPerRound);
 
             // Calculate distance in current lap (1-based lap calculation)
             int currentLapNum = (int)ceil(s->totalDistance / globalConfigSettings.poolLength);
             float distanceInCurrentLap = s->totalDistance - ((currentLapNum - 1) * globalConfigSettings.poolLength);
 
-            Serial.print(" Dist:");
-            Serial.print(distanceInCurrentLap, 1);
-            Serial.print(globalConfigSettings.poolUnitsYards ? "yd" : "m");
-            Serial.print(" Pos:");
-            Serial.print(s->position);
+            LOG(" Dist:");
+            LOG(distanceInCurrentLap, 1);
+            LOG(globalConfigSettings.poolUnitsYards ? "yd" : "m");
+            LOG(" Pos:");
+            LOG(s->position);
           }
-          Serial.println();
+          LOGLN();
         }
       }
     }
-    Serial.println("===================================\n");
+    LOGLN("===================================\n");
   }
 }
 
 void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
+  profStart("drawSwimmerPulse");
   Swimmer* swimmer = &swimmers[laneIndex][swimmerIndex];
 
   // Don't draw if swimmer is resting
   if (swimmer->isResting) {
+    profEnd("drawSwimmerPulse");
     return;
   }
 
   // Only draw if swimmer should be active (start time has passed). swimStartTime==0 means already allowed.
   if (swimmer->swimStartTime > 0 && millis() < swimmer->swimStartTime) {
+    profEnd("drawSwimmerPulse");
     return; // Swimmer hasn't started yet
   }
 
@@ -3079,19 +3176,23 @@ void drawSwimmerPulse(int swimmerIndex, int laneIndex) {
       renderedLEDs[laneIndex][ledIndex] = color;
     }
   }
+  profEnd("drawSwimmerPulse");
 }
 
 void drawUnderwaterZone(int laneIndex, int swimmerIndex) {
+  profStart("drawUnderwaterZone");
   Swimmer* swimmer = &swimmers[laneIndex][swimmerIndex];
   unsigned long currentTime = millis();
 
   // Only draw if swimmer should be active (start time has passed)
   if (swimmer->isResting) {
+    profEnd("drawUnderwaterZone");
     return; // Swimmer hasn't started yet
   }
 
   // Check if underwater is active for this swimmer
   if (!swimmer->underwaterActive) {
+    profEnd("drawUnderwaterZone");
     return; // No underwater light needed
   }
 
@@ -3103,6 +3204,7 @@ void drawUnderwaterZone(int laneIndex, int swimmerIndex) {
     if (hideTimer >= (hideAfterSeconds * 1000)) {
       // Hide underwater light
       swimmer->underwaterActive = false;
+      profEnd("drawUnderwaterZone");
       return;
     }
   }
@@ -3123,4 +3225,5 @@ void drawUnderwaterZone(int laneIndex, int swimmerIndex) {
       }
     }
   }
+  profEnd("drawUnderwaterZone");
 }
