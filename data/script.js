@@ -1055,7 +1055,9 @@ function createOrUpdateFromConfig() {
         swimmerInterval: Number(currentSettings.swimmerInterval),
         summary: "",
         // keep uniqueId if already present (client may assign later)
-        uniqueId: workingSwimSetInfo && workingSwimSetInfo.uniqueId ? workingSwimSetInfo.uniqueId : undefined
+        uniqueId: workingSwimSetInfo && workingSwimSetInfo.uniqueId ? workingSwimSetInfo.uniqueId : undefined,
+        type: 0,
+        repeatRemaining: 0
     };
     console.log('createOrUpdateFromConfig -> workingSwimSetInfo updated:', workingSwimSetInfo);
 }
@@ -2130,15 +2132,17 @@ async function stopSwimSet() {
 
 function displaySwimmerSet() {
     const lane = currentSettings.currentLane;
+
     // Update set details in swim practice nomenclature
     const setDetails = document.getElementById('setDetails');
-    const numRounds = currentSettings.numRounds;
-    const swimDistance = currentSettings.swimDistance;
-    const swimTime = currentSettings.swimTime;
-    const restTime = currentSettings.restTime;
 
-    const avgSwimTimeDisplay = (swimTime > 60) ? formatSecondsToMmSs(swimTime) : `${Math.round(swimTime)}s`;
-    setDetails.innerHTML = `${numRounds} x ${swimDistance}'s on the ${avgSwimTimeDisplay} with ${restTime} sec rest`;
+    const numRounds = workingSwimSetInfo.numRounds;
+    const swimDistance = workingSwimSetInfo.swimDistance;
+    const swimTime = workingSwimSetInfo.swimTime;
+    const restTime = workingSwimSetInfo.restTime;
+
+    const swimTimeDisplay = (swimTime > 60) ? formatSecondsToMmSs(swimTime) : `${Math.round(swimTime)}s`;
+    setDetails.innerHTML = `${numRounds} x ${swimDistance}'s on the ${swimTimeDisplay} with ${restTime} sec rest`;
 
     const swimmerList = document.getElementById('swimmerList');
     swimmerList.innerHTML = '';
@@ -2151,9 +2155,14 @@ function displaySwimmerSet() {
         // Determine the actual color value for display
         let displayColor = currentSettings.swimmerColors[lane][i].color;
 
+        // Check if we have swimmer specific times, otherwise use swim set time
+        let swimTimeToUse = workingSwimSetInfo.swimTime;
+        if (workingSwimSetInfo.swimmers[i] && workingSwimSetInfo.swimmers[i].swimTime > 0) {
+            swimTimeToUse = workingSwimSetInfo.swimmers[i].swimTime;
+        }
         // Format swimTime value for display: use M:SS when > 60s, else plain seconds
-        const swimTimeDisplay = (currentSettings.swimTime > 60) ? formatSecondsToMmSs(currentSettings.swimTime) : `${Math.round(currentSettings.swimTime)}`;
-        const swimTimeUnitLabel = (currentSettings.swimTime > 60) ? 'min:sec' : 'sec';
+        let swimTimeDisplay = (swimTimeToUse > 60) ? formatSecondsToMmSs(swimTimeToUse) : `${Math.round(swimTimeToUse)}`;
+        let swimTimeUnitLabel = (swimTimeToUse > 60) ? 'min:sec' : 'sec';
 
        row.innerHTML = `
           <div class="swimmer-color" style="background-color: ${displayColor}"
@@ -2204,18 +2213,18 @@ function updateSwimmerSwimTime(swimmerIndex, newSwimTime) {
 function buildMinimalSwimSetPayload(createdSet) {
     const newSet = {
         lane: createdSet.lane,
-        uniqueId: clone.uniqueId,
+        uniqueId: createdSet.uniqueId,
         numRounds: Number(createdSet.numRounds),
         swimDistance: Number(createdSet.swimDistance),
         swimTime: Number(createdSet.swimTime),
         restTime: Number(createdSet.restTime),
         swimmerInterval: Number(createdSet.swimmerInterval),
-        type: 0,
+        type: Number(createdSet.type),
         swimmers: createdSet.swimmers.map(swimmer => ({
             swimTime: Number(swimmer.swimTime)
         })),
         summary: createdSet.summary,
-        repeatRemaining: 0
+        repeatRemaining: Number(createdSet.repeatRemaining)
     };
     console.log('buildMinimalSwimSetPayload generated payload:', newSet);
     return newSet;

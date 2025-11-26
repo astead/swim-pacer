@@ -150,10 +150,10 @@ enum SwimSetStatus {
 };
 
 struct SwimSet {
-  uint8_t numRounds;           // number of numRounds
+  uint8_t numRounds;        // number of numRounds
   uint16_t swimDistance;    // distance in pool's native units (no units attached)
-  uint16_t swimTime;     // seconds to swim the 'length'
-  uint16_t restTime;     // rest time between numRounds
+  uint16_t swimTime;        // seconds to swim the 'length'
+  uint16_t restTime;        // rest time between numRounds
   uint16_t swimmerInterval; // interval between swimmers (seconds)
   uint8_t status;           // status flags (bitmask)
   uint8_t type;             // SwimSetType
@@ -163,6 +163,9 @@ struct SwimSet {
   // remaining repeat iterations (server authoritative)
   int repeatRemaining;
 
+  // per-swimmer customization
+  uint8_t swimmersCount; // how many swimmer entries are present
+  uint16_t swimmerTimes[MAX_SWIMMERS_SUPPORTED]; // per-swimmer swimTime seconds (0 = use set swimTime)
 };
 
 // Simple fixed-size in-memory per-lane queues
@@ -481,9 +484,21 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
     // Cache swim set settings for this swimmer (enables independent progression through queue)
     swimmers[lane][i].cachedNumRounds = s.numRounds;
     swimmers[lane][i].cachedLapsPerRound = ceil(s.swimDistance / globalConfigSettings.poolLength);
-    swimmers[lane][i].cachedSpeedMPS = speedMPS;
-    swimmers[lane][i].cachedRestSeconds = s.restTime;
 
+    // Determine per-swimmer swimTime (use per-swimmer override if present else set swimTime)
+    float swimmerSpeedMPS = speedMPS;
+    float restForThisSwimmer = (float)s.restTime;
+    if (s.swimmersCount > 0 && i < s.swimmersCount && s.swimmerTimes[i] > 0) {
+      uint16_t swimmerTime = s.swimmerTimes[i];
+      float swimmerDistanceMeters = convertPoolToMeters((float)s.swimDistance);
+      swimmerSpeedMPS = (swimmerTime > 0) ? (swimmerDistanceMeters / (float)swimmerTime) : 0.0f;
+      // Keep total (swim + rest) equal to canonical set total (s.swimTime + s.restTime)
+      int totalPair = (int)s.swimTime + (int)s.restTime;
+      restForThisSwimmer = (float)(totalPair - (int)swimmerTime);
+      if (restForThisSwimmer < 0.0f) restForThisSwimmer = 0.0f; // clamp
+    }
+    swimmers[lane][i].cachedSpeedMPS = swimmerSpeedMPS;
+    swimmers[lane][i].cachedRestSeconds = restForThisSwimmer;
     // set queue index: use laneActiveQueueIndex if set, otherwise 0
     int qidx = -1;
     if (lane >= 0 && lane < MAX_LANES_SUPPORTED) qidx = laneActiveQueueIndex[lane];
@@ -1274,6 +1289,33 @@ void handleEnqueueSwimSet() {
     }
   }
 
+  // parse swimmers array if provided (use ArduinoJson for robust parsing)
+  {
+    DynamicJsonDocument doc(2048);
+    DeserializationError err = deserializeJson(doc, body);
+    s.swimmersCount = 0;
+    if (!err && doc.containsKey("swimmers") && doc["swimmers"].is<JsonArray>()) {
+      JsonArray arr = doc["swimmers"].as<JsonArray>();
+      int i = 0;
+      for (JsonVariant v : arr) {
+        if (i >= MAX_SWIMMERS_SUPPORTED) break;
+        // accept object { swimTime: N }
+        if (v.is<JsonObject>() && v.containsKey("swimTime")) {
+          s.swimmerTimes[i] = (uint16_t) v["swimTime"].as<int>();
+          if (s.swimmerTimes[i] == s.swimTime) {
+            s.swimmerTimes[i] = 0; // optimize by not doing anything special if same as set swimTime
+          }
+        } else {
+          s.swimmerTimes[i] = 0; // default to 0 meaning use set swimTime
+        }
+        i++;
+      }
+      s.swimmersCount = (uint8_t)i;
+    } else {
+      // default: no per-swimmer custom times
+      s.swimmersCount = 0;
+    }
+  }
 
   int result = enqueueSwimSet(s, lane);
   Serial.println(" Enqueue result: " + String((result == QUEUE_INSERT_SUCCESS) ? "OK" : "FAILED"));
@@ -1343,10 +1385,30 @@ void handleUpdateSwimSet() {
     s.loopFromUniqueId = parseUniqueIdHex(loopFromUniqueIdStr);
   }
 
-
-  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid lane\"}");
-    return;
+  // parse swimmers array if provided
+  {
+    DynamicJsonDocument doc(2048);
+    DeserializationError err = deserializeJson(doc, body);
+    s.swimmersCount = 0;
+    if (!err && doc.containsKey("swimmers") && doc["swimmers"].is<JsonArray>()) {
+      JsonArray arr = doc["swimmers"].as<JsonArray>();
+      int i = 0;
+      for (JsonVariant v : arr) {
+        if (i >= MAX_SWIMMERS_SUPPORTED) break;
+        if (v.is<JsonObject>() && v.containsKey("swimTime")) {
+          s.swimmerTimes[i] = (uint16_t) v["swimTime"].as<int>();
+          if (s.swimmerTimes[i] == s.swimTime) {
+            s.swimmerTimes[i] = 0; // optimize by not doing anything special if same as set swimTime
+          }
+        } else {
+          s.swimmerTimes[i] = 0; // default to 0 meaning use set swimTime
+        }
+        i++;
+      }
+      s.swimmersCount = (uint8_t)i;
+    } else {
+      s.swimmersCount = 0;
+    }
   }
 
   Serial.println("  received payload to update set: ");
@@ -1377,6 +1439,10 @@ void handleUpdateSwimSet() {
       entry.repeatRemaining = s.repeatRemaining;
       entry.loopFromUniqueId = s.loopFromUniqueId;
       found = true;
+      entry.swimmersCount = s.swimmersCount;
+      for (int si=0; si<entry.swimmersCount && si<MAX_SWIMMERS_SUPPORTED; ++si) {
+        entry.swimmerTimes[si] = s.swimmerTimes[si];
+      }
     }
 
     if (found) {
@@ -1624,6 +1690,18 @@ void handleGetSwimQueue() {
     item["repeatRemaining"] = s.repeatRemaining;
     // numeric status bitmask
     item["status"] = (int)s.status;
+    // include swimmers array (swimTime per swimmer) if present
+    if (s.swimmersCount > 0) {
+      JsonArray sw = item.createNestedArray("swimmers");
+      for (int si = 0; si < s.swimmersCount && si < MAX_SWIMMERS_SUPPORTED; ++si) {
+        JsonObject sv = sw.createNestedObject();
+        if (s.swimmerTimes[si] == 0) {
+          sv["swimTime"] = s.swimTime; // use set swimTime
+        } else {
+          sv["swimTime"] = s.swimmerTimes[si];
+        }
+      }
+    }
 
     // representative currentRound: prefer swimmer whose queueIndex == i
     int repCurrentRound = 0;
@@ -2654,8 +2732,22 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             int currentSetRestSeconds = swimmer->cachedRestSeconds;
             swimmer->cachedNumRounds = nextSet.numRounds;
             swimmer->cachedLapsPerRound = lapsPerRound;
-            swimmer->cachedSpeedMPS = speedMPS;
-            swimmer->cachedRestSeconds = nextSet.restTime;
+
+            // Determine per-swimmer swimTime (use per-swimmer override if present else set swimTime)
+            float swimmerSpeedMPS = speedMPS;
+            float restForThisSwimmer = nextSet.restTime;
+            if (nextSet.swimmersCount > 0 && swimmerIndex < nextSet.swimmersCount && nextSet.swimmerTimes[swimmerIndex] > 0) {
+              uint16_t swimmerTime = nextSet.swimmerTimes[swimmerIndex];
+              float swimmerDistanceMeters = convertPoolToMeters((float)nextSet.swimDistance);
+              swimmerSpeedMPS = (swimmerTime > 0) ? (swimmerDistanceMeters / (float)swimmerTime) : 0.0f;
+              // Keep total (swim + rest) equal to canonical set total (s.swimTime + s.restTime)
+              int totalPair = (int)nextSet.swimTime + (int)nextSet.restTime;
+              restForThisSwimmer = (float)(totalPair - (int)swimmerTime);
+              if (restForThisSwimmer < 0.0f) restForThisSwimmer = 0.0f; // clamp
+            }
+            swimmer->cachedSpeedMPS = swimmerSpeedMPS;
+            swimmer->cachedRestSeconds = restForThisSwimmer;
+
             swimmer->queueIndex++;  // Move to next index in queue
 
             // --- KEEP laneActiveQueueIndex IN SYNC WITH FIRST SWIMMER ADVANCE ---
@@ -2711,6 +2803,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               for (int si = swimmerIndex + 1; si < laneSwimmerCount; si++) {
                 swimmers[laneIndex][si].cachedNumRounds = nextSet.numRounds;
                 swimmers[laneIndex][si].cachedLapsPerRound = lapsPerRound;
+                // Since these swimmers are inactive, they all get the base speed/rest
                 swimmers[laneIndex][si].cachedSpeedMPS = speedMPS;
                 swimmers[laneIndex][si].cachedRestSeconds = nextSet.restTime;
                 swimmers[laneIndex][si].queueIndex++;  // Move to next index in queue
