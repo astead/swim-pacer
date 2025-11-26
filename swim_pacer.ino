@@ -64,9 +64,6 @@
 #define LED_TYPE        WS2815
 #define COLOR_ORDER     GRB         // Color order (may need adjustment)
 
-// Maximum supported LEDs by FastLED for this project
-#define MAX_LEDS 150
-
 // GPIO pins for multiple LED strips (lanes)
 // Lane 1: GPIO 18, Lane 2: GPIO 19, Lane 3: GPIO 21, Lane 4: GPIO 2
 #define LANE_0_PIN 18
@@ -282,6 +279,10 @@ CRGB underwaterSurfaceColor;     // Color for underwater surface indicators
 CRGB* renderedLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
 CRGB* scanoutLEDs[MAX_LANES_SUPPORTED] = {nullptr, nullptr, nullptr, nullptr}; // Array of LED strip pointers for each lane
 bool needsRecalculation = true;
+
+// Throttling render out to LEDs
+unsigned long lastFastLEDShowMs = 0;
+unsigned long minFastLEDShowIntervalMs = 20; // minimum ms between FastLED.show() calls (tunable)
 
 // Helper: parse lane from POST JSON body (returns -1 when missing)
 static int parseLaneFromBody(const String &body) {
@@ -2302,8 +2303,20 @@ void updateLEDEffect() {
     }
   }
 
-  // Update FastLED
-  FastLED.show();
+  // Throttle FastLED.show() so it runs at most once per minFastLEDShowIntervalMs.
+  // Use delayMS (time per-LED derived from pace) as a sensible lower bound.
+  unsigned long now = millis();
+  unsigned long targetMin = (unsigned long)max((int)minFastLEDShowIntervalMs, delayMS);
+  if (now - lastFastLEDShowMs >= targetMin) {
+    profStart("FastLED.show");
+    FastLED.show();
+    profEnd("FastLED.show");
+    lastFastLEDShowMs = now;
+  } else {
+    // Skip hardware update this frame to save CPU / IO time
+    // (we still updated internal buffers so the next show will reflect latest state)
+  }
+
   profEnd("updateLEDEffect");
 }
 
