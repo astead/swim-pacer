@@ -1283,17 +1283,11 @@ function queueSwimSet() {
 
     // Build minimal payload and send to device queue. Include lane so device
     // can enqueue into the correct per-lane queue.
+    workingSwimSetInfo.uniqueId = generateUniqueId(16);
+    workingSwimSetInfo.summary = generateSetSummary(workingSwimSetInfo);
     console.log('queueSwimSet: buildMinimalSwimSetPayload:', workingSwimSetInfo);
     const payload = buildMinimalSwimSetPayload(workingSwimSetInfo);
     const local = {...payload};
-    local.lane = lane;
-    payload.lane = lane;
-
-    local.summary = generateSetSummary(currentSettings);
-    workingSwimSetInfo.summary = local.summary;
-
-    local.uniqueId = generateUniqueId(16);
-    payload.uniqueId = local.uniqueId;
 
     // optimistic local entry creation (or find existing local entry)
     local.synced = false;
@@ -1784,8 +1778,6 @@ function saveSwimSet() {
     // Prepare payload for update endpoint
     console.log('saveSwimSet: buildMinimalSwimSetPayload:', newEntry);
     const payload = buildMinimalSwimSetPayload(newEntry);
-    payload.lane = lane;
-    payload.uniqueId = existing.uniqueId;
 
     // Try to update on the device; if network fails, apply local-only change
     console.log('saveSwimSet calling /updateSwimSet with payload:', payload);
@@ -2235,13 +2227,9 @@ function updateSwimmerSwimTime(swimmerIndex, newSwimTime) {
 
 // Build the minimal swim set payload expected by the device
 function buildMinimalSwimSetPayload(createdSet) {
-
-    // TODO: we hit an error if there is no createdSet.
-    //       We could just always have a createdSet, or
-    //       We create one here.
-
-    // createdSet: { id, lane, swimmers, settings, summary }
     const newSet = {
+        lane: createdSet.lane,
+        uniqueId: clone.uniqueId,
         numRounds: Number(createdSet.numRounds),
         swimDistance: Number(createdSet.swimDistance),
         swimTime: Number(createdSet.swimTime),
@@ -2249,7 +2237,6 @@ function buildMinimalSwimSetPayload(createdSet) {
         swimmerInterval: Number(createdSet.swimmerInterval),
         type: 0,
         swimmers: createdSet.swimmers.map(swimmer => ({
-            color: swimmer.color,
             swimTime: Number(swimmer.swimTime)
         })),
         summary: createdSet.summary,
@@ -2445,8 +2432,6 @@ async function reconcileQueueWithDevice() {
 
                 console.log('reconcileQueueWithDevice: buildMinimalSwimSetPayload:', local);
                 const payload = buildMinimalSwimSetPayload(local);
-                payload.lane = lane;
-                payload.uniqueId = local.uniqueId;
 
                 // Send this queue item again, using centralized enqueue helper
                 sendEnqueuePayload(payload, local).then(result => {
@@ -2842,7 +2827,7 @@ async function copyLaneQueueTo(fromLane, toLane) {
         clone.lane = toLane;
         clone.summary = generateSetSummary(item);
         // Create a new uniqueId as this will be a new entry
-        clone.uniqueId = generateUniqueId();
+        clone.uniqueId = generateUniqueId(16);
         clone.synced = false;
         clone.enqueuePending = true;
         clone.enqueueRequestedAt = Date.now();
@@ -2857,9 +2842,6 @@ async function copyLaneQueueTo(fromLane, toLane) {
         // attempt to enqueue on server (sequential, best-effort). If standalone, skip.
         if (!isStandaloneMode) {
             const payload = buildMinimalSwimSetPayload(clone);
-            // TODO: Lane should be part of the above function
-            payload.lane = toLane;
-            payload.uniqueId = clone.uniqueId;
             // Use centralized helper to send enqueue and update the local optimistic entry
             sendEnqueuePayload(payload, clone).then(result => {
                 if (!result.ok) {
