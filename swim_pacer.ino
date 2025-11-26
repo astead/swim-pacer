@@ -269,6 +269,7 @@ int poolLengthLEDs;  // Total number of LEDs representing the pool length
 int fullLengthLEDs[MAX_LANES_SUPPORTED];  // Total number of rendered LEDs (ignoring gaps)
 int visibleLEDs[MAX_LANES_SUPPORTED];     // Total number of actual LEDs (accounting for gaps)
 std::vector<int> gapLEDs[MAX_LANES_SUPPORTED];         // positions where there are no LEDs due to gaps
+std::vector<std::pair<int,int>> copySegments[MAX_LANES_SUPPORTED]; // { srcStart, length } segments for spliceOutGaps
 float ledSpacingCM;               // Spacing between LEDs in cm
 int pulseWidthLEDs;               // Width of pulse in LEDs
 int underwatersWidthLEDs;         // Width of underwaters pulse in LEDs
@@ -2129,6 +2130,34 @@ void recalculateValues(int lane) {
 
   poolLengthLEDs = (int)(poolLengthInMeters * globalConfigSettings.ledsPerMeter);
 
+  // Build copySegments (contiguous segments in renderedLEDs -> scanoutLEDs)
+  copySegments[lane].clear();
+  if (fullLengthLEDs[lane] > 0) {
+    int prev = 0;
+    for (size_t gi = 0; gi < gapLEDs[lane].size(); ++gi) {
+      int g = gapLEDs[lane][gi];
+      if (g > prev) {
+        copySegments[lane].push_back(std::make_pair(prev, g - prev));
+      }
+      prev = g + 1;
+    }
+    // final tail segment
+    if (prev < fullLengthLEDs[lane]) {
+      copySegments[lane].push_back(std::make_pair(prev, fullLengthLEDs[lane] - prev));
+    }
+  }
+  // Sanity: visibleLEDs should equal sum of segment lengths
+  // (optional check during debug)
+  #if DEBUG_SERIAL
+  {
+    int tot = 0;
+    for (auto &p : copySegments[lane]) tot += p.second;
+    if (tot != visibleLEDs[lane]) {
+      LOGLN("Warning: copySegments total != visibleLEDs");
+    }
+  }
+  #endif
+
   // TODO: this should just be a constant, or be set based on the swim speed
   //       it doesn't need to be here in the LED setup
   // Calculate delayMS based on swim pace and distance between LEDs
@@ -2271,40 +2300,34 @@ void updateLEDEffect() {
 }
 
 void spliceOutGaps(int lane) {
-  //LOG("spliceOutGaps: lane="); LOGLN(lane);
-  // If no gaps, copy exactly visibleLEDs[lane] entries (safe)
-  if (gapLEDs[lane].size() == 0) {
-    //LOGLN("No gaps, copying visible LEDs directly");
+  profStart("spliceOutGaps");
+  // Fast path: if no gaps, single memcpy
+  if (copySegments[lane].empty()) {
     profStart("spliceOutGaps - memcopy");
     memcpy(scanoutLEDs[lane], renderedLEDs[lane], visibleLEDs[lane] * sizeof(CRGB));
     profEnd("spliceOutGaps - memcopy");
+    profEnd("spliceOutGaps");
     return;
-  } else {
-    //LOG("Gaps present, count="); LOGLN(gapLEDs[lane].size());
   }
-  profStart("spliceOutGaps");
-  // gapLEDs[lane] must be sorted ascending for this to work. Ensure it is.
-  std::sort(gapLEDs[lane].begin(), gapLEDs[lane].end());
 
-  int scanoutIndex = 0;
-  size_t gapIndex = 0;
-  const size_t gapCount = gapLEDs[lane].size();
-  int nextGap = (gapCount > 0) ? gapLEDs[lane][0] : -1;
-
-  for (int renderIndex = 0; renderIndex < fullLengthLEDs[lane] && scanoutIndex < visibleLEDs[lane]; ++renderIndex) {
-    if (gapIndex < gapCount && renderIndex == nextGap) {
-      // skip gap LED and advance to next gap
-      ++gapIndex;
-      nextGap = (gapIndex < gapCount) ? gapLEDs[lane][gapIndex] : -1;
-      continue;
-    }
-    // copy valid LED to scanout
-    scanoutLEDs[lane][scanoutIndex++] = renderedLEDs[lane][renderIndex];
+  // Use precomputed segments to perform few memcpy calls instead of per-LED copying
+  int dst = 0;
+  for (const auto &seg : copySegments[lane]) {
+    int srcStart = seg.first;
+    int len = seg.second;
+    memcpy(&scanoutLEDs[lane][dst], &renderedLEDs[lane][srcStart], len * sizeof(CRGB));
+    dst += len;
   }
 
   // Defensive: if we didn't fill the scanout buffer, clear the remainder
-  for (int i = scanoutIndex; i < visibleLEDs[lane]; ++i) {
-    scanoutLEDs[lane][i] = CRGB::Black;
+  if (dst < visibleLEDs[lane]) {
+    int remaining = visibleLEDs[lane] - dst;
+    if (remaining > 0) {
+      // FastLED helper - efficient fill of CRGB array
+      fill_solid(&scanoutLEDs[lane][dst], remaining, CRGB::Black);
+      // Fallback alternative (if you prefer raw memset and know CRGB == 0 is black):
+      // memset(&scanoutLEDs[lane][dst], 0, remaining * sizeof(CRGB));
+    }
   }
   profEnd("spliceOutGaps");
 }
