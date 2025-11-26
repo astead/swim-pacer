@@ -89,7 +89,6 @@ const colorHex = {
 
 // Lane identification system
 let laneIdentificationMode = false;
-// TODO: Just re-use the swimmer colors array?
 const laneIdentificationColors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00']; // Red, Green, Blue, Yellow
 
 // Convert hex color to color name for swimmer assignment
@@ -185,12 +184,6 @@ function updateCalculations(triggerSave = true) {
     currentSettings.ledsPerMeter = ledsPerMeter;
     currentSettings.gapBetweenStrips = gapBetweenStrips;
     document.getElementById('distanceUnits').textContent = poolLengthUnits;
-
-    // Update distance units when pool length changes.
-    // We only want to save the specific fields that changed instead of issuing
-    // a broad, multi-endpoint write which would overwrite other device state.
-    // TODO: This doesn't need to change
-    updateSwimDistance(false);
 
     // If caller requested saving, call the targeted send helpers so the
     // server only receives the changed values.
@@ -559,11 +552,6 @@ function updateIndividualSwimmerTimeDueToNumSwimmers() {
     }
 }
 
-
-// TODO: I think there may be a race condition when clicking from this texbox
-//       directly to the Queue button, maybe this update doesn't make it into
-//       workingSwimSetInfo before queuing? Need to check that.
-//       Could be the same for all items below.
 function updateNumRounds() {
     const numRounds = document.getElementById('numRounds').value;
     currentSettings.numRounds = parseInt(numRounds);
@@ -575,19 +563,15 @@ function updateNumRounds() {
     });
 }
 
-function updateSwimDistance(triggerSave = true) {
+function updateSwimDistance() {
     const swimDistance = parseInt(document.getElementById('swimDistance').value);
     currentSettings.swimDistance = swimDistance;
     if (!workingSwimSetInfo) createOrUpdateFromConfig();
     workingSwimSetInfo.swimDistance = Number(swimDistance);
-    // Updating swim distance is special because we might also be changing this
-    // due to changing the pool dimensions. So we allow caller to specify whether to trigger a save.
-    // TODO: Not sure if this is needed or not. Wouldn't we want to always save swim distance changes?
-    //       Also not sure if this needs to change when pool length changes.
-    if (triggerSave) {
-        // Save only the swim distance
-        sendSwimDistance(currentSettings.swimDistance);
-    }
+    // Save only the swim distance
+    sendSwimDistance(currentSettings.swimDistance).catch(err => {
+        console.debug('sendSwimDistance failed (ignored):', err && err.message ? err.message : err);
+    });
 }
 
 function updateSwimTime() {
@@ -1026,7 +1010,6 @@ let _draggedQueueIndex = -1; // index of item being dragged within current lane
 // When true, broad settings writes are suppressed to avoid overwriting device defaults
 let suppressSettingsWrites = false;
 
-// TODO: Need to set this properly
 function updateStatus() {
     const queueDisplay = document.getElementById('queueDisplay');
     const queueTitle = queueDisplay.querySelector('h4');
@@ -1746,11 +1729,6 @@ function loadSwimSetIntoConfig(swimSet) {
 
     // Update swim set settings
     updateSwimSetUIFromSettings();
-
-    // Update visual selection after UI updates
-    // This selects swimmer color option (individual colors or same color)
-    // TODO: It doesn't seem like this is needed.
-    //updateVisualSelection();
 }
 
 function saveSwimSet() {
@@ -2065,9 +2043,7 @@ function handleDrop(evt, targetIndex) {
 
 // Server-first start: request device to start the head (or specific index)
 // Returns Promise<boolean>
-// TODO Why is this so big, why not just call toggle?
 async function startSwimSet(requestedIndex) {
-    // TODO: Why doesn't this just call toggle?
     const lane = getCurrentLaneFromUI();
     const queue = swimSetQueues[lane] || [];
 
