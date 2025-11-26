@@ -441,6 +441,8 @@ struct Swimmer {
   int cachedNumRounds;         // Number of numRounds for this swimmer's active swim set
   int cachedLapsPerRound;      // Number of laps per round (calculated from distance)
   float cachedSpeedMPS;        // Speed in meters per second
+  float cachedSpeedPoolUnitsPerMs; // speed in pool-units per millisecond (cheap multiply)
+  unsigned long cachedRestMs;      // rest duration in milliseconds (cached)
   int cachedRestSeconds;       // Rest duration in seconds
   int queueIndex;              // Index in the lane's queue that this swimmer is currently executing (0-based)
 };
@@ -554,6 +556,12 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
     }
     swimmers[lane][i].cachedSpeedMPS = swimmerSpeedMPS;
     swimmers[lane][i].cachedRestSeconds = restForThisSwimmer;
+    // Precompute pool-unit speed-per-ms to avoid divide ops in inner loop.
+    // poolUnits: yards if poolUnitsYards==true, meters otherwise.
+    float poolUnitFactor = globalConfigSettings.poolUnitsYards ? 1.0f / 0.9144f : 1.0f; // multiply meters->poolUnits
+    float speedInPoolUnitsPerSec = swimmerSpeedMPS * poolUnitFactor;
+    swimmers[lane][i].cachedSpeedPoolUnitsPerMs = speedInPoolUnitsPerSec / 1000.0f; // per-ms
+    swimmers[lane][i].cachedRestMs = (unsigned long)(restForThisSwimmer * 1000.0f);
     // set queue index: use laneActiveQueueIndex if set, otherwise 0
     int qidx = -1;
     if (lane >= 0 && lane < MAX_LANES_SUPPORTED) qidx = laneActiveQueueIndex[lane];
@@ -2442,6 +2450,8 @@ void initializeSwimmers() {
       swimmers[lane][i].cachedNumRounds = 0;
       swimmers[lane][i].cachedLapsPerRound = 0;
       swimmers[lane][i].cachedSpeedMPS = 0.0;
+      swimmers[lane][i].cachedSpeedPoolUnitsPerMs = 0.0;
+      swimmers[lane][i].cachedRestMs = 0;
       swimmers[lane][i].cachedRestSeconds = 0;
       swimmers[lane][i].queueIndex = 0;  // Start at first set in queue
 
@@ -2610,23 +2620,11 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
       swimmer->debugRestingPrinted = false; // Reset for next rest phase
     }
 
-    // Calculate time elapsed since last position update
-    float deltaSeconds = (currentTime - swimmer->lastPositionUpdate) / 1000.0;
+    // Cheap per-frame integration using cached per-ms speeds
+    unsigned long deltaMs = currentTime - swimmer->lastPositionUpdate;
     swimmer->lastPositionUpdate = currentTime;
-
-    // Calculate distance traveled this frame in pool's native units
-    // Convert speed (meters/sec) to pool's native units
-    float speedInPoolUnits;
-    if (globalConfigSettings.poolUnitsYards) {
-      // Convert meters/sec to yards/sec (1 yard = 0.9144 m)
-      speedInPoolUnits = swimmer->cachedSpeedMPS / 0.9144;
-    } else {
-      // Already meters/sec
-      speedInPoolUnits = swimmer->cachedSpeedMPS;
-    }
-    float distanceTraveled = speedInPoolUnits * deltaSeconds;
-
-    // Update total distance
+    // distance advanced in pool units (yards or meters depending on config)
+    float distanceTraveled = swimmer->cachedSpeedPoolUnitsPerMs * (float)deltaMs;
     swimmer->totalDistance += distanceTraveled;
 
     // Check if swimmer has completed one pool length based on actual distance
