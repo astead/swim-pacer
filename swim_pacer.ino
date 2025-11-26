@@ -157,8 +157,7 @@ struct SwimSet {
   uint16_t swimmerInterval; // interval between swimmers (seconds)
   uint8_t status;           // status flags (bitmask)
   uint8_t type;             // SwimSetType
-  uint32_t id;              // device-assigned canonical id (0 = not assigned)
-  unsigned long long uniqueId; // client-supplied unique id for reconciliation (0 = none)
+  unsigned long long uniqueId; // client-supplied uniqueId for reconciliation (0 = none)
   // loop metadata (client-supplied stable identifier for loop start)
   unsigned long long loopFromUniqueId;
   // remaining repeat iterations (server authoritative)
@@ -385,7 +384,6 @@ struct Swimmer {
   int cachedLapsPerRound;      // Number of laps per round (calculated from distance)
   float cachedSpeedMPS;        // Speed in meters per second
   int cachedRestSeconds;       // Rest duration in seconds
-  uint32_t activeSwimSetId;    // ID of the active swim set this swimmer is executing
   int queueIndex;              // Index in the lane's queue that this swimmer is currently executing (0-based)
 };
 
@@ -485,7 +483,6 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
     swimmers[lane][i].cachedLapsPerRound = ceil(s.swimDistance / globalConfigSettings.poolLength);
     swimmers[lane][i].cachedSpeedMPS = speedMPS;
     swimmers[lane][i].cachedRestSeconds = s.restTime;
-    swimmers[lane][i].activeSwimSetId = s.id;
 
     // set queue index: use laneActiveQueueIndex if set, otherwise 0
     int qidx = -1;
@@ -1304,8 +1301,8 @@ void handleEnqueueSwimSet() {
   }
 }
 
-// Update an existing swim set in-place by device id or uniqueId
-// Body may include matchId (device id) or matchUniqueId (string) to locate
+// Update an existing swim set in-place by uniqueId
+// Body should include matchUniqueId (string) to locate
 // the queued entry. The fields length, swimTime, numRounds, restTime, type, repeat
 // will be used to replace the entry. Optionally provide uniqueId to update the
 // stored uniqueId for future reconciliation.
@@ -1396,8 +1393,8 @@ void handleUpdateSwimSet() {
   server.send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}");
 }
 
-// Delete a swim set by device id or uniqueId for a lane.
-// Accepts form-encoded or JSON: matchId=<n> or matchUniqueId=<hex>, and lane=<n>
+// Delete a swim set by uniqueId for a lane.
+// Accepts form-encoded or JSON: matchUniqueId=<hex>, and lane=<n>
 void handleDeleteSwimSet() {
   Serial.println("/deleteSwimSet ENTER");
   String body = server.arg("plain");
@@ -1440,7 +1437,7 @@ void handleDeleteSwimSet() {
     existing.push_back(swimSetQueue[lane][idx]);
   }
 
-  // Try match by numeric id
+  // Try match by uniqueId
   bool found = false;
   // Try match by uniqueId (hex or decimal)
   if (!found && matchUniqueId != 0ULL) {
@@ -1464,7 +1461,7 @@ void handleDeleteSwimSet() {
     swimSetQueueCount[lane]++;
   }
 
-  // Perform removal logic (match by id or uniqueId) and respond with JSON
+  // Perform removal logic (match by uniqueId) and respond with JSON
   if (found) {
     Serial.print(" deleteSwimSet: deleted entry, new queue count=");
     Serial.println(swimSetQueueCount[lane]);
@@ -1532,10 +1529,9 @@ void handleStartSwimSet() {
   Serial.println("/startSwimSet: calling applySwimSetToSettings()");
   applySwimSetToSettings(s, lane);
 
-  // Respond with canonical id (if any) so client can reconcile
+  // Respond with uniqueId so client can reconcile
   String resp = "{";
   resp += "\"ok\":true,";
-  resp += "\"startedId\":" + String(s.id) + ",";
   resp += "\"uniqueId\":\"" + uniqueIdToHex(s.uniqueId) + "\"";
   resp += "}";
   server.send(200, "application/json", resp);
@@ -1617,7 +1613,6 @@ void handleGetSwimQueue() {
     int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
     SwimSet &s = swimSetQueue[lane][idx];
     JsonObject item = q.createNestedObject();
-    item["id"] = (unsigned long)s.id;
     item["uniqueId"] = uniqueIdToHex(s.uniqueId);
     item["numRounds"] = s.numRounds;
     item["swimDistance"] = s.swimDistance;
@@ -1667,8 +1662,9 @@ void handleGetSwimQueue() {
   server.send(200, "application/json", out);
 }
 
-// Reorder swim queue for a lane. Expects form-encoded: lane=<n>&order=<id1,id2,...>
-// id values can be device ids (numeric) or uniqueId strings. Entries not matched
+// Reorder swim queue for a lane. Expects form-encoded:
+// lane=<n>&order=<uniqueId1,uniqueId2,...>
+// uniqueId values should be uniqueId strings. Entries not matched
 // will be appended at the end in their existing order.
 void handleReorderSwimQueue() {
   Serial.println("/reorderSwimQueue ENTER");
@@ -1683,7 +1679,7 @@ void handleReorderSwimQueue() {
   String orderStr = "";
   if (body.indexOf("order=") >= 0) {
     int idx = body.indexOf("order=");
-    int start = idx + 6; // TODO: What does this 6 represent? No MAGIC NUMBERS
+    int start = idx + sizeof("order=");
     orderStr = body.substring(start);
     // Trim trailing ampersand if present
     int amp = orderStr.indexOf('&');
@@ -1734,17 +1730,8 @@ void handleReorderSwimQueue() {
   // New ordered list
   std::vector<SwimSet> ordered;
 
-  // Helper to match token to an existing entry by id or uniqueId
+  // Helper to match token to an existing entry by uniqueId
   auto matchAndConsume = [&](const String &tok) -> bool {
-    // Try numeric device id match first
-    unsigned long long parsed = (unsigned long long)strtoull(tok.c_str(), NULL, 10);
-    for (size_t i = 0; i < existing.size(); i++) {
-      if (parsed != 0 && existing[i].id == (uint32_t)parsed) {
-        ordered.push_back(existing[i]);
-        existing.erase(existing.begin() + i);
-        return true;
-      }
-    }
     // Try parsing as hex uniqueId
     unsigned long long parsedHex = (unsigned long long)strtoull(tok.c_str(), NULL, 16);
     for (size_t i = 0; i < existing.size(); i++) {
@@ -2282,7 +2269,6 @@ void initializeSwimmers() {
       swimmers[lane][i].cachedLapsPerRound = 0;
       swimmers[lane][i].cachedSpeedMPS = 0.0;
       swimmers[lane][i].cachedRestSeconds = 0;
-      swimmers[lane][i].activeSwimSetId = 0;
       swimmers[lane][i].queueIndex = 0;  // Start at first set in queue
 
       // Set colors based on mode
@@ -2555,9 +2541,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             Serial.println("  *** ALL ROUNDS COMPLETE FOR CURRENT SET ***");
             Serial.print("    Swimmer ");
             Serial.print(swimmerIndex);
-            Serial.print(" finished swim set ID ");
-            Serial.print(swimmer->activeSwimSetId);
-            Serial.print(" (queue index ");
+            Serial.print(" finished swim set (queue index ");
             Serial.print(swimmer->queueIndex);
             Serial.println(")");
           }
@@ -2570,10 +2554,8 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
               Serial.print("    Swimmer ");
               Serial.print(swimmerIndex);
-              Serial.println(" is the last swimmer in the lane");
-              Serial.print("    Marking swim set ID ");
-              Serial.print(swimmer->activeSwimSetId);
-              Serial.println(" as complete for the lane");
+              Serial.print(" is the last swimmer in the lane. ");
+              Serial.println("Marking swim set as complete for the lane.");
             }
             // Mark the queue entry (by this swimmer's queueIndex) as completed.
             int qidx = swimmer->queueIndex;
@@ -2649,9 +2631,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             }
             if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
               Serial.println("  *** AUTO-ADVANCING TO NEXT SWIM SET ***");
-              Serial.print("    Next set ID: ");
-              Serial.print(nextSet.id);
-              Serial.print(", queue index: ");
+              Serial.print("queue index: ");
               Serial.print(swimmer->queueIndex + 1);
               Serial.print(", numRounds: ");
               Serial.print(nextSet.numRounds);
@@ -2676,7 +2656,6 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             swimmer->cachedLapsPerRound = lapsPerRound;
             swimmer->cachedSpeedMPS = speedMPS;
             swimmer->cachedRestSeconds = nextSet.restTime;
-            swimmer->activeSwimSetId = nextSet.id;
             swimmer->queueIndex++;  // Move to next index in queue
 
             // --- KEEP laneActiveQueueIndex IN SYNC WITH FIRST SWIMMER ADVANCE ---
@@ -2734,7 +2713,6 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
                 swimmers[laneIndex][si].cachedLapsPerRound = lapsPerRound;
                 swimmers[laneIndex][si].cachedSpeedMPS = speedMPS;
                 swimmers[laneIndex][si].cachedRestSeconds = nextSet.restTime;
-                swimmers[laneIndex][si].activeSwimSetId = nextSet.id;
                 swimmers[laneIndex][si].queueIndex++;  // Move to next index in queue
                 swimmers[laneIndex][si].currentRound = 1;
                 swimmers[laneIndex][si].currentLap = 1;
