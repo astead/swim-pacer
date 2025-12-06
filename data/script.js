@@ -729,13 +729,8 @@ function updateColorMode() {
 
     // Only send color mode change; avoid broad writes that would reset swimmers
     if (!isStandaloneMode) {
-        fetch('/setColorMode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `colorMode=${colorMode}`
-        }).catch(error => {
-            console.log('Color mode update - server not available');
-        });
+        // Use centralized postForm helper (handles standalone mode, suppress, timeout)
+        sendColorMode(colorMode);
     }
 
     // When switching to same color mode, update any existing swimmers
@@ -972,13 +967,7 @@ function selectColor(color) {
         document.getElementById('colorIndicator').style.backgroundColor = color;
 
         // Send the same color for all swimmers
-        fetch('/setSwimmerColor', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `color=${encodeURIComponent(currentSettings.swimmerColor)}`
-        }).catch(error => {
-            console.log('Swimmer color update - server not available');
-        });
+        sendSwimmerColor(currentSettings.swimmerColor);
     }
 
     currentColorContext = null; // Reset context
@@ -994,15 +983,7 @@ function updateSwimmerColor() {
 
     // Send the color to the server (without resetting the swim set)
     // Skip server communication in standalone mode
-    if (!isStandaloneMode) {
-        fetch('/setSwimmerColor', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `color=${encodeURIComponent(swimmerColor)}`
-        }).catch(error => {
-            console.log('Swimmer color update - server not available');
-        });
-    }
+    sendSwimmerColor(swimmerColor);
 }
 
 let currentColorContext = null; // Track which color picker context we're in
@@ -1202,6 +1183,12 @@ async function sendEnqueuePayload(payload, local) {
                 switch (resp.errorCode) {
                     case 1:
                         console.log('sendEnqueuePayload ERROR from /enqueueSwimSet: Swim set already exists on device.');
+                        if (local) {
+                            local.synced = true;
+                            local.enqueuePending = false;
+                            updateQueueDisplay();
+                            return { ok: true };
+                        }
                         break;
                     case 2:
                         console.log('sendEnqueuePayload ERROR from /enqueueSwimSet: Device queue is full; cannot enqueue swim set.');
@@ -1287,7 +1274,7 @@ function queueSwimSet() {
 
     // Send using centralized helper
     sendEnqueuePayload(payload, local).then(result => {
-        if (!result.ok) {
+        if (!result.ok && !result.duplicate) {
             // Optionally inspect result.status to provide finer UX messages
             console.log('queueSwimSet: enqueue request returned not-ok', result.status || result.error);
         }
@@ -1603,7 +1590,7 @@ function enqueueLoopEntry(lane, loopFromUniqueId, iterations) {
 
     // Delegate network enqueue to helper
     sendEnqueuePayload(payload, local).then(result => {
-        if (!result.ok) {
+        if (!result.ok && !result.duplicate) {
             console.log('enqueueLoopEntry: enqueue failed', result.status || result.error);
         }
     });
@@ -2046,7 +2033,12 @@ function handleDrop(evt, targetIndex) {
 // Server-first start: request device to start the head (or specific index)
 // Returns Promise<boolean>
 async function startSwimSet(requestedIndex) {
+     // Prevent duplicate starts
     const lane = getCurrentLaneFromUI();
+    if (currentSettings.laneRunning && currentSettings.laneRunning[lane]) {
+        console.warn('startSwimSet: lane', lane, 'already running, ignoring duplicate start');
+        return;
+    }
     const queue = swimSetQueues[lane] || [];
 
     // choose head or requested index (first non-completed)
@@ -2067,7 +2059,7 @@ async function startSwimSet(requestedIndex) {
     if (head.uniqueId) payload.matchUniqueId = String(head.uniqueId);
 
     const controller = new AbortController();
-    const to = setTimeout(() => controller.abort(), 7000);
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
     try {
         const resp = await fetch('/startSwimSet', {
             method: 'POST',
@@ -2076,7 +2068,7 @@ async function startSwimSet(requestedIndex) {
             signal: controller.signal
         });
         laneRunning[lane] = true;
-        clearTimeout(to);
+        clearTimeout(timeoutId);
         updateQueueDisplay();
         updatePacerButtons();
         updateStatus();
@@ -2091,7 +2083,7 @@ async function startSwimSet(requestedIndex) {
 
         return true;
     } catch (e) {
-        clearTimeout(to);
+        clearTimeout(timeoutId);
         updateQueueDisplay();
         console.warn('startSwimSet failed (no server confirmation)', e && e.message ? e.message : e);
         return false;
@@ -2103,7 +2095,7 @@ async function stopSwimSet() {
     const lane = getCurrentLaneFromUI();
     // Ask server to stop this lane
     const controller = new AbortController();
-    const to = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
         console.log("calling /stopSwimSet for lane " + lane);
         const resp = await fetch('/stopSwimSet', {
@@ -2112,7 +2104,7 @@ async function stopSwimSet() {
             body: JSON.stringify({ lane }),
             signal: controller.signal
         });
-        clearTimeout(to);
+        clearTimeout(timeoutId);
         if (!resp.ok) {
             console.warn('Device stop request failed', resp.status);
             return false;
@@ -2124,7 +2116,7 @@ async function stopSwimSet() {
         updateStatus();
         return true;
     } catch (e) {
-        clearTimeout(to);
+        clearTimeout(timeoutId);
         console.warn('stopSwimSet failed (no server confirmation)', e && e.message ? e.message : e);
         return false;
     }
@@ -2359,6 +2351,11 @@ async function reconcileQueueWithDevice() {
             // Skip items we intentionally flagged as pending delete (do not re-sync them back)
             if (local.deletedPending) continue;
 
+            // Verify item belongs to current lane before retrying
+            if (local.lane !== undefined && Number(local.lane) !== Number(lane)) {
+                continue;
+            }
+
             let matchedDevice = null;
 
             // Match by uniqueId (stable client-generated identifier)
@@ -2425,7 +2422,7 @@ async function reconcileQueueWithDevice() {
 
                 // Send this queue item again, using centralized enqueue helper
                 sendEnqueuePayload(payload, local).then(result => {
-                    if (!result.ok) {
+                    if (!result.ok && !result.duplicate) {
                         console.log('reconcile: re-enqueue failed', result.status || result.error);
                     }
                 });
@@ -2834,7 +2831,7 @@ async function copyLaneQueueTo(fromLane, toLane) {
             const payload = buildMinimalSwimSetPayload(clone);
             // Use centralized helper to send enqueue and update the local optimistic entry
             sendEnqueuePayload(payload, clone).then(result => {
-                if (!result.ok) {
+                if (!result.ok && !result.duplicate) {
                     console.warn('enqueue failed for copied set to lane', toLane, result.status || result.error);
                 }
             });

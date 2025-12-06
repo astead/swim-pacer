@@ -937,7 +937,7 @@ void handleSetBrightness() {
     saveGlobalConfigSettings();
     server.send(200, "text/plain", "Brightness updated");
   } else {
-    server.send(400, "text/plain", "Missing brightness parameter");
+    server.send(200, "text/plain", "Missing brightness parameter");
   }
 }
 
@@ -951,7 +951,7 @@ void handleSetPulseWidth() {
     saveGlobalConfigSettings();
     server.send(200, "text/plain", "Pulse width updated");
   } else {
-    server.send(400, "text/plain", "Missing pulseWidth parameter");
+    server.send(200, "text/plain", "Missing pulseWidth parameter");
   }
 }
 
@@ -966,7 +966,7 @@ void handleSetStripLength() {
     needsRecalculation = true;
     server.send(200, "text/plain", "Strip length updated");
   } else {
-    server.send(400, "text/plain", "Missing stripLengthMeters parameter");
+    server.send(200, "text/plain", "Missing stripLengthMeters parameter");
   }
 }
 
@@ -983,10 +983,10 @@ void handleSetNumLedStrips() {
       needsRecalculation = true;
       server.send(200, "text/plain", "Number of LED strips updated");
     } else {
-      server.send(400, "text/plain", "Invalid lane parameter");
+      server.send(200, "text/plain", "Invalid lane parameter");
     }
   } else {
-    server.send(400, "text/plain", "Missing lane or numLedStrips parameter");
+    server.send(200, "text/plain", "Missing lane or numLedStrips parameter");
   }
 }
 
@@ -1001,7 +1001,7 @@ void handleSetGapBetweenStrips() {
     needsRecalculation = true;
     server.send(200, "text/plain", "Gap between strips updated");
   } else {
-    server.send(400, "text/plain", "Missing gapBetweenStrips parameter");
+    server.send(200, "text/plain", "Missing gapBetweenStrips parameter");
   }
 }
 
@@ -1029,7 +1029,7 @@ void handleSetPoolLength() {
     updateSwimmersLapsPerRound();
     server.send(200, "text/plain", "Pool length updated");
   } else {
-    server.send(400, "text/plain", "Missing poolLength or poolLengthUnits parameter");
+    server.send(200, "text/plain", "Missing poolLength or poolLengthUnits parameter");
   }
 }
 
@@ -1044,7 +1044,7 @@ void handleSetLedsPerMeter() {
     needsRecalculation = true;
     server.send(200, "text/plain", "LEDs per meter updated");
   } else {
-    server.send(400, "text/plain", "Missing ledsPerMeter parameter");
+    server.send(200, "text/plain", "Missing ledsPerMeter parameter");
   }
 }
 
@@ -1058,7 +1058,7 @@ void handleSetNumLanes() {
     saveGlobalConfigSettings();
     server.send(200, "text/plain", "Number of lanes updated");
   } else {
-    server.send(400, "text/plain", "Missing numLanes parameter");
+    server.send(200, "text/plain", "Missing numLanes parameter");
   }
 }
 
@@ -1072,7 +1072,7 @@ void handleSetSwimTime() {
     saveSwimSetSettings();
     server.send(200, "text/plain", "Swim time updated");
   } else {
-    server.send(400, "text/plain", "Missing swimTime parameter");
+    server.send(200, "text/plain", "Missing swimTime parameter");
   }
 }
 
@@ -1086,7 +1086,7 @@ void handleSetRestTime() {
     saveSwimSetSettings();
     server.send(200, "text/plain", "Rest time updated");
   } else {
-    server.send(400, "text/plain", "Missing restTime parameter");
+    server.send(200, "text/plain", "Missing restTime parameter");
   }
 }
 
@@ -1100,7 +1100,7 @@ void handleSetSwimDistance() {
     saveSwimSetSettings();
     server.send(200, "text/plain", "Swim distance updated");
   } else {
-    server.send(400, "text/plain", "Missing swimDistance parameter");
+    server.send(200, "text/plain", "Missing swimDistance parameter");
   }
 }
 
@@ -1114,7 +1114,7 @@ void handleSetSwimmerInterval() {
     saveSwimSetSettings();
     server.send(200, "text/plain", "Swimmer interval updated");
   } else {
-    server.send(400, "text/plain", "Missing swimmerInterval parameter");
+    server.send(200, "text/plain", "Missing swimmerInterval parameter");
   }
 }
 
@@ -1128,7 +1128,7 @@ void handleSetDelayIndicators() {
     saveGlobalConfigSettings();
     server.send(200, "text/plain", "Delay indicators updated");
   } else {
-    server.send(400, "text/plain", "Missing enabled parameter");
+    server.send(200, "text/plain", "Missing enabled parameter");
   }
 }
 
@@ -1144,10 +1144,10 @@ void handleSetNumSwimmers() {
       saveGlobalConfigSettings();
       server.send(200, "text/plain", "Number of swimmers updated");
     } else {
-      server.send(400, "text/plain", "Invalid lane parameter");
+      server.send(200, "text/plain", "Invalid lane parameter");
     }
   } else {
-    server.send(400, "text/plain", "Missing numSwimmers parameter");
+    server.send(200, "text/plain", "Missing numSwimmers parameter");
   }
 }
 
@@ -1161,7 +1161,7 @@ void handleSetNumRounds() {
     saveSwimSetSettings();
     server.send(200, "text/plain", "Number of numRounds updated");
   } else {
-    server.send(400, "text/plain", "Missing numRounds parameter");
+    server.send(200, "text/plain", "Missing numRounds parameter");
   }
 }
 
@@ -1223,7 +1223,7 @@ void handleSetColorMode() {
     }
     server.send(200, "text/plain", "Color mode updated");
   } else {
-    server.send(400, "text/plain", "Missing colorMode parameter");
+    server.send(200, "text/plain", "Missing colorMode parameter");
   }
 }
 
@@ -1257,7 +1257,7 @@ void handleSetSwimmerColor() {
     // If in "individual" mode, don't update swimmers - they keep their individual colors
     server.send(200, "text/plain", "Swimmer color updated");
   } else {
-    server.send(400, "text/plain", "Missing color parameter");
+    server.send(200, "text/plain", "Missing color parameter");
   }
 }
 
@@ -1265,7 +1265,7 @@ void handleSetSwimmerColors() {
   if (server.hasArg("lane") && server.hasArg("colors")) {
     int lane = server.arg("lane").toInt();
     if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-      server.send(400, "text/plain", "Invalid lane parameter");
+      server.send(200, "text/plain", "Invalid lane parameter");
       return;
     }
     String colorsString = server.arg("colors");
@@ -1297,7 +1297,7 @@ void handleSetSwimmerColors() {
     // Note: This does NOT update default globalConfigSettings - it's for individual customization only
     server.send(200, "text/plain", "Individual swimmer colors updated");
   } else {
-    server.send(400, "text/plain", "Missing colors parameter");
+    server.send(200, "text/plain", "Missing colors parameter");
   }
 }
 
@@ -1377,7 +1377,7 @@ void handleEnqueueSwimSet() {
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
     return;
   }
   SwimSet s;
@@ -1398,12 +1398,12 @@ void handleEnqueueSwimSet() {
       s.uniqueId = parsed;
     } else {
       LOGLN(" Warning: invalid uniqueId format: " + uniqueIdStr);
-      server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid uniqueId format\"}");
+      server.send(200, "application/json", "{\"ok\":false,\"error\":\"invalid uniqueId format\"}");
       return;
     }
   } else {
     LOGLN(" Warning: missing uniqueId");
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing uniqueId\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing uniqueId\"}");
     return;
   }
 
@@ -1415,7 +1415,7 @@ void handleEnqueueSwimSet() {
       s.loopFromUniqueId = parsed;
     } else {
       LOGLN(" Warning: invalid loopFromUniqueId format: " + loopFromUniqueIdStr);
-      server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid loopFromUniqueId format\"}");
+      server.send(200, "application/json", "{\"ok\":false,\"error\":\"invalid loopFromUniqueId format\"}");
       return;
     }
   }
@@ -1469,8 +1469,10 @@ void handleEnqueueSwimSet() {
     json += "\"uniqueId\":\"" + uniqueIdToHex(s.uniqueId) + "\"";
     json += "}";
     server.send(200, "application/json", json);
+  } else if (result == QUEUE_INSERT_DUPLICATE) {
+    server.send(200, "application/json", "{\"ok\":false,\"duplicate\":true,\"errorCode\":" + String(result) + "}");
   } else {
-    server.send(507, "application/json", "{\"ok\":false,\"errorCode\":" + String(result) + "}");
+    server.send(200, "application/json", "{\"ok\":false,\"errorCode\":" + String(result) + "}");
   }
 }
 
@@ -1484,7 +1486,7 @@ void handleUpdateSwimSet() {
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
     return;
   }
   LOGLN(" Raw body:");
@@ -1506,7 +1508,7 @@ void handleUpdateSwimSet() {
     uniqueId = parseUniqueIdHex(uniqueIdStr);
   } else {
     LOGLN(" Warning: missing uniqueId");
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing uniqueId\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing uniqueId\"}");
     return;
   }
 
@@ -1587,7 +1589,7 @@ void handleUpdateSwimSet() {
   } // end for
 
   LOGLN(" No matching entry found in queue");
-  server.send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}");
+  server.send(200, "application/json", "{\"ok\":false,\"error\":\"not found\"}");
 }
 
 // Delete a swim set by uniqueId for a lane.
@@ -1597,14 +1599,14 @@ void handleDeleteSwimSet() {
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
     return;
   }
   LOGLN(" Received raw body: " + body);
 
   // Expect application/json body
   if (body.length() == 0) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"empty body\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"empty body\"}");
     return;
   }
 
@@ -1614,14 +1616,14 @@ void handleDeleteSwimSet() {
     matchUniqueId = parseUniqueIdHex(matchUniqueIdStr);
   } else {
     LOGLN(" Warning: missing matchUniqueId");
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing matchUniqueId\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing matchUniqueId\"}");
     return;
   }
 
   // Validate lane...
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
     LOGLN(" Invalid lane");
-    server.send(400, "application/json", "{\"ok\":false, \"error\":\"Invalid lane\"}");
+    server.send(200, "application/json", "{\"ok\":false, \"error\":\"Invalid lane\"}");
     return;
   }
   LOGLN("  lane=" + String(lane));
@@ -1675,7 +1677,7 @@ void handleStartSwimSet() {
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
     return;
   }
 
@@ -1686,7 +1688,7 @@ void handleStartSwimSet() {
     matchUniqueId = parseUniqueIdHex(matchUniqueIdStr);
   } else {
     LOGLN(" Warning: missing matchUniqueId");
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing matchUniqueId\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing matchUniqueId\"}");
     return;
   }
 
@@ -1717,7 +1719,7 @@ void handleStartSwimSet() {
   }
 
   if (!haveSet) {
-    server.send(404, "application/json", "{\"ok\":false,\"error\":\"no swim set available\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"no swim set available\"}");
     return;
   }
 
@@ -1748,7 +1750,7 @@ void handleStopSwimSet() {// determine lane from query/form or JSON body
   }
 
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-      server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+      server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
       return;
   }
   LOG("handleStopSwimSet: for lane: ");
@@ -1795,7 +1797,7 @@ void handleGetSwimQueue() {
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
     return;
   }
 
@@ -1806,6 +1808,7 @@ void handleGetSwimQueue() {
 
   // Build queue array for the current lane
   JsonArray q = doc.createNestedArray("queue");
+  // Return ALL queued sets (not just active)
   for (int i = 0; i < swimSetQueueCount[lane]; i++) {
     int idx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
     SwimSet &s = swimSetQueue[lane][idx];
@@ -1880,7 +1883,7 @@ void handleReorderSwimQueue() {
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
     return;
   }
 
@@ -1913,7 +1916,7 @@ void handleReorderSwimQueue() {
   }
 
   if (orderStr.length() == 0) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid order\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing/invalid order\"}");
     return;
   }
 
@@ -1987,7 +1990,7 @@ void handleResetLane() {
   String body = server.arg("plain");
   int lane = parseLaneFromBody(body);
   if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
+    server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing/invalid lane\"}");
     return;
   }
 
