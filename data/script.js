@@ -2061,6 +2061,11 @@ async function startSwimSet(requestedIndex) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
     try {
+        // TODO: I've noticed in startSwimSet (and likely stopSwimSet) that we don't
+        // update the UI elements till after we return from the endpoint call to
+        // /startSwimSet.   From a responsiveness perspective, it might be better to
+        // update the UI immediately, and then throw up some alert if the status isn't
+        // updated within a certain amount of time.
         const resp = await fetch('/startSwimSet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
