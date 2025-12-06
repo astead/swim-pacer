@@ -48,12 +48,12 @@
 // Compile-time switch to enable debug logs
 #ifndef DEBUG_SERIAL
   // set to 1 to enable Serial debug output, 0 to disable (default: disabled for performance)
-  #define DEBUG_SERIAL 0
+  #define DEBUG_SERIAL 1
 #endif
 
 #if DEBUG_SERIAL
-  #define LOG(...) Serial.printf(__VA_ARGS__)
-  #define LOGLN(...) do { LOG(__VA_ARGS__); LOGLN(); } while(0)
+  #define LOG(...) Serial.print(__VA_ARGS__)
+  #define LOGLN(...) Serial.println(__VA_ARGS__)
 #else
   #define LOG(...) do {} while(0)
   #define LOGLN(...) do {} while(0)
@@ -69,7 +69,7 @@
 #define LANE_0_PIN 18
 #define LANE_1_PIN 19
 #define LANE_2_PIN 21
-#define LANE_3_PIN 2
+#define LANE_3_PIN 22
 
 // Enum for Queue insert error codes
 enum QueueInsertError {
@@ -87,6 +87,11 @@ const int MAX_SWIMMERS_SUPPORTED = 10;
 const bool DEBUG_ENABLED = true;
 const unsigned long DEBUG_INTERVAL_MS = 2000; // Print periodic status every 2 seconds
 unsigned long lastDebugPrint = 0;
+
+// --- Render task synchronization (FreeRTOS) ---
+static SemaphoreHandle_t renderLock = NULL;        // protects writes to scanoutLEDs
+static SemaphoreHandle_t renderSemaphore = NULL;   // signals render task to call FastLED.show()
+static volatile bool renderTaskStarted = false;
 
 // ========== WIFI CONFIGURATION ==========
 const char* ssid = "SwimPacer_Config";        // WiFi network name
@@ -283,6 +288,34 @@ bool needsRecalculation = true;
 // Throttling render out to LEDs
 unsigned long lastFastLEDShowMs = 0;
 unsigned long minFastLEDShowIntervalMs = 20; // minimum ms between FastLED.show() calls (tunable)
+
+// Render task: waits for a signal, takes renderLock, performs FastLED.show(), updates lastFastLEDShowMs
+static void renderTask(void *pv) {
+  (void)pv;
+  renderTaskStarted = true;
+  for (;;) {
+    if (xSemaphoreTake(renderSemaphore, portMAX_DELAY) == pdTRUE) {
+      // Acquire lock so nobody writes to scanoutLEDs while we are showing
+      if (xSemaphoreTake(renderLock, portMAX_DELAY) == pdTRUE) {
+        profStart("FastLED.show");
+        FastLED.show();
+        profEnd("FastLED.show");
+        lastFastLEDShowMs = millis();
+        xSemaphoreGive(renderLock);
+      }
+    }
+  }
+}
+
+// call once during setup to create sync primitives and start render task
+static void startRenderTaskOnce() {
+  if (renderLock == NULL) renderLock = xSemaphoreCreateMutex();
+  if (renderSemaphore == NULL) renderSemaphore = xSemaphoreCreateBinary();
+  if (!renderTaskStarted) {
+    // Pin render task to core 1 to avoid interfering with networking on core 0 (tunable)
+    xTaskCreatePinnedToCore(renderTask, "RenderTask", 4096, NULL, 1, NULL, 1);
+  }
+}
 
 // Helper: parse lane from POST JSON body (returns -1 when missing)
 static int parseLaneFromBody(const String &body) {
@@ -613,30 +646,55 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
 
 
 void setup() {
+  LOGLN("Setting pinMode for on-board LED (GPIO2)...");
   pinMode(2, OUTPUT); // On many ESP32 dev boards the on-board LED is on GPIO2
+
   Serial.begin(115200);
   LOG("ESP32 Swim Pacer Starting... build=");
   LOGLN(BUILD_TAG);
 
+  // Create sync primitives but DON'T start the render task yet
+  LOGLN("Initializing render synchronization...");
+  if (renderLock == NULL) renderLock = xSemaphoreCreateMutex();
+  if (renderSemaphore == NULL) renderSemaphore = xSemaphoreCreateBinary();
+
   // Initialize preferences (flash storage)
+  LOGLN("Initializing preferences...");
   preferences.begin("swim_pacer", false);
   loadSettings();
 
-
   // Setup WiFi Access Point
+  LOGLN("Setting up WiFi Access Point...");
   setupWiFi();
 
   // Setup web server
+  LOGLN("Setting up web server...");
   setupWebServer();
 
   // Calculate initial values
+  LOGLN("Clearing FastLED...");
   FastLED.clear();
+  LOGLN("Recalculating values for all lanes...");
   for (int li = 0; li < MAX_LANES_SUPPORTED; li++) {
     recalculateValues(li);
   }
-  FastLED.setBrightness(globalConfigSettings.brightness);
-  FastLED.show();
 
+  // TODO: Why are we doing this here?
+  LOGLN("Finished recalculating values, setting brightness");
+  FastLED.setBrightness(globalConfigSettings.brightness);
+
+  // NOW start the render task after FastLED controllers are configured
+  LOGLN("Starting render task...");
+  if (!renderTaskStarted) {
+    xTaskCreatePinnedToCore(renderTask, "RenderTask", 4096, NULL, 1, NULL, 1);
+    renderTaskStarted = true;
+  }
+
+  // Signal initial show
+  LOGLN("Signaling initial render...");
+  if (renderSemaphore != NULL) xSemaphoreGive(renderSemaphore);
+
+  LOGLN("Calling initialize Swimmers");
   // Initialize swimmers
   initializeSwimmers();
 
@@ -681,7 +739,6 @@ void loop() {
 }
 
 void setupWiFi() {
-  LOGLN("Setting up WiFi Access Point...");
   // Try to reduce peak power draw: disable Bluetooth
 #if defined(ESP_BT_CONTROLLER_INIT_CONFIG) || defined(CONFIG_BT_ENABLED)
   LOGLN("DEBUG: Disabling BT controller");
@@ -2088,12 +2145,16 @@ void calculateUnderwatersColors() {
 
 void recalculateValues(int lane) {
   LOG("recalculateValues: lane="); LOGLN(lane);
+  // Only acquire lock if render task is running (avoid deadlock during setup)
+  bool needLock = renderTaskStarted;
+  if (needLock && renderLock) xSemaphoreTake(renderLock, portMAX_DELAY);
 
   if (lane >= globalConfigSettings.numLanes) {
     if (scanoutLEDs[lane] != nullptr) {
       delete[] scanoutLEDs[lane];
       scanoutLEDs[lane] = nullptr;
     }
+    if (needLock && renderLock) xSemaphoreGive(renderLock);
     return;
   }
 
@@ -2224,6 +2285,9 @@ void recalculateValues(int lane) {
       // fallback: do nothing for out-of-range lanes
       break;
   }
+
+  // Release lock when done so renderTask can show safely
+  if (needLock && renderLock) xSemaphoreGive(renderLock);
 }
 
 // ----- Targeted swimmer update helpers -----
@@ -2308,26 +2372,32 @@ void updateLEDEffect() {
   unsigned long now = millis();
   unsigned long targetMin = (unsigned long)max((int)minFastLEDShowIntervalMs, delayMS);
   if (now - lastFastLEDShowMs >= targetMin) {
-    profStart("FastLED.show");
-    FastLED.show();
-    profEnd("FastLED.show");
-    lastFastLEDShowMs = now;
-  } else {
-    // Skip hardware update this frame to save CPU / IO time
-    // (we still updated internal buffers so the next show will reflect latest state)
+    // Signal render task to perform show; renderSemaphore is a binary semaphore.
+    // Multiple gives are safe (binary semaphore will stay available), so no extra guard needed.
+    if (renderSemaphore != NULL) xSemaphoreGive(renderSemaphore);
   }
 
   profEnd("updateLEDEffect");
 }
 
 void spliceOutGaps(int lane) {
-  profStart("spliceOutGaps");
+  // Try to acquire renderLock non-blocking so we don't contend with render task.
+  // If renderLock is taken (render in progress) we skip copying this frame; render task will show
+  // previous scanout buffer and next frame will update scanout again.
+  bool locked = false;
+  if (renderLock != NULL) {
+    if (xSemaphoreTake(renderLock, (TickType_t)0) == pdTRUE) {
+      locked = true;
+    } else {
+      // couldn't acquire lock -> skip splice this frame to avoid concurrent mutation
+      return;
+    }
+  }
+
   // Fast path: if no gaps, single memcpy
   if (copySegments[lane].empty()) {
-    profStart("spliceOutGaps - memcopy");
     memcpy(scanoutLEDs[lane], renderedLEDs[lane], visibleLEDs[lane] * sizeof(CRGB));
-    profEnd("spliceOutGaps - memcopy");
-    profEnd("spliceOutGaps");
+    if (locked) xSemaphoreGive(renderLock);
     return;
   }
 
@@ -2350,7 +2420,8 @@ void spliceOutGaps(int lane) {
       // memset(&scanoutLEDs[lane][dst], 0, remaining * sizeof(CRGB));
     }
   }
-  profEnd("spliceOutGaps");
+
+  if (locked) xSemaphoreGive(renderLock);
 }
 
 bool drawDelayIndicators(int laneIndex, int swimmerIndex) {
