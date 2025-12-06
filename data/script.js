@@ -210,6 +210,10 @@ async function updateCurrentLane() {
     console.log('updateCurrentLane: switching lanes: ' +
         currentSettings.currentLane + ' -> ' + newLane);
     currentSettings.currentLane = newLane;
+    // Update workingSwimSetInfo lane so queued sets go to the correct lane
+    if (workingSwimSetInfo) {
+        workingSwimSetInfo.lane = newLane;
+    }
 
     // What else should get triggered, maybe the swim set queue?
     // Update any UI elements that were lane dependent?
@@ -2058,6 +2062,7 @@ async function startSwimSet(requestedIndex) {
     const payload = { lane };
     if (head.uniqueId) payload.matchUniqueId = String(head.uniqueId);
 
+    console.log('startSwimSet: sending POST to /startSwimSet with payload:', payload);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
     try {
@@ -2072,11 +2077,7 @@ async function startSwimSet(requestedIndex) {
             body: JSON.stringify(payload),
             signal: controller.signal
         });
-        laneRunning[lane] = true;
         clearTimeout(timeoutId);
-        updateQueueDisplay();
-        updatePacerButtons();
-        updateStatus();
 
         if (!resp.ok) {
             const txt = await resp.text().catch(()=>null);
@@ -2085,6 +2086,12 @@ async function startSwimSet(requestedIndex) {
         }
         const json = await resp.json().catch(()=>null);
         if (json && json.uniqueId) head.uniqueId = String(json.uniqueId);
+
+        // Only update UI after server confirms
+        laneRunning[lane] = true;
+        updateQueueDisplay();
+        updatePacerButtons();
+        updateStatus();
 
         return true;
     } catch (e) {
@@ -2358,6 +2365,7 @@ async function reconcileQueueWithDevice() {
 
             // Verify item belongs to current lane before retrying
             if (local.lane !== undefined && Number(local.lane) !== Number(lane)) {
+                console.warn('reconcile: mismatched lane, local entry has lane:', local.lane, ' vs  current lane:', lane);
                 continue;
             }
 
