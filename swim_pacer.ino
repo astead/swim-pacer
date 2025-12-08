@@ -48,7 +48,7 @@
 // Compile-time switch to enable debug logs
 #ifndef DEBUG_SERIAL
   // set to 1 to enable Serial debug output, 0 to disable (default: disabled for performance)
-  #define DEBUG_SERIAL 1
+  #define DEBUG_SERIAL 0
 #endif
 
 #if DEBUG_SERIAL
@@ -79,9 +79,14 @@ enum QueueInsertError {
   QUEUE_INVALID_LANE = 3
 };
 
-const int SWIMSET_QUEUE_MAX = 12;
+const int SWIMSET_QUEUE_MAX = 20;
 const int MAX_LANES_SUPPORTED = 4;
 const int MAX_SWIMMERS_SUPPORTED = 10;
+// Measured JSON size per swim set with full swimmer customization
+const int BYTES_PER_SWIMSET = 350;
+// StaticJsonDocument capacity (stack-allocated, no heap alignment needed)
+// 20 sets × 350 bytes = 7000 bytes (well within ESP32 stack limits)
+const size_t DOC_SIZE = (SWIMSET_QUEUE_MAX * BYTES_PER_SWIMSET) + 1024; // +1KB buffer
 
 // Debug control - set to true to enable detailed debug output
 const bool DEBUG_ENABLED = true;
@@ -227,13 +232,13 @@ static void profEnd(const char* name) {
   e->running = false;
 }
 static void profPrintReport() {
-  Serial.printf("=== PROFILER REPORT ===\n");
+  //Serial.printf("=== PROFILER REPORT ===\n");
   for (int i=0;i<PROF_MAX;i++) {
     if (!profiler[i].name) continue;
     unsigned long avg = profiler[i].count ? (profiler[i].totalMicros / profiler[i].count) : 0;
-    Serial.printf("%-22s count=%6lu total=%8luus avg=%6luus\n", profiler[i].name, profiler[i].count, profiler[i].totalMicros, avg);
+    //Serial.printf("%-22s count=%6lu total=%8luus avg=%6luus\n", profiler[i].name, profiler[i].count, profiler[i].totalMicros, avg);
   }
-  Serial.printf("=======================\n");
+  //Serial.printf("=======================\n");
 }
 
 // Forward declarations for functions used below
@@ -288,6 +293,20 @@ bool needsRecalculation = true;
 // Throttling render out to LEDs
 unsigned long lastFastLEDShowMs = 0;
 unsigned long minFastLEDShowIntervalMs = 20; // minimum ms between FastLED.show() calls (tunable)
+
+// Heap monitoring telemetry (small circular buffer)
+#define HEAP_SAMPLE_BUFFER_SIZE 32
+struct HeapSample {
+  unsigned long timestamp;
+  size_t freeHeap;
+  size_t minFreeHeap;
+  bool valid;
+};
+static HeapSample heapSamples[HEAP_SAMPLE_BUFFER_SIZE];
+static int heapSampleHead = 0; // points to next write
+static int heapSampleCount = 0;
+static unsigned long lastHeapSampleMs = 0;
+static const unsigned long HEAP_SAMPLE_INTERVAL_MS = 5000; // sample every 5s
 
 // Render task: waits for a signal, takes renderLock, performs FastLED.show(), updates lastFastLEDShowMs
 static void renderTask(void *pv) {
@@ -722,6 +741,21 @@ void loop() {
   if (now - lastProfPrint > 30000) {
     lastProfPrint = now;
     profPrintReport();
+  }
+
+  // Periodic heap sampling for memory leak detection
+  if (now - lastHeapSampleMs >= HEAP_SAMPLE_INTERVAL_MS) {
+    lastHeapSampleMs = now;
+    size_t freeHeap = ESP.getFreeHeap();
+    size_t minFree = ESP.getMinFreeHeap();
+    heapSamples[heapSampleHead].timestamp = now;
+    heapSamples[heapSampleHead].freeHeap = freeHeap;
+    heapSamples[heapSampleHead].minFreeHeap = minFree;
+    heapSamples[heapSampleHead].valid = true;
+    heapSampleHead = (heapSampleHead + 1) % HEAP_SAMPLE_BUFFER_SIZE;
+    if (heapSampleCount < HEAP_SAMPLE_BUFFER_SIZE) heapSampleCount++;
+    // Print to serial when DEBUG_SERIAL enabled
+    //Serial.printf("[HEAP] ts=%lu free=%lu min=%lu\n", now, (unsigned long)freeHeap, (unsigned long)minFree);
   }
 
   // Recalculate if globalConfigSettings changed
@@ -1422,7 +1456,7 @@ void handleEnqueueSwimSet() {
 
   // parse swimmers array if provided (use ArduinoJson for robust parsing)
   {
-    DynamicJsonDocument doc(2048);
+    StaticJsonDocument<2048> doc;
     DeserializationError err = deserializeJson(doc, body);
     s.swimmersCount = 0;
     if (!err && doc.containsKey("swimmers") && doc["swimmers"].is<JsonArray>()) {
@@ -1463,6 +1497,11 @@ void handleEnqueueSwimSet() {
   LOGLN("   uniqueId=" + uniqueIdToHex(s.uniqueId));
 
   if (result == QUEUE_INSERT_SUCCESS) {
+    Serial.printf(" ADD Set at index: %d, UID=%s, type=%d, Rounds=%d\n",
+      (swimSetQueueHead[lane] + swimSetQueueCount[lane] - 1) % SWIMSET_QUEUE_MAX,
+      uniqueIdToHex(s.uniqueId).c_str(),
+      s.type,
+      s.numRounds);
     int qCount = swimSetQueueCount[lane];
     String json = "{";
     json += "\"ok\":true,";
@@ -1520,7 +1559,7 @@ void handleUpdateSwimSet() {
 
   // parse swimmers array if provided
   {
-    DynamicJsonDocument doc(2048);
+    StaticJsonDocument<2048> doc;
     DeserializationError err = deserializeJson(doc, body);
     s.swimmersCount = 0;
     if (!err && doc.containsKey("swimmers") && doc["swimmers"].is<JsonArray>()) {
@@ -1802,9 +1841,8 @@ void handleGetSwimQueue() {
   }
 
   // Use ArduinoJson to build the response to avoid any string-concatenation bugs.
-  // Adjust the DynamicJsonDocument size if you have very large queues.
-  const size_t DOC_SIZE = 16 * 1024;
-  DynamicJsonDocument doc(DOC_SIZE);
+  // Adjust the StaticJsonDocument size if you have very large queues.
+  StaticJsonDocument<DOC_SIZE> doc; // Stack-allocated, auto-freed on return
 
   // Build queue array for the current lane
   JsonArray q = doc.createNestedArray("queue");
@@ -1863,6 +1901,7 @@ void handleGetSwimQueue() {
 
   // Serialize and send
   String out;
+  out.reserve(8192);
   serializeJson(doc, out);
 
   if (DEBUG_ENABLED) {
@@ -2183,6 +2222,7 @@ void recalculateValues(int lane) {
 
   // Get the individual index values of the LEDs that are in a gap
   gapLEDs[lane].clear();
+  gapLEDs[lane].reserve(64);
   for (int i=1; i<globalConfigSettings.numLedStrips[lane]; i++) {
     int gapStartIndex = i * ledsPerStrip + (i - 1) * ledsPerGap;
     for (int j=0; j<ledsPerGap; j++) {
@@ -2205,6 +2245,7 @@ void recalculateValues(int lane) {
 
   // Build copySegments (contiguous segments in renderedLEDs -> scanoutLEDs)
   copySegments[lane].clear();
+  copySegments[lane].reserve(8);
   if (fullLengthLEDs[lane] > 0) {
     int prev = 0;
     for (size_t gi = 0; gi < gapLEDs[lane].size(); ++gi) {
@@ -2860,51 +2901,149 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
           profStart("updateSwimmer - load next round");
           // ---------------------------- LOAD NEXT SWIM SET IF AVAILABLE ----------------------------
           // Try to get the next swim set in queue (queueIndex + 1)
+          // If we are the first swimmer move to the next set
+          // If we are not the first swimmer move to the same set as the first
+          // swimmer, as they handled processing any kind of loops
+          // TODO: the danger is if the previous swimmer has already moved
+          // beyond the next set.  Another option is to have each swimmer track
+          // their own next set to go to, but that may complicate things.
+          bool didLoopJump = false;
+          int nextIndex = (swimmerIndex == 0) ?
+            (swimmer->queueIndex + 1) :
+            swimmers[laneIndex][swimmerIndex-1].queueIndex;
           SwimSet nextSet;
-          if (getSwimSetByIndex(nextSet, laneIndex, swimmer->queueIndex + 1)) {
-            // Check if this is a repeat Swim Set
-            if (nextSet.type == LOOP_TYPE &&
-              nextSet.loopFromUniqueId != 0 &&
-              nextSet.repeatRemaining > 0) {
-                // Find the swim set we should go to next based on the loopFrom UniqueId
-                SwimSet loopFromSet;
-                if (getSwimSetByUniqueId(loopFromSet, laneIndex, nextSet.loopFromUniqueId)) {
-                  // Get a pointer to the swim set we just finished
-                  SwimSet lastSet;
-                  if (getSwimSetByIndex(lastSet, laneIndex, swimmer->queueIndex)) {
-
-                    // Loop through swim sets starting from the loopFromUniqueId to the set we just
-                    // finished, and if any are loop sets, we should re-set those repeatRemaining counters
-                    // Start by getting the index of where the loop starts, so the index value
-                    // for the swim set with loopFromUniqueId as the uniqueId
-                    int loopIndex = findSwimSetIndexByUniqueId(laneIndex, nextSet.loopFromUniqueId);
-
-                    // Loop through swim sets starting from the loopFromUniqueId to the set we just
-                    // finished, and if any are loop sets, we should re-set those repeatRemaining counters
-                    while (loopIndex != -1 && loopIndex != swimmer->queueIndex + 1) {
-                      // Calculate the actual queue position accounting for circular buffer
-                      loopIndex = (swimSetQueueHead[laneIndex] + loopIndex) % SWIMSET_QUEUE_MAX;
-                      if (swimSetQueue[laneIndex][loopIndex].type == LOOP_TYPE &&
-                        swimSetQueue[laneIndex][loopIndex].repeatRemaining == 0) {
-
-                          swimSetQueue[laneIndex][loopIndex].repeatRemaining =
-                            swimSetQueue[laneIndex][loopIndex].numRounds;
-                      }
-                      loopIndex++;
-                    }
-                  } else {
-                    LOG("Error: Could not find last swim set with index: ");
-                    LOGLN(swimmer->queueIndex);
-                  }
-
-                  nextSet.repeatRemaining--;
-                  nextSet = loopFromSet;
+          bool hasNextSet = getSwimSetByIndex(nextSet, laneIndex, nextIndex);
+          if (hasNextSet && swimmerIndex == 0) {
+            Serial.printf("{1} NEXT SET [%d]: UID=%s, Type=%d, Rounds=%d, Status=%d, remaining=%d\n",
+              nextIndex,
+              uniqueIdToHex(nextSet.uniqueId).c_str(),
+              nextSet.type,
+              nextSet.numRounds,
+              nextSet.status,
+              nextSet.repeatRemaining);
+          }
+          // Check if this is a repeat Swim Set
+          // TODO: To avoid possible double-increment issue and have a clearer control flow,
+          //       separate the LOOP jump from normal advancement
+          // Only to the loop processing for the first swimmer, the other swimmers
+          if (hasNextSet && nextSet.type == LOOP_TYPE && swimmerIndex == 0) {
+            if (nextSet.loopFromUniqueId == 0) {
+              // This is a loop set, but the loopFromUniqueId is not set, so we cannot loop
+              LOG("Error: LOOP_TYPE swim set with UniqueId ");
+              LOG(nextSet.uniqueId);
+              LOGLN(" has loopFromUniqueId of 0, cannot loop.");
+              Serial.printf("  Skipping LOOP set because loopFromUniqueId is 0, moving to next set after this one.\n");
+              // Let's just skip to the next set after this one
+              nextIndex++; // Skip the LOOP set
+              hasNextSet = getSwimSetByIndex(nextSet, laneIndex, nextIndex);
+            } else if (nextSet.repeatRemaining > 0) {
+              // We still have repeats remaining, so we need to reset everything and loop back
+              // Find the swim set we should go to next based on the loopFrom UniqueId
+              SwimSet loopFromSet;
+              if (!getSwimSetByUniqueId(loopFromSet, laneIndex, nextSet.loopFromUniqueId)) {
+                // Could not find the loopFromUniqueId in the queue, log error and skip to next set
+                LOG("Error: LOOP target uniqueId ");
+                LOG(nextSet.loopFromUniqueId);
+                LOGLN(" not found in queue");
+                Serial.printf("  Skipping LOOP set because loopFromUniqueId not found, moving to next set after this one.\n");
+                nextIndex++; // Skip the LOOP set
+                hasNextSet = getSwimSetByIndex(nextSet, laneIndex, nextIndex);
+                if (hasNextSet) {
+                  Serial.printf("{2} BAD ID: NEXT SET [%d]: UID=%s, Type=%d, Rounds=%d, Status=%d\n",
+                    nextIndex,
+                    uniqueIdToHex(nextSet.uniqueId).c_str(),
+                    nextSet.type,
+                    nextSet.numRounds,
+                    nextSet.status);
                 }
+              } else {
+                // Reset all sets in the loop range
+                int loopStartIdx = findSwimSetIndexByUniqueId(laneIndex, nextSet.loopFromUniqueId);
+                if (loopStartIdx == -1) {
+                  Serial.printf("  ERROR: findSwimSetIndexByUniqueId returned -1\n");
+                  LOGLN("Error: findSwimSetIndexByUniqueId returned -1");
+                } else {
+                  Serial.printf("  Resetting swim sets from index %d to %d for looping\n",
+                    loopStartIdx,
+                    swimmer->queueIndex);
+                  int currentIdx = loopStartIdx;
+                  while (true) {
+                    int actualIdx = (swimSetQueueHead[laneIndex] + currentIdx) % SWIMSET_QUEUE_MAX;
+
+                    // Clear COMPLETED flag so sets re-execute during loop
+                    swimSetQueue[laneIndex][actualIdx].status &= ~SWIMSET_STATUS_COMPLETED;
+                    swimSetQueue[laneIndex][actualIdx].status &= ~SWIMSET_STATUS_ACTIVE;
+
+                    // If any are loop sets, we should re-set those repeatRemaining counters
+                    if (swimSetQueue[laneIndex][actualIdx].type == LOOP_TYPE &&
+                        swimSetQueue[laneIndex][actualIdx].repeatRemaining == 0) {
+                        swimSetQueue[laneIndex][actualIdx].repeatRemaining =
+                          swimSetQueue[laneIndex][actualIdx].numRounds;
+                    }
+                    if (swimmerIndex == 0) {
+                      Serial.printf("  Resetting swim set at index %d: UID=%s, Type=%d, Rounds=%d, Status=%d\n",
+                        currentIdx,
+                        uniqueIdToHex(swimSetQueue[laneIndex][actualIdx].uniqueId).c_str(),
+                        swimSetQueue[laneIndex][actualIdx].type,
+                        swimSetQueue[laneIndex][actualIdx].numRounds,
+                        swimSetQueue[laneIndex][actualIdx].status);
+                    }
+                    if (currentIdx == swimmer->queueIndex) break;
+                    currentIdx++;
+                    if (currentIdx >= swimSetQueueCount[laneIndex]) break;
+                  }
+                }
+
+                // Decrement the LOOP set's repeatRemaining in the actual queue
+                int loopSetIdx = (swimSetQueueHead[laneIndex] + swimmer->queueIndex + 1) % SWIMSET_QUEUE_MAX;
+                swimSetQueue[laneIndex][loopSetIdx].repeatRemaining--;
+
+                // Set the LOOP set status to active
+                swimSetQueue[laneIndex][loopSetIdx].status |= SWIMSET_STATUS_ACTIVE;
+
+                // We need to set our next set to be the loopFromSet now
+                // Update swimmer's queueIndex to the loop start BEFORE loading nextSet
+                // Jump back to loop start WITHOUT incrementing
+                nextIndex = loopStartIdx;
+                didLoopJump = true; // Mark that we did a loop jump
+                nextSet = loopFromSet;
+                swimmer->queueIndex = nextIndex;
+                hasNextSet = true;
+                if (hasNextSet && swimmerIndex == 0) {
+                  Serial.printf("{3} LOOP SETTING NEXT SET TO [%d]: UID=%s, Type=%d, Rounds=%d, Status=%d\n",
+                    swimmer->queueIndex,
+                    uniqueIdToHex(nextSet.uniqueId).c_str(),
+                    nextSet.type,
+                    nextSet.numRounds,
+                    nextSet.status);
+                }
+              }
+            } else {
+              // Set the LOOP set as completed since we are done with it
+              swimSetQueue[laneIndex][nextIndex].status |= SWIMSET_STATUS_COMPLETED;
+              // TODO: Technically the last swimmer should set this to inactive
+              // but we're letting the first swimmer handle all the loop logic.
+              swimSetQueue[laneIndex][nextIndex].status &= ~SWIMSET_STATUS_ACTIVE;
+
+              // No repeats remaining, just continue to next set after this one
+              nextIndex++; // Skip the LOOP set
+              hasNextSet = getSwimSetByIndex(nextSet, laneIndex, nextIndex);
+
+              if (hasNextSet && swimmerIndex == 0) {
+                Serial.printf("{4} NEXT SET [%d]: UID=%s, Type=%d, Rounds=%d, Status=%d\n",
+                  nextIndex,
+                  uniqueIdToHex(nextSet.uniqueId).c_str(),
+                  nextSet.type,
+                  nextSet.numRounds,
+                  nextSet.status);
+              }
             }
+          }
+          if (hasNextSet) {
             if (DEBUG_ENABLED && swimmerIndex < laneSwimmerCount) {
               LOGLN("  *** AUTO-ADVANCING TO NEXT SWIM SET ***");
               LOG("queue index: ");
-              LOG(swimmer->queueIndex + 1);
+              LOG(nextIndex);
               LOG(", numRounds: ");
               LOG(nextSet.numRounds);
               LOG(", swimDistance: ");
@@ -2942,12 +3081,18 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
             swimmer->cachedSpeedMPS = swimmerSpeedMPS;
             swimmer->cachedRestSeconds = restForThisSwimmer;
 
-            swimmer->queueIndex++;  // Move to next index in queue
+            //swimmer->queueIndex = nextIndex;  // Move to next index in queue
+            // Update queueIndex ONLY if we didn't already jump via LOOP
+            if (!didLoopJump || swimmerIndex > 0) {
+              swimmer->queueIndex = nextIndex;
+            }
 
             // --- KEEP laneActiveQueueIndex IN SYNC WITH FIRST SWIMMER ADVANCE ---
             // When any swimmer advances to the next queue index, make the lane's active
             // queue index reflect that new value so client status (activeIndex) stays accurate.
-            laneActiveQueueIndex[laneIndex] = swimmer->queueIndex;
+            if (swimmerIndex == 0) {
+              laneActiveQueueIndex[laneIndex] = swimmer->queueIndex;
+            }
             // Optionally persist running flag / global state consistency
             // (do not force-stop lane here; clearing is handled below when all swimmers finish)
 
@@ -3000,7 +3145,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
                 // Since these swimmers are inactive, they all get the base speed/rest
                 swimmers[laneIndex][si].cachedSpeedMPS = speedMPS;
                 swimmers[laneIndex][si].cachedRestSeconds = nextSet.restTime;
-                swimmers[laneIndex][si].queueIndex++;  // Move to next index in queue
+                swimmers[laneIndex][si].queueIndex = swimmer->queueIndex;  // Move to the index of the last active swimmer
                 swimmers[laneIndex][si].currentRound = 1;
                 swimmers[laneIndex][si].currentLap = 1;
                 swimmers[laneIndex][si].lapsPerRound = lapsPerRound;
@@ -3027,7 +3172,7 @@ void updateSwimmer(int swimmerIndex, int laneIndex) {
               LOG("    Swimmer ");
               LOG(swimmerIndex);
               LOG(" completed all ");
-              LOG(swimmer->queueIndex + 1);
+              LOG(nextIndex);
               LOGLN(" sets!");
             }
 

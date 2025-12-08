@@ -1399,7 +1399,10 @@ function updateQueueDisplay() {
             row.classList.add('running');
             const statusSpan = document.createElement('span');
             statusSpan.className = 'queue-status';
-            const roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : 'In progress';
+            let roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : 'In progress';
+            if (entry.type === LOOP_TYPE) {
+                roundText = `${(entry.numRounds - entry.repeatRemaining)} / ${entry.numRounds}`;
+            }
             statusSpan.textContent = roundText;
             leftWrap.appendChild(statusSpan);
 
