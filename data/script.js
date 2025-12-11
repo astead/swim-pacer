@@ -1318,6 +1318,12 @@ function updateQueueDisplay() {
     controlsDiv.appendChild(saveBtn);
     controlsDiv.appendChild(loadBtn);
     listEl.appendChild(controlsDiv);
+    // Disable save button if queue is empty
+    if (!queue || queue.length === 0) {
+        saveBtn.disabled = true;
+    } else {
+        saveBtn.disabled = false;
+    }
 
     if (queue.length === 0) {
         const empty = document.createElement('div');
@@ -1498,6 +1504,11 @@ function updateQueueDisplay() {
     // Save/Load helper functions (placed near queue rendering)
     window.openSaveDialog = function() {
         const lane = getCurrentLaneFromUI();
+        const queue = swimSetQueues[lane] || [];
+        if (!queue || queue.length === 0) {
+            alert('Cannot save: queue is empty');
+            return;
+        }
         const name = prompt('Enter a name for this save (alphanumeric, dashes allowed):', 'my_save');
         if (!name) return;
         doSaveQueue(lane, name);
