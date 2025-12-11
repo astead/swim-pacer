@@ -99,8 +99,8 @@ static SemaphoreHandle_t renderSemaphore = NULL;   // signals render task to cal
 static volatile bool renderTaskStarted = false;
 
 // ========== WIFI CONFIGURATION ==========
-const char* ssid = "SwimPacer_Config";        // WiFi network name
-const char* password = "";                    // No password for easy access
+const char* ssid = "SwimPacer";             // WiFi network name
+const char* password = "";                  // No password for easy access
 IPAddress local_IP(192, 168, 4, 1);         // ESP32 IP address
 IPAddress gateway(192, 168, 4, 1);          // Gateway IP
 IPAddress subnet(255, 255, 255, 0);         // Subnet mask
