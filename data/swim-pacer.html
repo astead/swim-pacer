@@ -361,6 +361,19 @@
     </div>
     <!-- end repeat modal -->
 
+    <!-- Load Saved Queue Modal -->
+    <div id="loadModal" class="modal" style="display:none;">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="loadModalTitle">
+            <h3 id="loadModalTitle">Load Saved Queue</h3>
+            <div id="loadModalBody" style="max-height:320px; overflow:auto; margin-top:8px;"></div>
+            <div style="margin-top:12px; display:flex; justify-content:flex-end; gap:8px;">
+                <button onclick="hideLoadModal()">Cancel</button>
+                <button id="loadModalOk" onclick="loadModalConfirm()">Load</button>
+            </div>
+        </div>
+    </div>
+    <!-- end load modal -->
+
     <script src="script.js"></script>
 </body>
 </html>

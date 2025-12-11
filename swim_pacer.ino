@@ -338,10 +338,54 @@ static void startRenderTaskOnce() {
 
 // Helper: parse lane from POST JSON body (returns -1 when missing)
 static int parseLaneFromBody(const String &body) {
-  // extractJsonLong is already in your codebase; fallback to -1 if missing
-  long v = extractJsonLong(body.c_str(), "lane", -1);
-  return (int)v;
+  // Try JSON extraction first
+  long v = extractJsonLong(body, "lane", -1);
+  if (v >= 0) return (int)v;
+
+  // Fallback: simple form-encoded parsing (lane=<n>&...)
+  String needle = String("lane=");
+  int idx = body.indexOf(needle);
+  if (idx < 0) return -1;
+  int start = idx + needle.length();
+  int end = start;
+  while (end < body.length() && isDigit(body.charAt(end))) end++;
+  if (end == start) return -1;
+  String numStr = body.substring(start, end);
+  return numStr.toInt();
 }
+
+// Parse a string parameter from either JSON body ("key":"value") or form-encoded (key=value)
+static String parseStringFromBody(const String &body, const char *key) {
+  // Try JSON first
+  String s = extractJsonString(body, key, "");
+  if (s.length() > 0) return s;
+
+  // Fallback to form-encoded parsing
+  String needle = String(key) + String("=");
+  int idx = body.indexOf(needle);
+  if (idx < 0) return String("");
+  int start = idx + needle.length();
+  int end = start;
+  while (end < body.length() && body.charAt(end) != '&') end++;
+  String val = body.substring(start, end);
+  // URL decode simple %20 -> space
+  val.replace("+", " ");
+  // Basic percent-decoding
+  int p = val.indexOf('%');
+  while (p >= 0) {
+    if (p + 2 < val.length()) {
+      String hex = val.substring(p+1, p+3);
+      char ch = (char)strtol(hex.c_str(), NULL, 16);
+      val = val.substring(0, p) + String(ch) + val.substring(p+3);
+    } else break;
+    p = val.indexOf('%');
+  }
+  return val;
+}
+
+// Forward declarations for save/load helpers (defined later)
+bool saveQueueToSlot(int lane, const char *name, int *outError);
+bool loadQueueFromSlot(int lane, const char *name, int *outAdded, int *outSkipped, int *outFailed);
 
 // The queue arrays are declared earlier but we define the helpers here for readability.
 int enqueueSwimSet(const SwimSet &s, int lane) {
@@ -869,6 +913,112 @@ void setupWebServer() {
   server.on("/stopSwimSet", HTTP_POST, handleStopSwimSet);
   server.on("/getSwimQueue", HTTP_POST, handleGetSwimQueue);
   server.on("/reorderSwimQueue", HTTP_POST, handleReorderSwimQueue);
+
+  // Save/load queue endpoints (accept lane and name)
+  server.on("/saveQueue", HTTP_POST, [](){
+    String body = server.arg("plain");
+    // Expect JSON body: { "lane": <n>, "name": "..." }
+    int lane = (int)extractJsonLong(body, "lane", -1);
+    String name = extractJsonString(body, "name", "");
+    Serial.printf("[HTTP] /saveQueue body=%s\n", body.c_str());
+    Serial.printf("[HTTP] /saveQueue parsed lane=%d name=%s\n", lane, name.c_str());
+    String json;
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      json = "{\"ok\":false,\"error\":\"invalid lane\"}";
+      server.send(200, "application/json", json);
+      return;
+    }
+    if (name.length() == 0) {
+      json = "{\"ok\":false,\"error\":\"missing name\"}";
+      server.send(200, "application/json", json);
+      return;
+    }
+    int err = 0;
+    bool ok = saveQueueToSlot(lane, name.c_str(), &err);
+    if (ok) {
+      server.send(200, "application/json", "{\"ok\":true}");
+    } else {
+      String resp = "{\"ok\":false,\"error\":\"";
+      if (err == 1) resp += "no_space";
+      else if (err == 2) resp += "open_failed";
+      else if (err == 3) resp += "write_failed";
+      else if (err == 4) resp += "rename_failed";
+      else resp += "unknown";
+      resp += "\"}";
+      server.send(200, "application/json", resp);
+    }
+  });
+
+  server.on("/loadQueue", HTTP_POST, [](){
+    String body = server.arg("plain");
+    // Expect JSON body: { "lane": <n>, "name": "..." }
+    int lane = (int)extractJsonLong(body, "lane", -1);
+    String name = extractJsonString(body, "name", "");
+    Serial.printf("[HTTP] /loadQueue body=%s\n", body.c_str());
+    Serial.printf("[HTTP] /loadQueue parsed lane=%d name=%s\n", lane, name.c_str());
+    String json;
+    if (lane < 0 || lane >= MAX_LANES_SUPPORTED) {
+      json = "{\"ok\":false,\"error\":\"invalid lane\"}";
+      server.send(200, "application/json", json);
+      return;
+    }
+    if (name.length() == 0) {
+      json = "{\"ok\":false,\"error\":\"missing name\"}";
+      server.send(200, "application/json", json);
+      return;
+    }
+      int added = 0;
+      int skipped = 0;
+      int failed = 0;
+      bool ok = loadQueueFromSlot(lane, name.c_str(), &added, &skipped, &failed);
+      String resp = "{";
+      resp += "\"ok\":"; resp += (ok ? "true" : "false"); resp += ",";
+      resp += "\"added\":"; resp += String(added); resp += ",";
+      resp += "\"skipped\":"; resp += String(skipped); resp += ",";
+      resp += "\"failed\":"; resp += String(failed);
+      resp += "}";
+      server.send(200, "application/json", resp);
+  });
+
+    // List saved slots: POST /listSaves { "lane": <n> } (lane ignored)
+    server.on("/listSaves", HTTP_POST, [](){
+      // We accept a lane parameter for compatibility, but saves are lane-agnostic.
+      String body = server.arg("plain");
+      int lane = (int)extractJsonLong(body, "lane", -1);
+      if (!SPIFFS.begin(true)) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"SPIFFS mount failed\"}");
+        return;
+      }
+
+      Serial.printf("[HTTP] /listSaves called (lane param=%d)\n", lane);
+
+      File root = SPIFFS.open("/saves");
+      if (!root) {
+        Serial.println("[HTTP] /listSaves: /saves directory not found or empty");
+        server.send(200, "application/json", "{\"ok\":true,\"saves\":[]}");
+        return;
+      }
+
+      String out = "{\"ok\":true,\"saves\":[";
+      File f = root.openNextFile();
+      bool first = true;
+      while (f) {
+        String fname = f.name();
+        Serial.printf("[HTTP] /listSaves found file: %s\n", fname.c_str());
+        // Expecting names like /saves/<name>.json
+        if (fname.endsWith(".json")) {
+          // strip directory and extension
+          int slash = fname.lastIndexOf('/');
+          String display = (slash >= 0) ? fname.substring(slash + 1, fname.length() - 5) : fname.substring(0, fname.length() - 5);
+          if (!first) out += ",";
+          out += "{\"file\":\"" + fname + "\",\"name\":\"" + display + "\"}";
+          first = false;
+        }
+        f = root.openNextFile();
+      }
+      out += "]}";
+      server.send(200, "application/json", out);
+    });
 
   // Miscellaneous handlers
   server.on("/resetLane", HTTP_POST, handleResetLane);
@@ -2172,6 +2322,175 @@ void loadSwimSetSettings() {
 void loadSettings() {
   loadGlobalConfigSettings();
   loadSwimSetSettings();
+}
+
+// Sanitize a user-provided name to a safe filename portion (replace non-alnum with '_')
+static String sanitizeName(const String &name) {
+  String out;
+  out.reserve(name.length());
+  for (size_t i = 0; i < name.length(); i++) {
+    char c = name.charAt(i);
+    if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-') {
+      out += c;
+    } else {
+      out += '_';
+    }
+  }
+  return out;
+}
+
+// Save the current lane's queue to SPIFFS slot file: /saves/<name>.json
+// The saved queue is lane-agnostic and can be loaded into any lane.
+bool saveQueueToSlot(int lane, const char *name, int *outError) {
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
+  String sname = sanitizeName(String(name));
+  String path = String("/saves/") + sname + String(".json");
+
+  Serial.printf("[saveQueueToSlot] lane=%d name=%s path=%s\n", lane, name, path.c_str());
+
+  if (!SPIFFS.begin(true)) return false;
+
+  // Build JSON array of queued swim sets for this lane
+  StaticJsonDocument<DOC_SIZE> doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < swimSetQueueCount[lane]; i++) {
+    int actualIdx = (swimSetQueueHead[lane] + i) % SWIMSET_QUEUE_MAX;
+    SwimSet &ss = swimSetQueue[lane][actualIdx];
+    JsonObject o = arr.createNestedObject();
+    o["type"] = ss.type;
+    o["uniqueId"] = uniqueIdToHex(ss.uniqueId);
+    // lane is implicit from the save filename; do not store per-set lane here
+    o["numRounds"] = ss.numRounds;
+    o["swimDistance"] = ss.swimDistance;
+    o["swimTime"] = ss.swimTime;
+    o["restTime"] = ss.restTime;
+    o["repeatRemaining"] = ss.repeatRemaining;
+    o["loopFromUniqueId"] = uniqueIdToHex(ss.loopFromUniqueId);
+    JsonArray sw = o.createNestedArray("swimmers");
+    for (int j = 0; j < ss.swimmersCount && j < MAX_SWIMMERS_SUPPORTED; j++) {
+      JsonObject swp = sw.createNestedObject();
+      swp["swimTimeMs"] = ss.swimmerTimes[j];
+    }
+  }
+
+  // Ensure saves directory exists
+  if (!SPIFFS.exists("/saves")) {
+    SPIFFS.mkdir("/saves");
+  }
+
+  // Check available storage space before writing using SPIFFS API
+  // Estimate JSON size using ArduinoJson utility
+  size_t estSize = measureJson(doc) + 1024; // add margin for formatting
+  size_t total = SPIFFS.totalBytes();
+  size_t used = SPIFFS.usedBytes();
+  if (total > 0 && (total - used) < estSize) {
+    // Not enough space
+    if (outError) *outError = 1; // no space
+    Serial.printf("[saveQueueToSlot] not enough space: total=%u used=%u est=%u\n", (unsigned)total, (unsigned)used, (unsigned)estSize);
+    return false;
+  }
+
+  // Atomic write
+  String tmpPath = path + String(".tmp");
+  File tmp = SPIFFS.open(tmpPath, FILE_WRITE);
+  if (!tmp) {
+    if (outError) *outError = 2; // open failed
+    Serial.printf("[saveQueueToSlot] failed to open tmp file: %s\n", tmpPath.c_str());
+    return false;
+  }
+  if (serializeJson(doc, tmp) == 0) {
+    tmp.close();
+    SPIFFS.remove(tmpPath);
+    if (outError) *outError = 3; // write failed
+    Serial.printf("[saveQueueToSlot] serializeJson returned 0 for path: %s\n", tmpPath.c_str());
+    return false;
+  }
+  tmp.close();
+  SPIFFS.remove(path);
+  bool renamed = SPIFFS.rename(tmpPath, path);
+  if (!renamed && outError) *outError = 4; // rename failed
+  if (renamed) {
+    Serial.printf("[saveQueueToSlot] renamed %s -> %s\n", tmpPath.c_str(), path.c_str());
+  } else {
+    Serial.printf("[saveQueueToSlot] rename failed %s -> %s\n", tmpPath.c_str(), path.c_str());
+  }
+  return renamed;
+}
+
+// Load queue JSON from a slot file and replace the lane's queue with its contents
+// Load queue JSON from a slot file and append entries to the lane's queue.
+// Returns true on overall success; additionally reports counts via out parameters.
+bool loadQueueFromSlot(int lane, const char *name, int *outAdded, int *outSkipped, int *outFailed) {
+  if (lane < 0 || lane >= MAX_LANES_SUPPORTED) return false;
+  String sname = sanitizeName(String(name));
+  String path = String("/saves/") + sname + String(".json");
+  Serial.printf("[loadQueueFromSlot] lane=%d name=%s path=%s\n", lane, name, path.c_str());
+
+  if (!SPIFFS.begin(true)) return false;
+  if (!SPIFFS.exists(path)) return false;
+  if (!SPIFFS.exists(path)) {
+    Serial.printf("[loadQueueFromSlot] file does not exist: %s\n", path.c_str());
+    return false;
+  }
+
+  File f = SPIFFS.open(path, FILE_READ);
+  if (!f) {
+    Serial.printf("[loadQueueFromSlot] failed to open file: %s\n", path.c_str());
+    return false;
+  }
+
+  size_t sz = f.size();
+  DynamicJsonDocument doc(sz + 1024);
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) return false;
+
+  JsonArray arr = doc.as<JsonArray>();
+  if (!arr) return false;
+
+  int added = 0;
+  int skipped = 0;
+  int failed = 0;
+
+  for (JsonObject o : arr) {
+    SwimSet s;
+    s.type = o["type"] | SWIMSET_TYPE;
+    String uid = o["uniqueId"].as<String>();
+    s.uniqueId = parseUniqueIdHex(uid);
+    s.numRounds = o["numRounds"] | 1;
+    s.swimDistance = o["swimDistance"] | 25;
+    s.swimTime = o["swimTime"] | swimSetSettings.swimTimeSeconds;
+    s.restTime = o["restTime"] | swimSetSettings.restTimeSeconds;
+    s.repeatRemaining = o["repeatRemaining"] | 0;
+    String loopFrom = o["loopFromUniqueId"].as<String>();
+    s.loopFromUniqueId = parseUniqueIdHex(loopFrom);
+    s.swimmersCount = 0;
+    JsonArray sw = o["swimmers"];
+    for (JsonObject swp : sw) {
+      if (s.swimmersCount < MAX_SWIMMERS_SUPPORTED) {
+        s.swimmerTimes[s.swimmersCount] = swp["swimTimeMs"] | 0;
+        s.swimmersCount++;
+      }
+    }
+    // Attempt enqueue; respect duplicate and full errors
+    int result = enqueueSwimSet(s, lane);
+    if (result == QUEUE_INSERT_SUCCESS) {
+      added++;
+      Serial.printf("[loadQueueFromSlot] enqueued set uid=%s lane=%d\n", uid.c_str(), lane);
+    } else if (result == QUEUE_INSERT_DUPLICATE) {
+      skipped++;
+      Serial.printf("[loadQueueFromSlot] skipped duplicate uid=%s lane=%d\n", uid.c_str(), lane);
+    } else {
+      failed++;
+      Serial.printf("[loadQueueFromSlot] failed to enqueue uid=%s lane=%d ret=%d\n", uid.c_str(), lane, result);
+    }
+  }
+
+  if (outAdded) *outAdded = added;
+  if (outSkipped) *outSkipped = skipped;
+  if (outFailed) *outFailed = failed;
+
+  return true;
 }
 
 void calculateUnderwatersSize() {

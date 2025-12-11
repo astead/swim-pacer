@@ -1305,6 +1305,20 @@ function updateQueueDisplay() {
     listEl.innerHTML = '';
 
     const queue = swimSetQueues[lane] || [];
+
+    // Add single Save/Load controls at top (for the whole queue)
+    const controlsDiv = document.createElement('div');
+    controlsDiv.style.cssText = 'display:flex; gap:8px; margin-bottom:8px;';
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Save Queue';
+    saveBtn.onclick = () => openSaveDialog();
+    const loadBtn = document.createElement('button');
+    loadBtn.textContent = 'Load Queue';
+    loadBtn.onclick = () => openLoadDialog();
+    controlsDiv.appendChild(saveBtn);
+    controlsDiv.appendChild(loadBtn);
+    listEl.appendChild(controlsDiv);
+
     if (queue.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'queue-empty';
@@ -1312,7 +1326,7 @@ function updateQueueDisplay() {
         listEl.appendChild(empty);
         return;
     }
-
+    // Render each queue entry
     queue.forEach((entry, idx) => {
         const row = document.createElement('div');
         row.className = 'queue-item';
@@ -1480,6 +1494,119 @@ function updateQueueDisplay() {
         row.appendChild(actions);
         listEl.appendChild(row);
     });
+
+    // Save/Load helper functions (placed near queue rendering)
+    window.openSaveDialog = function() {
+        const lane = getCurrentLaneFromUI();
+        const name = prompt('Enter a name for this save (alphanumeric, dashes allowed):', 'my_save');
+        if (!name) return;
+        doSaveQueue(lane, name);
+    };
+
+    async function doSaveQueue(lane, name) {
+        try {
+            const payload = { lane: lane, name: name };
+            const resp = await fetch('/saveQueue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+            const j = await resp.json();
+            if (j.ok) {
+                alert('Queue saved successfully');
+            } else {
+                let msg = j.error || 'unknown error';
+                if (msg === 'no_space') msg = 'Not enough storage space on device to save the queue.';
+                else if (msg === 'open_failed') msg = 'Failed to open temp file for writing on device.';
+                else if (msg === 'write_failed') msg = 'Device failed to write data to storage.';
+                else if (msg === 'rename_failed') msg = 'Failed to finalize save file on device.';
+                alert('Save failed: ' + msg);
+            }
+        } catch (e) {
+            alert('Save failed (network): ' + e);
+        }
+    }
+
+    // Modal-based load dialog: fetch available saves and show modal picker
+    window.openLoadDialog = async function() {
+        const lane = getCurrentLaneFromUI();
+        try {
+            const resp = await fetch('/listSaves', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lane: lane})});
+            const j = await resp.json();
+            if (!j.ok) { alert('Failed to list saves'); return; }
+            const saves = j.saves || [];
+            showLoadModal(lane, saves.map(s => s.name || s));
+        } catch (e) {
+            alert('Failed to fetch saves: ' + e);
+        }
+    };
+
+    // Modal helpers for load selection
+    window.showLoadModal = function showLoadModal(lane, saves) {
+        var modal = document.getElementById('loadModal');
+        var body = document.getElementById('loadModalBody');
+        body.innerHTML = '';
+        var okBtn = document.getElementById('loadModalOk');
+        okBtn.removeAttribute('data-chosen');
+        okBtn.removeAttribute('data-lane');
+        if (!saves || saves.length === 0) {
+            body.innerHTML = '<div>No saved queues available.</div>';
+            okBtn.disabled = true;
+        } else {
+            var list = document.createElement('div');
+            list.style.display = 'flex';
+            list.style.flexDirection = 'column';
+            list.style.gap = '6px';
+            saves.forEach(function(name) {
+                var item = document.createElement('button');
+                item.textContent = name;
+                item.setAttribute('data-save-name', name);
+                item.style.textAlign = 'left';
+                item.onclick = function() {
+                    // clear previous selection visuals
+                    var prev = body.querySelectorAll('.selected');
+                    prev.forEach(function(p){ p.classList.remove('selected'); p.style.background=''; });
+                    item.classList.add('selected');
+                    item.style.background = '#ddd';
+                    okBtn.setAttribute('data-chosen', name);
+                    okBtn.setAttribute('data-lane', lane);
+                    okBtn.disabled = false;
+                };
+                list.appendChild(item);
+            });
+            body.appendChild(list);
+            okBtn.disabled = true;
+        }
+        modal.style.display = 'flex';
+    };
+
+    window.hideLoadModal = function hideLoadModal() {
+        var modal = document.getElementById('loadModal');
+        modal.style.display = 'none';
+        var okBtn = document.getElementById('loadModalOk');
+        if (okBtn) { okBtn.removeAttribute('data-chosen'); okBtn.removeAttribute('data-lane'); }
+    };
+
+    window.loadModalConfirm = function loadModalConfirm() {
+        var okBtn = document.getElementById('loadModalOk');
+        var name = okBtn.getAttribute('data-chosen');
+        var lane = parseInt(okBtn.getAttribute('data-lane'));
+        if (!name) return;
+        hideLoadModal();
+        doLoadQueue(lane, name);
+    };
+
+    async function doLoadQueue(lane, name) {
+        try {
+            const payload = { lane: lane, name: name };
+            const resp = await fetch('/loadQueue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+            const j = await resp.json();
+            if (j.ok) {
+                alert(`Loaded: added ${j.added || 0}, skipped ${j.skipped || 0}, failed ${j.failed || 0}`);
+                reconcileQueueWithDevice();
+            } else {
+                alert('Load failed');
+            }
+        } catch (e) {
+            alert('Load failed (network): ' + e);
+        }
+    }
 }
 
 // Show the repeat selection modal and populate with current queue items
