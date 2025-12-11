@@ -1570,11 +1570,10 @@ function updateQueueDisplay() {
                 item.setAttribute('data-save-name', name);
                 item.style.textAlign = 'left';
                 item.onclick = function() {
-                    // clear previous selection visuals
+                    // clear previous selection visuals (class-only; let CSS handle appearance)
                     var prev = body.querySelectorAll('.selected');
                     prev.forEach(function(p){ p.classList.remove('selected'); p.style.background=''; });
                     item.classList.add('selected');
-                    item.style.background = '#ddd';
                     okBtn.setAttribute('data-chosen', name);
                     okBtn.setAttribute('data-lane', lane);
                     okBtn.disabled = false;

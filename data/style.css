@@ -645,3 +645,28 @@ button[disabled], .small-button[disabled] {
     .queue-actions button { padding: 6px 6px; font-size: 12px; }
     .queue-label { font-size: 14px; }
 }
+
+/* Load modal list styling: default white background, black text, tighter spacing */
+#loadModalBody {
+    padding: 4px 0;
+}
+#loadModalBody button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: #ffffff; /* white by default */
+    color: #000000; /* black text */
+    border: 1px solid #eee;
+    padding: 6px 8px; /* slightly tighter */
+    margin: 2px 0; /* reduced vertical spacing */
+    border-radius: 4px;
+    cursor: pointer;
+}
+#loadModalBody button:hover {
+    background: #f5f9ff;
+}
+#loadModalBody button.selected {
+    background: #0056b3; /* darker blue when selected for contrast */
+    color: #ffffff; /* white text for readability */
+    border-color: #0056b3;
+}
