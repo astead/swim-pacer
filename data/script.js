@@ -34,7 +34,7 @@ let currentSettings = {
     swimDistance: 50,
     swimTime: 30,
     restTime: 5,
-    swimmerInterval: 4,
+    swimmerInterval: 10,
 
     delayIndicatorsEnabled: true,
     underwatersEnabled: false,

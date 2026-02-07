@@ -152,7 +152,7 @@ struct SwimSetSettings {
   int swimTimeSeconds = 30;                  // Swim time for laps in seconds
   int restTimeSeconds = 10;                  // Rest time between laps in seconds
   int swimSetDistance = 50;                  // Distance for pace calculation (in pool's native units)
-  int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
+  int swimmerIntervalSeconds = 10;           // Interval between swimmers in seconds
   int numRounds = 10;                        // Number of numRounds/sets to complete
 };
 
@@ -590,9 +590,9 @@ void applySwimSetToSettings(const SwimSet &s, int lane) {
     if (DEBUG_ENABLED) {
       LOG("Warning: swimmerIntervalSeconds <= 0 (value=");
       LOG(swimSetSettings.swimmerIntervalSeconds);
-      LOGLN(") - resetting to default 4 seconds (will be persisted)");
+      LOGLN(") - resetting to default 10 seconds (will be persisted)");
     }
-    swimSetSettings.swimmerIntervalSeconds = 4;
+    swimSetSettings.swimmerIntervalSeconds = 10;
   }
 
   // Persist swim set settings (now that swimmerIntervalSeconds is validated)
@@ -2469,8 +2469,8 @@ void saveSwimSetSettings() {
   // Sanitize swimmer interval before persisting to avoid storing invalid (<=0) values
   int si = swimSetSettings.swimmerIntervalSeconds;
   if (si <= 0) {
-    LOGLN("saveSwimSetSettings: invalid swimmerIntervalSeconds <= 0, resetting to 4");
-    si = 4; // enforce safe default
+    LOGLN("saveSwimSetSettings: invalid swimmerIntervalSeconds <= 0, resetting to 10");
+    si = 10; // enforce safe default
   }
   preferences.putInt("swimmerInterval", si);
   preferences.putInt("numRounds", swimSetSettings.numRounds);
@@ -2532,7 +2532,7 @@ void loadSwimSetSettings() {
   swimSetSettings.swimTimeSeconds = preferences.getInt("swimTimeSeconds", 30);
   swimSetSettings.restTimeSeconds = preferences.getInt("restTimeSeconds", 5);
   swimSetSettings.swimSetDistance = preferences.getInt("swimSetDistance", 50);  // Default in yards (matches pool default)
-  swimSetSettings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 4);
+  swimSetSettings.swimmerIntervalSeconds = preferences.getInt("swimmerInterval", 10);
   swimSetSettings.numRounds = preferences.getInt("numRounds", 10);
 }
 
