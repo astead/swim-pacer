@@ -712,6 +712,11 @@ button[disabled], .small-button[disabled] {
   background: rgba(0,0,0,0.03);
 }
 
+/* Selected state overrides hover */
+#repeatModalBody .repeat-row.repeat-selected:hover {
+  background: rgba(0, 123, 255, 0.15);
+}
+
 /* Responsive tiny screens */
 @media (max-width: 520px) {
     .queue-info { display: none; }

@@ -68,6 +68,7 @@ const ENQUEUE_RETRY_MS = 15000; // wait 15s before retrying a pending enqueue
 // Swim Set Queue Management - now lane-specific
 let swimSetQueues = [[], [], [], []]; // Array of queued swim sets for each lane
 let editingSwimSetIndexes = [-1, -1, -1, -1]; // Index of swim set being edited for each lane (-1 if creating new)
+let repeatModalSelectedStart = 0; // Track the start index for repeat block modal
 
 // single persistent working swim set info (keeps current UI values / edits)
 let workingSwimSetInfo = null; // never cleared; updated from UI, edits, or device values
