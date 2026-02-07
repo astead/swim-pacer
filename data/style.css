@@ -584,6 +584,48 @@ button[disabled], .small-button[disabled] {
     border-left: 4px solid #ffb74d;
 }
 
+/* Swipe-to-reveal wrapper and layers */
+.queue-item-wrapper {
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.queue-actions-background {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 0 8px;
+    background: #f8f9fa;
+    z-index: 1;
+}
+
+.queue-actions-background button {
+    min-width: 45px;
+    width: auto !important;
+    padding: 4px 6px;
+    font-size: 11px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.queue-content {
+    position: relative;
+    z-index: 2;
+    background: #ffffff;
+    transition: transform 0.2s ease-out;
+    touch-action: pan-y; /* Allow vertical scrolling while handling horizontal swipes */
+}
+
+/* Override queue-item styles when used as content layer */
+.queue-content.queue-item {
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
 /* If any buttons relied on very light styles, ensure text is readable */
 .btn-light, .light-button {
     background: #f6f6f6;

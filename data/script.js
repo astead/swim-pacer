@@ -1295,6 +1295,98 @@ function returnToConfigMode() {
     try { const cfgBtns = document.getElementById('configButtons'); if (cfgBtns) cfgBtns.style.display = 'block'; } catch (e) {}
 }
 
+// Swipe-to-reveal functionality for queue items
+let swipeState = {
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    isDragging: false,
+    targetElement: null,
+    threshold: 50, // minimum swipe distance to reveal buttons
+    verticalThreshold: 20 // max vertical movement to still be considered horizontal swipe
+};
+
+function initSwipe(e, contentEl) {
+    const touch = e.touches ? e.touches[0] : e;
+    swipeState.startX = touch.clientX;
+    swipeState.startY = touch.clientY;
+    swipeState.currentX = touch.clientX;
+    swipeState.isDragging = true;
+    swipeState.targetElement = contentEl;
+    
+    // Remove transition during drag
+    contentEl.style.transition = 'none';
+}
+
+function moveSwipe(e) {
+    if (!swipeState.isDragging || !swipeState.targetElement) return;
+    
+    const touch = e.touches ? e.touches[0] : e;
+    swipeState.currentX = touch.clientX;
+    const currentY = touch.clientY;
+    
+    const deltaX = swipeState.currentX - swipeState.startX;
+    const deltaY = currentY - swipeState.startY;
+    
+    // Check if movement is primarily horizontal
+    if (Math.abs(deltaY) > swipeState.verticalThreshold && Math.abs(deltaX) < Math.abs(deltaY)) {
+        // Too much vertical movement, cancel swipe
+        return;
+    }
+    
+    // Only allow swiping left (revealing buttons)
+    if (deltaX < 0) {
+        swipeState.targetElement.style.transform = `translateX(${deltaX}px)`;
+        e.preventDefault(); // Prevent scrolling while swiping
+    }
+}
+
+function endSwipe(e) {
+    if (!swipeState.isDragging || !swipeState.targetElement) return;
+    
+    const deltaX = swipeState.currentX - swipeState.startX;
+    const contentEl = swipeState.targetElement;
+    
+    // Restore transition for smooth snap
+    contentEl.style.transition = 'transform 0.3s ease-out';
+    
+    // Determine if swipe was far enough to reveal buttons
+    if (deltaX < -swipeState.threshold) {
+        // Swipe was significant enough - reveal buttons
+        // Get the actual width of the actions background
+        const wrapper = contentEl.parentElement;
+        const actionsBackground = wrapper.querySelector('.queue-actions-background');
+        const actionsWidth = actionsBackground ? actionsBackground.offsetWidth : 200;
+        
+        contentEl.style.transform = `translateX(-${actionsWidth}px)`;
+        contentEl.dataset.swiped = 'true';
+        
+        // Close any other open items
+        document.querySelectorAll('.queue-content').forEach(el => {
+            if (el !== contentEl && el.dataset.swiped === 'true') {
+                el.style.transform = 'translateX(0)';
+                el.dataset.swiped = 'false';
+            }
+        });
+    } else {
+        // Snap back to closed position
+        contentEl.style.transform = 'translateX(0)';
+        contentEl.dataset.swiped = 'false';
+    }
+    
+    swipeState.isDragging = false;
+    swipeState.targetElement = null;
+}
+
+// Close all swiped items (useful for tapping elsewhere)
+function closeAllSwipedItems() {
+    document.querySelectorAll('.queue-content[data-swiped="true"]').forEach(el => {
+        el.style.transition = 'transform 0.3s ease-out';
+        el.style.transform = 'translateX(0)';
+        el.dataset.swiped = 'false';
+    });
+}
+
 // Save/Load Queue helper functions (defined at module level so they're always available)
 async function doSaveQueue(lane, name) {
     try {
@@ -1558,21 +1650,9 @@ function updateQueueDisplay() {
     }
     // Render each queue entry
     queue.forEach((entry, idx) => {
-        const row = document.createElement('div');
-        row.className = 'queue-item';
-        // Ensure queue row is a horizontal flex container so left + actions align
-        row.style.display = 'flex';
-        row.style.alignItems = 'center';
-        row.style.justifyContent = 'space-between';
-
-        // Left area wrapper so spacing/layout remains predictable
-        const leftWrap = document.createElement('div');
-        leftWrap.className = 'queue-left';
-        // Allow left area to flex and shrink so the actions remain visible
-        leftWrap.style.display = 'flex';
-        leftWrap.style.alignItems = 'center';
-        leftWrap.style.flex = '1 1 auto';
-        leftWrap.style.minWidth = '0'; // required for overflow to work inside flex item
+        // Create wrapper container for swipe-to-reveal
+        const wrapper = document.createElement('div');
+        wrapper.className = 'queue-item-wrapper';
 
         // Status is a number (bitmask)
         const statusVal = entry.status;
@@ -1581,24 +1661,29 @@ function updateQueueDisplay() {
         const isDeletedPending = !!entry.deletedPending;
         const isStopped = !!(statusVal & SWIMSET_STATUS_STOPPED);
 
-        // Normal label generation (reuse previous logic but inside leftWrap)
+        // Create background layer with action buttons (revealed on swipe)
+        const actionsBackground = document.createElement('div');
+        actionsBackground.className = 'queue-actions-background';
+
+        // Create content layer (slides on swipe)
+        const content = document.createElement('div');
+        content.className = 'queue-content queue-item';
+        content.dataset.swiped = 'false';
+
+        // Left area with label
+        const leftWrap = document.createElement('div');
+        leftWrap.className = 'queue-left';
+
         const label = document.createElement('span');
         label.className = 'queue-label';
-        // Prevent label from pushing action buttons off-screen; ellipsize long text
-        label.style.overflow = 'hidden';
-        label.style.textOverflow = 'ellipsis';
-        label.style.whiteSpace = 'nowrap';
-        label.style.display = 'inline-block';
-        label.style.minWidth = '0';
-        // Special case for LOOP_TYPE entries so they appear descriptive
+        
+        // Special case for LOOP_TYPE entries
         if (entry.type === LOOP_TYPE) {
-            // Try to resolve the loop start in the current queue using the stable uniqueId.
             let ll = '?';
             if (entry.loopFromUniqueId) {
                 const q = swimSetQueues[lane] || [];
                 const startIdx = q.findIndex(it => normalizeUniqueId(it.uniqueId) === normalizeUniqueId(entry.loopFromUniqueId));
                 if (startIdx !== -1) {
-                    // loop entry is at current position 'idx'; block length is items between startIdx and idx (exclusive)
                     ll = Math.max(0, idx - startIdx);
                 }
             }
@@ -1609,18 +1694,9 @@ function updateQueueDisplay() {
         }
         leftWrap.appendChild(label);
 
-        // Build rest of row (reuse existing actions code but moved to be flexible)
-        const actions = document.createElement('span');
-        actions.className = 'queue-actions';
-        // Keep actions fixed (no shrinking) and laid out horizontally
-        actions.style.display = 'flex';
-        actions.style.gap = '8px';
-        actions.style.flex = '0 0 auto';
-        actions.style.marginLeft = '12px';
-
-        // Completed
+        // Completed state
         if (isCompleted && !isActive) {
-            row.classList.add('completed');
+            content.classList.add('completed');
             const info = document.createElement('span');
             info.className = 'queue-info';
             info.textContent = 'Completed';
@@ -1628,19 +1704,20 @@ function updateQueueDisplay() {
 
             const removeBtn = document.createElement('button');
             removeBtn.textContent = 'Remove';
-            removeBtn.onclick = () => { deleteSwimSet(idx); };
-            actions.appendChild(removeBtn);
+            removeBtn.style.cssText = 'padding:4px 6px;font-size:11px;min-width:50px;';
+            removeBtn.onclick = (e) => { e.stopPropagation(); deleteSwimSet(idx); };
+            actionsBackground.appendChild(removeBtn);
 
-            row.appendChild(leftWrap);
-            row.appendChild(actions);
-            listEl.appendChild(row);
+            content.appendChild(leftWrap);
+            wrapper.appendChild(actionsBackground);
+            wrapper.appendChild(content);
+            listEl.appendChild(wrapper);
             return;
         }
 
-        // Active / stopped / pending-delete / normal branches follow the same structure
-        // (for brevity keep the rest of your existing action buttons)
+        // Active state
         if (isActive) {
-            row.classList.add('running');
+            content.classList.add('running');
             const statusSpan = document.createElement('span');
             statusSpan.className = 'queue-status';
             let roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : 'In progress';
@@ -1650,14 +1727,15 @@ function updateQueueDisplay() {
             statusSpan.textContent = roundText;
             leftWrap.appendChild(statusSpan);
 
-            row.appendChild(leftWrap);
-            listEl.appendChild(row);
+            content.appendChild(leftWrap);
+            wrapper.appendChild(content);
+            listEl.appendChild(wrapper);
             return;
         }
 
-        // Stopped
+        // Stopped state
         if (isStopped) {
-            row.classList.add('stopped');
+            content.classList.add('stopped');
             const statusSpan = document.createElement('span');
             statusSpan.className = 'queue-status';
             const roundText = (entry.currentRound !== undefined) ? `${entry.currentRound} / ${entry.numRounds}` : '';
@@ -1666,63 +1744,81 @@ function updateQueueDisplay() {
 
             const editBtn = document.createElement('button');
             editBtn.textContent = 'Edit';
-            editBtn.onclick = () => { editSwimSet(idx); };
-            actions.appendChild(editBtn);
+            editBtn.style.cssText = 'padding:4px 6px;font-size:11px;min-width:45px;background:#007bff;color:white;border:none;border-radius:4px;';
+            editBtn.onclick = (e) => { e.stopPropagation(); deleteSwimSet(idx); closeAllSwipedItems(); editSwimSet(idx); };
+            actionsBackground.appendChild(editBtn);
 
             const runBtn = document.createElement('button');
             runBtn.textContent = 'Run';
-            runBtn.onclick = () => { startSwimSet(idx); };
-            actions.appendChild(runBtn);
+            runBtn.style.cssText = 'padding:4px 6px;font-size:11px;min-width:45px;background:#28a745;color:white;border:none;border-radius:4px;';
+            runBtn.onclick = (e) => { e.stopPropagation(); closeAllSwipedItems(); startSwimSet(idx); };
+            actionsBackground.appendChild(runBtn);
 
             const delBtn = document.createElement('button');
-            delBtn.textContent = 'Delete';
-            delBtn.onclick = () => { deleteSwimSet(idx); };
-            actions.appendChild(delBtn);
+            delBtn.textContent = 'Del';
+            delBtn.style.cssText = 'padding:4px 6px;font-size:11px;min-width:45px;background:#dc3545;color:white;border:none;border-radius:4px;';
+            delBtn.onclick = (e) => { e.stopPropagation(); closeAllSwipedItems(); deleteSwimSet(idx); };
+            actionsBackground.appendChild(delBtn);
 
-            row.appendChild(leftWrap);
-            row.appendChild(actions);
-            listEl.appendChild(row);
+            // Add swipe handlers
+            content.addEventListener('touchstart', (e) => initSwipe(e, content), { passive: false });
+            content.addEventListener('mousedown', (e) => initSwipe(e, content));
+
+            content.appendChild(leftWrap);
+            wrapper.appendChild(actionsBackground);
+            wrapper.appendChild(content);
+            listEl.appendChild(wrapper);
             return;
         }
 
-        // If this entry is marked as pending deletion, render as such (but keep visible).
-        if (entry.deletedPending) {
-            row.classList.add('pending-delete');
+        // Pending delete state
+        if (isDeletedPending) {
+            content.classList.add('pending-delete');
             const status = document.createElement('span');
             status.className = 'queue-status';
             status.textContent = 'Deleting...';
             leftWrap.appendChild(status);
 
             const disabledBtn = document.createElement('button');
-            disabledBtn.textContent = 'Delete';
+            disabledBtn.textContent = 'Del';
             disabledBtn.disabled = true;
-            actions.appendChild(disabledBtn);
+            disabledBtn.style.cssText = 'padding:4px 6px;font-size:11px;min-width:50px;';
+            actionsBackground.appendChild(disabledBtn);
 
-            row.appendChild(leftWrap);
-            row.appendChild(actions);
-            listEl.appendChild(row);
+            content.appendChild(leftWrap);
+            wrapper.appendChild(actionsBackground);
+            wrapper.appendChild(content);
+            listEl.appendChild(wrapper);
             return;
         }
 
-        // Normal row: Edit / Run / Delete
+        // Normal state: Edit / Run / Del buttons
         const editBtn = document.createElement('button');
         editBtn.textContent = 'Edit';
-        editBtn.onclick = () => { editSwimSet(idx); };
-        actions.appendChild(editBtn);
+        editBtn.style.cssText = 'padding:4px 6px;font-size:11px;min-width:45px;background:#007bff;color:white;border:none;border-radius:4px;';
+        editBtn.onclick = (e) => { e.stopPropagation(); closeAllSwipedItems(); editSwimSet(idx); };
+        actionsBackground.appendChild(editBtn);
 
         const runBtn = document.createElement('button');
         runBtn.textContent = 'Run';
-        runBtn.onclick = () => { startSwimSet(idx); };
-        actions.appendChild(runBtn);
+        runBtn.style.cssText = 'padding:4px 6px;font-size:11px;min-width:45px;background:#28a745;color:white;border:none;border-radius:4px;';
+        runBtn.onclick = (e) => { e.stopPropagation(); closeAllSwipedItems(); startSwimSet(idx); };
+        actionsBackground.appendChild(runBtn);
 
         const delBtn = document.createElement('button');
-        delBtn.textContent = 'Delete';
-        delBtn.onclick = () => { deleteSwimSet(idx); };
-        actions.appendChild(delBtn);
+        delBtn.textContent = 'Del';
+        delBtn.style.cssText = 'padding:4px 6px;font-size:11px;min-width:45px;background:#dc3545;color:white;border:none;border-radius:4px;';
+        delBtn.onclick = (e) => { e.stopPropagation(); closeAllSwipedItems(); deleteSwimSet(idx); };
+        actionsBackground.appendChild(delBtn);
 
-        row.appendChild(leftWrap);
-        row.appendChild(actions);
-        listEl.appendChild(row);
+        // Add swipe handlers to content
+        content.addEventListener('touchstart', (e) => initSwipe(e, content), { passive: false });
+        content.addEventListener('mousedown', (e) => initSwipe(e, content));
+
+        content.appendChild(leftWrap);
+        wrapper.appendChild(actionsBackground);
+        wrapper.appendChild(content);
+        listEl.appendChild(wrapper);
     });
 }
 
@@ -2800,6 +2896,20 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Ensure visual selection is applied after DOM is ready
     updateVisualSelection();
     initializeQueueSystem();
+
+    // Add document-level event listeners for swipe gestures
+    document.addEventListener('touchmove', (e) => {
+        if (swipeState.targetElement) moveSwipe(e);
+    }, { passive: false });
+    document.addEventListener('touchend', (e) => {
+        if (swipeState.targetElement) endSwipe(e);
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (swipeState.targetElement) moveSwipe(e);
+    });
+    document.addEventListener('mouseup', (e) => {
+        if (swipeState.targetElement) endSwipe(e);
+    });
 
     // Initialize the create/edit tabs and restore last-used tab
     try {
