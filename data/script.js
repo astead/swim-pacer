@@ -1564,10 +1564,16 @@ function updateQueueDisplay() {
             list.style.flexDirection = 'column';
             list.style.gap = '6px';
             saves.forEach(function(name) {
+                var row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.gap = '8px';
+                row.style.alignItems = 'center';
+                
                 var item = document.createElement('button');
                 item.textContent = name;
                 item.setAttribute('data-save-name', name);
                 item.style.textAlign = 'left';
+                item.style.flex = '1';
                 item.onclick = function() {
                     // clear previous selection visuals (class-only; let CSS handle appearance)
                     var prev = body.querySelectorAll('.selected');
@@ -1577,7 +1583,26 @@ function updateQueueDisplay() {
                     okBtn.setAttribute('data-lane', lane);
                     okBtn.disabled = false;
                 };
-                list.appendChild(item);
+                
+                var deleteBtn = document.createElement('button');
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.style.background = '#dc3545';
+                deleteBtn.style.color = 'white';
+                deleteBtn.style.padding = '4px 12px';
+                deleteBtn.style.fontSize = '12px';
+                deleteBtn.style.width = '70px';
+                deleteBtn.style.flexShrink = '0';
+                deleteBtn.style.textAlign = 'center';
+                deleteBtn.onclick = function(e) {
+                    e.stopPropagation();
+                    if (confirm('Delete "' + name + '"?')) {
+                        deleteQueue(name, lane);
+                    }
+                };
+                
+                row.appendChild(item);
+                row.appendChild(deleteBtn);
+                list.appendChild(row);
             });
             body.appendChild(list);
             okBtn.disabled = true;
@@ -1600,6 +1625,32 @@ function updateQueueDisplay() {
         hideLoadModal();
         doLoadQueue(lane, name);
     };
+
+    async function deleteQueue(name, lane) {
+        try {
+            const resp = await fetch('/deleteQueue', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name: name })
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                console.log('Queue deleted:', name);
+                // Refresh the modal to show updated list
+                hideLoadModal();
+                // Re-trigger the load button to refresh the list
+                setTimeout(() => {
+                    const loadBtn = document.querySelector('[onclick*="loadQueueForLane"]');
+                    if (loadBtn) loadBtn.click();
+                }, 100);
+            } else {
+                alert('Failed to delete queue: ' + (data.error || 'unknown error'));
+            }
+        } catch (err) {
+            console.error('Delete queue error:', err);
+            alert('Error deleting queue');
+        }
+    }
 
     async function doLoadQueue(lane, name) {
         try {

@@ -742,7 +742,6 @@ void setup() {
     recalculateValues(li);
   }
 
-  // TODO: Why are we doing this here?
   LOGLN("Finished recalculating values, setting brightness");
   FastLED.setBrightness(globalConfigSettings.brightness);
 
@@ -979,6 +978,39 @@ void setupWebServer() {
       resp += "}";
       server.send(200, "application/json", resp);
   });
+
+    // Delete saved queue: POST /deleteQueue { "name": "..." }
+    server.on("/deleteQueue", HTTP_POST, [](){
+      String body = server.arg("plain");
+      String name = extractJsonString(body, "name", "");
+      Serial.printf("[HTTP] /deleteQueue body=%s\n", body.c_str());
+      Serial.printf("[HTTP] /deleteQueue parsed name=%s\n", name.c_str());
+      
+      if (name.length() == 0) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing name\"}");
+        return;
+      }
+      
+      if (!SPIFFS.begin(true)) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"SPIFFS mount failed\"}");
+        return;
+      }
+      
+      String path = "/saves/" + name + ".json";
+      if (SPIFFS.exists(path)) {
+        bool removed = SPIFFS.remove(path);
+        if (removed) {
+          Serial.printf("[HTTP] /deleteQueue: Successfully deleted %s\n", path.c_str());
+          server.send(200, "application/json", "{\"ok\":true}");
+        } else {
+          Serial.printf("[HTTP] /deleteQueue: Failed to delete %s\n", path.c_str());
+          server.send(200, "application/json", "{\"ok\":false,\"error\":\"delete failed\"}");
+        }
+      } else {
+        Serial.printf("[HTTP] /deleteQueue: File not found %s\n", path.c_str());
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"file not found\"}");
+      }
+    });
 
     // List saved slots: POST /listSaves { "lane": <n> } (lane ignored)
     server.on("/listSaves", HTTP_POST, [](){
