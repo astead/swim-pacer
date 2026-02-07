@@ -1539,23 +1539,14 @@ function updateQueueDisplay() {
 
     const queue = swimSetQueues[lane] || [];
 
-    // Add single Save/Load controls at top (for the whole queue)
-    const controlsDiv = document.createElement('div');
-    controlsDiv.style.cssText = 'display:flex; gap:8px; margin-bottom:8px;';
-    const saveBtn = document.createElement('button');
-    saveBtn.textContent = 'Save Queue';
-    saveBtn.onclick = () => openSaveDialog();
-    const loadBtn = document.createElement('button');
-    loadBtn.textContent = 'Load Queue';
-    loadBtn.onclick = () => openLoadDialog();
-    controlsDiv.appendChild(saveBtn);
-    controlsDiv.appendChild(loadBtn);
-    listEl.appendChild(controlsDiv);
-    // Disable save button if queue is empty
-    if (!queue || queue.length === 0) {
-        saveBtn.disabled = true;
-    } else {
-        saveBtn.disabled = false;
+    // Update Save button visibility (only show when queue has items)
+    const saveBtn = document.getElementById('saveQueueBtn');
+    if (saveBtn) {
+        if (queue && queue.length > 0) {
+            saveBtn.style.display = 'inline-block';
+        } else {
+            saveBtn.style.display = 'none';
+        }
     }
 
     if (queue.length === 0) {

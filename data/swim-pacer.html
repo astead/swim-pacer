@@ -48,9 +48,15 @@
             <!-- Collapsible: Queue area -->
             <div style="margin: 10px 0;">
                 <div class="toggle-container" style="padding:0;">
-                    <h3 style="margin: 0; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="toggleSection('queueArea','queueToggleBtn')">
-                        <span style="font-weight:700;color:#333;">Swim Set Queue</span>
-                        <span id="queueToggleBtn" style="transform:rotate(0deg);transition:transform 0.18s;">▾</span>
+                    <h3 style="margin: 0; width:100%; display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700;color:#333;cursor:pointer;display:flex;align-items:center;gap:8px;" onclick="toggleSection('queueArea','queueToggleBtn')">
+                            Swim Set Queue
+                            <span id="queueToggleBtn" style="transform:rotate(0deg);transition:transform 0.18s;">▾</span>
+                        </span>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <button id="saveQueueBtn" style="padding:4px 12px; font-size:13px; display:none;" onclick="openSaveDialog();">Save</button>
+                            <button id="openQueueBtn" style="padding:4px 12px; font-size:13px;" onclick="openLoadDialog();">Open</button>
+                        </div>
                     </h3>
                 </div>
                 <div id="queueArea" class="underwater-controls" style="display:block;margin-top:8px;padding:10px;">
@@ -362,7 +368,11 @@
     <!-- Load Saved Queue Modal -->
     <div id="loadModal" class="modal" style="display:none;">
         <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="loadModalTitle">
-            <h3 id="loadModalTitle">Load Saved Queue</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <h3 id="loadModalTitle" style="margin:0;">Load Saved Queue</h3>
+                <button id="uploadQueueBtn" onclick="triggerQueueUpload()" style="padding:4px 12px; font-size:12px; width:70px; background:#007bff; color:white;">Upload</button>
+            </div>
+            <input type="file" id="queueFileInput" accept=".json" style="display:none;" onchange="handleQueueFileUpload(event)">
             <div id="loadModalBody" style="max-height:320px; overflow:auto; margin-top:8px;"></div>
             <div style="margin-top:12px; display:flex; justify-content:flex-end; gap:8px;">
                 <button onclick="hideLoadModal()">Cancel</button>
