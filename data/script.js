@@ -298,8 +298,7 @@ function updateNumLedStripsSection() {
         input.value = currentSettings.numLedStrips[i];
         input.min = 1;
         input.max=10;
-        input.style.className="compact-input";
-        input.style.cssText="width: 80px;";
+        input.className="compact-input";
         input.onchange = function() {
             updateNumLedStrips(i, this.value);
         };

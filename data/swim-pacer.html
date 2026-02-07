@@ -191,7 +191,7 @@
                 <div class="control">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <label for="lightSize" style="margin:0; white-space:nowrap;">Light pulse size:</label>
-                        <input type="number" id="lightSize" min="0.1" max="10" step="0.1" value="1.0" onchange="updateLightSize()" class="compact-input" style="width:80px;">
+                        <input type="number" id="lightSize" min="0.1" max="10" step="0.1" value="1.0" onchange="updateLightSize()" class="compact-input">
                         <span id="lightSizeUnit">ft</span>
                     </div>
                 </div>
@@ -199,7 +199,7 @@
                 <div class="control">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <label for="firstUnderwaterDistance" style="margin:0; white-space:nowrap;">First underwater distance:</label>
-                        <input type="number" id="firstUnderwaterDistance" min="1" max="50" step="1" value="1" onchange="updateFirstUnderwaterDistance()" class="compact-input" style="width:80px;">
+                        <input type="number" id="firstUnderwaterDistance" min="1" max="50" step="1" value="1" onchange="updateFirstUnderwaterDistance()" class="compact-input">
                         <span id="firstUnderwaterDistanceUnit">ft</span>
                     </div>
                 </div>
@@ -207,7 +207,7 @@
                 <div class="control">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <label for="underwaterDistance" style="margin:0; white-space:nowrap;">Underwater distance:</label>
-                        <input type="number" id="underwaterDistance" min="1" max="50" step="1" value="1" onchange="updateUnderwaterDistance()" class="compact-input" style="width:80px;">
+                        <input type="number" id="underwaterDistance" min="1" max="50" step="1" value="1" onchange="updateUnderwaterDistance()" class="compact-input">
                         <span id="underwaterDistanceUnit">ft</span>
                     </div>
                 </div>
@@ -215,7 +215,7 @@
                 <div class="control">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <label for="hideAfter" style="margin:0; white-space:nowrap;">Hide after:</label>
-                        <input type="number" id="hideAfter" min="1" max="60" step="1" value="1" onchange="updateHideAfter()" class="compact-input" style="width:80px;">
+                        <input type="number" id="hideAfter" min="1" max="60" step="1" value="1" onchange="updateHideAfter()" class="compact-input">
                         <span id="hideAfterUnit">seconds</span>
                     </div>
                 </div>
@@ -251,7 +251,7 @@
             <div class="control">
                 <div style="display:flex; align-items:center; gap:8px;">
                     <label for="pulseWidth" style="margin:0; white-space:nowrap;">Light pulse size:</label>
-                    <input type="number" id="pulseWidth" min="0.1" max="10" step="0.1" value="1.0" onchange="updatePulseWidth()" class="compact-input" style="width:80px;">
+                    <input type="number" id="pulseWidth" min="0.1" max="10" step="0.1" value="1.0" onchange="updatePulseWidth()" class="compact-input">
                     <span id="pulseWidthUnit">ft</span>
                 </div>
             </div>
@@ -285,7 +285,7 @@
         <div id="advanced" class="page">
             <div class="control" style="display:flex; align-items:center; gap:12px;">
                 <label for="poolLength" style="min-width:180px; margin:0;">Pool Length:</label>
-                <input type="number" id="poolLength" min="1" max="1000" step="1" value="25" onchange="updateCalculations()" class="compact-input" style="width:80px;">
+                <input type="number" id="poolLength" min="1" max="1000" step="1" value="25" onchange="updateCalculations()" class="compact-input">
                 <select id="poolLengthUnits" onchange="updateCalculations()" class="compact-input" style="width:100px;">
                     <option value="yards">yards</option>
                     <option value="meters">meters</option>
