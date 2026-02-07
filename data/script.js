@@ -1518,9 +1518,7 @@ function updateQueueDisplay() {
             const payload = { lane: lane, name: name };
             const resp = await fetch('/saveQueue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
             const j = await resp.json();
-            if (j.ok) {
-                alert('Queue saved successfully');
-            } else {
+            if (!j.ok) {
                 let msg = j.error || 'unknown error';
                 if (msg === 'no_space') msg = 'Not enough storage space on device to save the queue.';
                 else if (msg === 'open_failed') msg = 'Failed to open temp file for writing on device.';
