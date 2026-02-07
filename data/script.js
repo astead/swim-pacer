@@ -170,9 +170,8 @@ function updateNumLedStrips(lane, value) {
 }
 
 function updateCalculations(triggerSave = true) {
-    const poolLengthElement = document.getElementById('poolLength').value;
-    const poolLength = parseFloat(poolLengthElement.split(' ')[0]);
-    const poolLengthUnits = poolLengthElement.includes('m') ? 'meters' : 'yards';
+    const poolLength = parseFloat(document.getElementById('poolLength').value);
+    const poolLengthUnits = document.getElementById('poolLengthUnits').value;
     const stripLengthMeters = parseFloat(document.getElementById('stripLengthMeters').value);
     const ledsPerMeter = parseInt(document.getElementById('ledsPerMeter').value);
     const gapBetweenStrips = parseInt(document.getElementById('gapBetweenStrips').value);
@@ -2409,9 +2408,8 @@ function updateAllUIFromSettings() {
         document.getElementById('sameColor').checked = true;
     }
 
-    document.getElementById('poolLength').value =
-        (currentSettings.poolLengthUnits === 'yards' ?
-            currentSettings.poolLength : currentSettings.poolLength + "m");
+    document.getElementById('poolLength').value = currentSettings.poolLength;
+    document.getElementById('poolLengthUnits').value = currentSettings.poolLengthUnits;
     document.getElementById('stripLengthMeters').value = currentSettings.stripLengthMeters;
     document.getElementById('ledsPerMeter').value = currentSettings.ledsPerMeter;
     updateNumLedStripsSection();

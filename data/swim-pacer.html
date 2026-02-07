@@ -279,13 +279,11 @@
         <div id="advanced" class="page">
             <div class="control" style="display:flex; align-items:center; gap:12px;">
                 <label for="poolLength" style="min-width:180px; margin:0;">Pool Length:</label>
-                <select id="poolLength" onchange="updateCalculations()" class="compact-input" style="width:150px;">
-                    <option value="25">25 yards</option>
-                    <option value="50">50 yards</option>
-                    <option value="25m">25 meters</option>
-                    <option value="50m">50 meters</option>
+                <input type="number" id="poolLength" min="1" max="1000" step="1" value="25" onchange="updateCalculations()" class="compact-input" style="width:80px;">
+                <select id="poolLengthUnits" onchange="updateCalculations()" class="compact-input" style="width:100px;">
+                    <option value="yards">yards</option>
+                    <option value="meters">meters</option>
                 </select>
-                <span></span>
             </div>
 
             <div class="control" style="display:flex; align-items:center; gap:12px;">
