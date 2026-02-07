@@ -591,6 +591,37 @@ button[disabled], .small-button[disabled] {
     box-sizing: border-box;
 }
 
+.queue-item-wrapper[draggable="true"] {
+    cursor: move;
+}
+
+.queue-item-wrapper.dragging {
+    opacity: 0.5;
+}
+
+.drag-handle {
+    cursor: grab !important;
+    user-select: none;
+    padding: 0 6px;
+    color: #999;
+    font-size: 16px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+}
+
+.drag-handle:active {
+    cursor: grabbing !important;
+}
+
+.drag-placeholder {
+    height: 50px;
+    background: #e0e0e0;
+    border: 2px dashed #999;
+    border-radius: 4px;
+    margin-bottom: 2px;
+}
+
 .queue-actions-background {
     position: absolute;
     top: 0;

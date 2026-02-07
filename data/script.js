@@ -1670,9 +1670,41 @@ function updateQueueDisplay() {
         content.className = 'queue-content queue-item';
         content.dataset.swiped = 'false';
 
-        // Left area with label
+        // Make wrapper draggable for reordering (unless completed or active)
+        if (!isCompleted && !isActive) {
+            wrapper.draggable = true;
+            wrapper.addEventListener('dragstart', (e) => handleDragStart(e, idx));
+            wrapper.addEventListener('dragover', (e) => handleDragOver(e));
+            wrapper.addEventListener('drop', (e) => handleDrop(e, idx));
+            wrapper.addEventListener('dragend', (e) => {
+                e.target.style.opacity = '1';
+                _draggedQueueIndex = -1;
+            });
+        }
+
+        // Left area with drag handle and label
         const leftWrap = document.createElement('div');
         leftWrap.className = 'queue-left';
+
+        // Add drag handle icon (only if draggable)
+        if (!isCompleted && !isActive) {
+            const dragHandle = document.createElement('span');
+            dragHandle.className = 'drag-handle';
+            dragHandle.innerHTML = '⋮⋮'; // Unicode vertical ellipsis
+            dragHandle.title = 'Drag to reorder';
+            dragHandle.style.cssText = 'cursor:grab;user-select:none;padding:0 6px;color:#999;font-size:16px;line-height:1;';
+            
+            // Prevent swipe when touching drag handle
+            dragHandle.addEventListener('touchstart', (e) => {
+                e.stopPropagation(); // Prevent swipe from initiating
+                initTouchDrag(e, wrapper, idx);
+            }, { passive: false });
+            dragHandle.addEventListener('mousedown', (e) => {
+                e.stopPropagation(); // Prevent swipe from initiating
+            });
+            
+            leftWrap.appendChild(dragHandle);
+        }
 
         const label = document.createElement('span');
         label.className = 'queue-label';
@@ -2300,6 +2332,15 @@ async function retryPendingUpdates() {
 
 
 // Drag & Drop handlers for reordering queue items
+let touchDragState = {
+    isDragging: false,
+    startY: 0,
+    currentY: 0,
+    draggedIndex: -1,
+    draggedElement: null,
+    placeholder: null
+};
+
 function handleDragStart(evt, index) {
     const currentLane = currentSettings.currentLane;
     // Safeguard: do not allow dragging items that are completed
@@ -2312,56 +2353,160 @@ function handleDragStart(evt, index) {
     _draggedQueueIndex = index;
     try { evt.dataTransfer.setData('text/plain', String(index)); } catch (e) {}
     evt.dataTransfer.effectAllowed = 'move';
+    
+    // Visual feedback
+    if (evt.target) evt.target.style.opacity = '0.5';
 }
 
-function handleDragOver(evt) {
-    evt.preventDefault();
-    evt.dataTransfer.dropEffect = 'move';
-}
-
-function handleDrop(evt, targetIndex) {
-    evt.preventDefault();
+function initTouchDrag(e, wrapper, index) {
     const currentLane = currentSettings.currentLane;
-    const from = _draggedQueueIndex;
-    let to = targetIndex;
-    if (from < 0 || to < 0 || from === to) return;
+    const queue = swimSetQueues[currentLane] || [];
+    const entry = queue[index];
+    
+    // Don't allow dragging completed or active items
+    const statusVal = entry.status || 0;
+    const isCompleted = !!(statusVal & SWIMSET_STATUS_COMPLETED);
+    const isActive = !!(statusVal & SWIMSET_STATUS_ACTIVE);
+    if (isCompleted || isActive) return;
+    
+    const touch = e.touches[0];
+    touchDragState.isDragging = true;
+    touchDragState.startY = touch.clientY;
+    touchDragState.currentY = touch.clientY;
+    touchDragState.draggedIndex = index;
+    touchDragState.draggedElement = wrapper;
+    
+    // Create placeholder
+    const placeholder = document.createElement('div');
+    placeholder.className = 'drag-placeholder';
+    placeholder.style.cssText = `height:${wrapper.offsetHeight}px;background:#e0e0e0;border:2px dashed #999;border-radius:4px;margin-bottom:2px;`;
+    touchDragState.placeholder = placeholder;
+    
+    // Visual feedback - make dragged item semi-transparent and elevated
+    wrapper.style.opacity = '0.8';
+    wrapper.style.transform = 'scale(1.02)';
+    wrapper.style.zIndex = '1000';
+    wrapper.style.position = 'relative';
+    
+    e.preventDefault();
+}
 
-    // Disallow dropping a future (non-completed, non-running) item before any
-    // completed or currently-running items. Compute the last protected index
-    // (highest index of any completed or active item). Future sets must be
-    // positioned strictly after that index.
+function moveTouchDrag(e) {
+    if (!touchDragState.isDragging || !touchDragState.draggedElement) return;
+    
+    const touch = e.touches[0];
+    touchDragState.currentY = touch.clientY;
+    const deltaY = touchDragState.currentY - touchDragState.startY;
+    
+    // Move the dragged element
+    touchDragState.draggedElement.style.transform = `translateY(${deltaY}px) scale(1.02)`;
+    
+    // Find which item we're hovering over
+    const listEl = document.getElementById('queueList');
+    const items = Array.from(listEl.querySelectorAll('.queue-item-wrapper'));
+    const draggedElement = touchDragState.draggedElement;
+    
+    // Get center Y of dragged element
+    const rect = draggedElement.getBoundingClientRect();
+    const centerY = rect.top + rect.height / 2;
+    
+    // Find target position
+    let targetIndex = -1;
+    for (let i = 0; i < items.length; i++) {
+        if (items[i] === draggedElement) continue;
+        const itemRect = items[i].getBoundingClientRect();
+        if (centerY < itemRect.bottom && centerY > itemRect.top) {
+            targetIndex = i;
+            break;
+        }
+    }
+    
+    // Insert placeholder at target position
+    if (targetIndex >= 0 && targetIndex !== touchDragState.draggedIndex) {
+        const targetItem = items[targetIndex];
+        if (touchDragState.placeholder && !touchDragState.placeholder.parentNode) {
+            targetItem.parentNode.insertBefore(touchDragState.placeholder, targetItem);
+        } else if (touchDragState.placeholder) {
+            targetItem.parentNode.insertBefore(touchDragState.placeholder, targetItem);
+        }
+    }
+    
+    e.preventDefault();
+}
+
+function endTouchDrag(e) {
+    if (!touchDragState.isDragging || !touchDragState.draggedElement) return;
+    
+    const currentLane = currentSettings.currentLane;
+    const listEl = document.getElementById('queueList');
+    const items = Array.from(listEl.querySelectorAll('.queue-item-wrapper'));
+    
+    // Find where placeholder is
+    let targetIndex = -1;
+    if (touchDragState.placeholder && touchDragState.placeholder.parentNode) {
+        const placeholderIndex = Array.from(touchDragState.placeholder.parentNode.children).indexOf(touchDragState.placeholder);
+        targetIndex = placeholderIndex;
+    }
+    
+    // Reset visual state
+    touchDragState.draggedElement.style.opacity = '1';
+    touchDragState.draggedElement.style.transform = '';
+    touchDragState.draggedElement.style.zIndex = '';
+    touchDragState.draggedElement.style.position = '';
+    
+    // Remove placeholder
+    if (touchDragState.placeholder && touchDragState.placeholder.parentNode) {
+        touchDragState.placeholder.parentNode.removeChild(touchDragState.placeholder);
+    }
+    
+    const fromIndex = touchDragState.draggedIndex;
+    
+    // Reset state
+    touchDragState.isDragging = false;
+    touchDragState.draggedElement = null;
+    touchDragState.placeholder = null;
+    touchDragState.draggedIndex = -1;
+    
+    // Perform reorder if valid
+    if (targetIndex >= 0 && fromIndex >= 0 && targetIndex !== fromIndex) {
+        performReorder(fromIndex, targetIndex);
+    }
+    
+    e.preventDefault();
+}
+
+function performReorder(fromIndex, toIndex) {
+    const currentLane = currentSettings.currentLane;
+    let to = toIndex;
+    
+    // Disallow dropping before completed/running items
     let lastProtectedIndex = -1;
     for (let i = 0; i < swimSetQueues[currentLane].length; i++) {
         const s = swimSetQueues[currentLane][i];
-        const isCompleted = !!s.completed;
+        const isCompleted = !!(s.status & SWIMSET_STATUS_COMPLETED);
         if (isCompleted) lastProtectedIndex = Math.max(lastProtectedIndex, i);
     }
-
+    
     if (lastProtectedIndex >= 0 && to <= lastProtectedIndex) {
-        // Moving a pending set before a protected set is not allowed
         alert('Cannot move a future swim set before a completed or running set.');
-        _draggedQueueIndex = -1;
         return;
     }
-
-    // When removing an element that appears before the insertion point, the
-    // indices shift left by one. Adjust target index accordingly.
-    if (from < to) to = to - 1;
-
+    
+    // Adjust target index when removing element before it
+    if (fromIndex < to) to = to - 1;
+    
     // Reorder locally
-    const item = swimSetQueues[currentLane].splice(from, 1)[0];
+    const item = swimSetQueues[currentLane].splice(fromIndex, 1)[0];
     swimSetQueues[currentLane].splice(to, 0, item);
-
-    // Clear dragged index and refresh UI
-    _draggedQueueIndex = -1;
+    
     updateQueueDisplay();
-
-    // Send new order to device: POST lane & order (comma-separated ids or UniqueIds)
+    
+    // Send to server
     const order = swimSetQueues[currentLane]
         .map(s => normalizeUniqueId(s.uniqueId))
         .filter(x => x.length > 0)
         .join(',');
-    console.log('handleDrop calling /reorderSwimQueue');
+    
     fetch('/reorderSwimQueue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2371,10 +2516,31 @@ function handleDrop(evt, targetIndex) {
             console.log('Reorder request failed on server', resp.status, resp.statusText);
             throw new Error('reorder failed');
         }
-        // Optionally reconcile response in the future
     }).catch(err => {
         console.log('reorder request failed, will keep local order until reconciliation', err);
     });
+}
+
+function handleDragOver(evt) {
+    evt.preventDefault();
+    evt.dataTransfer.dropEffect = 'move';
+    return false;
+}
+
+function handleDrop(evt, targetIndex) {
+    evt.preventDefault();
+    const from = _draggedQueueIndex;
+    if (from < 0 || targetIndex < 0 || from === targetIndex) return;
+
+    // Clear visual feedback
+    document.querySelectorAll('.queue-item-wrapper').forEach(el => {
+        el.style.opacity = '1';
+    });
+    
+    _draggedQueueIndex = -1;
+    
+    // Use shared reorder logic
+    performReorder(from, targetIndex);
 }
 
 // Server-first start: request device to start the head (or specific index)
@@ -2897,12 +3063,20 @@ document.addEventListener('DOMContentLoaded', async function() {
     updateVisualSelection();
     initializeQueueSystem();
 
-    // Add document-level event listeners for swipe gestures
+    // Add document-level event listeners for swipe gestures and touch drag
     document.addEventListener('touchmove', (e) => {
-        if (swipeState.targetElement) moveSwipe(e);
+        if (touchDragState.isDragging) {
+            moveTouchDrag(e);
+        } else if (swipeState.targetElement) {
+            moveSwipe(e);
+        }
     }, { passive: false });
     document.addEventListener('touchend', (e) => {
-        if (swipeState.targetElement) endSwipe(e);
+        if (touchDragState.isDragging) {
+            endTouchDrag(e);
+        } else if (swipeState.targetElement) {
+            endSwipe(e);
+        }
     });
     document.addEventListener('mousemove', (e) => {
         if (swipeState.targetElement) moveSwipe(e);
