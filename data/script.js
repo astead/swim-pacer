@@ -1566,7 +1566,7 @@ function updateQueueDisplay() {
                 row.style.display = 'flex';
                 row.style.gap = '8px';
                 row.style.alignItems = 'center';
-                
+
                 var item = document.createElement('button');
                 item.textContent = name;
                 item.setAttribute('data-save-name', name);
@@ -1581,7 +1581,7 @@ function updateQueueDisplay() {
                     okBtn.setAttribute('data-lane', lane);
                     okBtn.disabled = false;
                 };
-                
+
                 var deleteBtn = document.createElement('button');
                 deleteBtn.textContent = 'Delete';
                 deleteBtn.style.background = '#dc3545';
@@ -1597,7 +1597,7 @@ function updateQueueDisplay() {
                         deleteQueue(name, lane);
                     }
                 };
-                
+
                 row.appendChild(item);
                 row.appendChild(deleteBtn);
                 list.appendChild(row);
@@ -1656,7 +1656,9 @@ function updateQueueDisplay() {
             const resp = await fetch('/loadQueue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
             const j = await resp.json();
             if (j.ok) {
-                alert(`Loaded: added ${j.added || 0}, skipped ${j.skipped || 0}, failed ${j.failed || 0}`);
+                if (j.failed > 0) {
+                    alert(`Could not load ${j.failed} set(s). They may be corrupted or incompatible.`);
+                }
                 reconcileQueueWithDevice();
             } else {
                 alert('Load failed');
