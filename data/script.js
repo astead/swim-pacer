@@ -1295,6 +1295,240 @@ function returnToConfigMode() {
     try { const cfgBtns = document.getElementById('configButtons'); if (cfgBtns) cfgBtns.style.display = 'block'; } catch (e) {}
 }
 
+// Save/Load Queue helper functions (defined at module level so they're always available)
+async function doSaveQueue(lane, name) {
+    try {
+        const payload = { lane: lane, name: name };
+        const resp = await fetch('/saveQueue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        const j = await resp.json();
+        if (!j.ok) {
+            let msg = j.error || 'unknown error';
+            if (msg === 'no_space') msg = 'Not enough storage space on device to save the queue.';
+            else if (msg === 'open_failed') msg = 'Failed to open temp file for writing on device.';
+            else if (msg === 'write_failed') msg = 'Device failed to write data to storage.';
+            else if (msg === 'rename_failed') msg = 'Failed to finalize save file on device.';
+            alert('Save failed: ' + msg);
+        }
+    } catch (e) {
+        alert('Save failed (network): ' + e);
+    }
+}
+
+window.openSaveDialog = function() {
+    const lane = getCurrentLaneFromUI();
+    const queue = swimSetQueues[lane] || [];
+    if (!queue || queue.length === 0) {
+        alert('Cannot save: queue is empty');
+        return;
+    }
+    const name = prompt('Enter a name for this save (alphanumeric, dashes allowed):', 'my_save');
+    if (!name) return;
+    doSaveQueue(lane, name);
+};
+
+window.openLoadDialog = async function() {
+    const lane = getCurrentLaneFromUI();
+    try {
+        const resp = await fetch('/listSaves', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lane: lane})});
+        const j = await resp.json();
+        if (!j.ok) { alert('Failed to list saves'); return; }
+        const saves = j.saves || [];
+        showLoadModal(lane, saves.map(s => s.name || s));
+    } catch (e) {
+        alert('Failed to fetch saves: ' + e);
+    }
+};
+
+async function doLoadQueue(lane, name) {
+    try {
+        const payload = { lane: lane, name: name };
+        const resp = await fetch('/loadQueue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        const j = await resp.json();
+        if (j.ok) {
+            if (j.failed > 0) {
+                alert(`Could not load ${j.failed} set(s). They may be corrupted or incompatible.`);
+            }
+            reconcileQueueWithDevice();
+        } else {
+            alert('Load failed: ' + (j.error || 'unknown error'));
+        }
+    } catch (e) {
+        alert('Load failed: ' + e);
+    }
+}
+
+async function downloadQueue(name) {
+    try {
+        const resp = await fetch('/downloadQueue?name=' + encodeURIComponent(name));
+        if (resp.ok) {
+            const blob = await resp.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name + '.json';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            console.log('Queue downloaded:', name);
+        } else {
+            alert('Failed to download queue: ' + resp.statusText);
+        }
+    } catch (err) {
+        console.error('Download queue error:', err);
+        alert('Error downloading queue');
+    }
+}
+
+async function deleteQueue(name, lane) {
+    try {
+        const resp = await fetch('/deleteQueue', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: name })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            console.log('Queue deleted:', name);
+            // Refresh the modal to show updated list
+            openLoadDialog();
+        } else {
+            alert('Failed to delete queue: ' + (data.error || 'unknown error'));
+        }
+    } catch (err) {
+        console.error('Delete queue error:', err);
+        alert('Error deleting queue');
+    }
+}
+
+window.triggerQueueUpload = function() {
+    document.getElementById('queueFileInput').click();
+};
+
+window.handleQueueFileUpload = async function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('name', file.name.replace(/\.json$/i, ''));
+
+        const resp = await fetch('/uploadQueue', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await resp.json();
+        if (data.ok) {
+            console.log('Queue uploaded:', file.name);
+            // Refresh the modal to show updated list
+            openLoadDialog();
+        } else {
+            alert('Failed to upload queue: ' + (data.error || 'unknown error'));
+        }
+    } catch (err) {
+        console.error('Upload queue error:', err);
+        alert('Error uploading queue');
+    } finally {
+        // Reset file input so same file can be uploaded again
+        event.target.value = '';
+    }
+};
+
+window.showLoadModal = function(lane, saves) {
+    var modal = document.getElementById('loadModal');
+    var body = document.getElementById('loadModalBody');
+    body.innerHTML = '';
+    var okBtn = document.getElementById('loadModalOk');
+    okBtn.removeAttribute('data-chosen');
+    okBtn.removeAttribute('data-lane');
+    if (!saves || saves.length === 0) {
+        body.innerHTML = '<div>No saved queues available.</div>';
+        okBtn.disabled = true;
+    } else {
+        var list = document.createElement('div');
+        list.style.display = 'flex';
+        list.style.flexDirection = 'column';
+        list.style.gap = '6px';
+        saves.forEach(function(name) {
+            var row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.gap = '8px';
+            row.style.alignItems = 'center';
+
+            var item = document.createElement('button');
+            item.textContent = name;
+            item.setAttribute('data-save-name', name);
+            item.style.textAlign = 'left';
+            item.style.flex = '1';
+            item.onclick = function() {
+                // clear previous selection visuals (class-only; let CSS handle appearance)
+                var prev = body.querySelectorAll('.selected');
+                prev.forEach(function(p){ p.classList.remove('selected'); p.style.background=''; });
+                item.classList.add('selected');
+                okBtn.setAttribute('data-chosen', name);
+                okBtn.setAttribute('data-lane', lane);
+                okBtn.disabled = false;
+            };
+
+            var downloadBtn = document.createElement('button');
+            downloadBtn.textContent = 'Download';
+            downloadBtn.style.background = '#28a745';
+            downloadBtn.style.color = 'white';
+            downloadBtn.style.padding = '4px 12px';
+            downloadBtn.style.fontSize = '12px';
+            downloadBtn.style.width = '85px';
+            downloadBtn.style.flexShrink = '0';
+            downloadBtn.style.textAlign = 'center';
+            downloadBtn.onclick = function(e) {
+                e.stopPropagation();
+                downloadQueue(name);
+            };
+
+            var deleteBtn = document.createElement('button');
+            deleteBtn.textContent = 'Del';
+            deleteBtn.style.background = '#dc3545';
+            deleteBtn.style.color = 'white';
+            deleteBtn.style.padding = '4px 12px';
+            deleteBtn.style.fontSize = '12px';
+            deleteBtn.style.width = '55px';
+            deleteBtn.style.flexShrink = '0';
+            deleteBtn.style.textAlign = 'center';
+            deleteBtn.onclick = function(e) {
+                e.stopPropagation();
+                if (confirm('Delete "' + name + '"?')) {
+                    deleteQueue(name, lane);
+                }
+            };
+
+            row.appendChild(item);
+            row.appendChild(downloadBtn);
+            row.appendChild(deleteBtn);
+            list.appendChild(row);
+        });
+        body.appendChild(list);
+        okBtn.disabled = true;
+    }
+    modal.style.display = 'flex';
+};
+
+window.hideLoadModal = function() {
+    var modal = document.getElementById('loadModal');
+    modal.style.display = 'none';
+    var okBtn = document.getElementById('loadModalOk');
+    if (okBtn) { okBtn.removeAttribute('data-chosen'); okBtn.removeAttribute('data-lane'); }
+};
+
+window.loadModalConfirm = function() {
+    var okBtn = document.getElementById('loadModalOk');
+    var name = okBtn.getAttribute('data-chosen');
+    var lane = parseInt(okBtn.getAttribute('data-lane'));
+    if (!name) return;
+    hideLoadModal();
+    doLoadQueue(lane, name);
+};
+
 function updateQueueDisplay() {
     const lane = currentSettings.currentLane || 0;
     const listEl = document.getElementById('queueList');
@@ -1499,174 +1733,6 @@ function updateQueueDisplay() {
         row.appendChild(actions);
         listEl.appendChild(row);
     });
-
-    // Save/Load helper functions (placed near queue rendering)
-    window.openSaveDialog = function() {
-        const lane = getCurrentLaneFromUI();
-        const queue = swimSetQueues[lane] || [];
-        if (!queue || queue.length === 0) {
-            alert('Cannot save: queue is empty');
-            return;
-        }
-        const name = prompt('Enter a name for this save (alphanumeric, dashes allowed):', 'my_save');
-        if (!name) return;
-        doSaveQueue(lane, name);
-    };
-
-    async function doSaveQueue(lane, name) {
-        try {
-            const payload = { lane: lane, name: name };
-            const resp = await fetch('/saveQueue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-            const j = await resp.json();
-            if (!j.ok) {
-                let msg = j.error || 'unknown error';
-                if (msg === 'no_space') msg = 'Not enough storage space on device to save the queue.';
-                else if (msg === 'open_failed') msg = 'Failed to open temp file for writing on device.';
-                else if (msg === 'write_failed') msg = 'Device failed to write data to storage.';
-                else if (msg === 'rename_failed') msg = 'Failed to finalize save file on device.';
-                alert('Save failed: ' + msg);
-            }
-        } catch (e) {
-            alert('Save failed (network): ' + e);
-        }
-    }
-
-    // Modal-based load dialog: fetch available saves and show modal picker
-    window.openLoadDialog = async function() {
-        const lane = getCurrentLaneFromUI();
-        try {
-            const resp = await fetch('/listSaves', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lane: lane})});
-            const j = await resp.json();
-            if (!j.ok) { alert('Failed to list saves'); return; }
-            const saves = j.saves || [];
-            showLoadModal(lane, saves.map(s => s.name || s));
-        } catch (e) {
-            alert('Failed to fetch saves: ' + e);
-        }
-    };
-
-    // Modal helpers for load selection
-    window.showLoadModal = function showLoadModal(lane, saves) {
-        var modal = document.getElementById('loadModal');
-        var body = document.getElementById('loadModalBody');
-        body.innerHTML = '';
-        var okBtn = document.getElementById('loadModalOk');
-        okBtn.removeAttribute('data-chosen');
-        okBtn.removeAttribute('data-lane');
-        if (!saves || saves.length === 0) {
-            body.innerHTML = '<div>No saved queues available.</div>';
-            okBtn.disabled = true;
-        } else {
-            var list = document.createElement('div');
-            list.style.display = 'flex';
-            list.style.flexDirection = 'column';
-            list.style.gap = '6px';
-            saves.forEach(function(name) {
-                var row = document.createElement('div');
-                row.style.display = 'flex';
-                row.style.gap = '8px';
-                row.style.alignItems = 'center';
-
-                var item = document.createElement('button');
-                item.textContent = name;
-                item.setAttribute('data-save-name', name);
-                item.style.textAlign = 'left';
-                item.style.flex = '1';
-                item.onclick = function() {
-                    // clear previous selection visuals (class-only; let CSS handle appearance)
-                    var prev = body.querySelectorAll('.selected');
-                    prev.forEach(function(p){ p.classList.remove('selected'); p.style.background=''; });
-                    item.classList.add('selected');
-                    okBtn.setAttribute('data-chosen', name);
-                    okBtn.setAttribute('data-lane', lane);
-                    okBtn.disabled = false;
-                };
-
-                var deleteBtn = document.createElement('button');
-                deleteBtn.textContent = 'Delete';
-                deleteBtn.style.background = '#dc3545';
-                deleteBtn.style.color = 'white';
-                deleteBtn.style.padding = '4px 12px';
-                deleteBtn.style.fontSize = '12px';
-                deleteBtn.style.width = '70px';
-                deleteBtn.style.flexShrink = '0';
-                deleteBtn.style.textAlign = 'center';
-                deleteBtn.onclick = function(e) {
-                    e.stopPropagation();
-                    if (confirm('Delete "' + name + '"?')) {
-                        deleteQueue(name, lane);
-                    }
-                };
-
-                row.appendChild(item);
-                row.appendChild(deleteBtn);
-                list.appendChild(row);
-            });
-            body.appendChild(list);
-            okBtn.disabled = true;
-        }
-        modal.style.display = 'flex';
-    };
-
-    window.hideLoadModal = function hideLoadModal() {
-        var modal = document.getElementById('loadModal');
-        modal.style.display = 'none';
-        var okBtn = document.getElementById('loadModalOk');
-        if (okBtn) { okBtn.removeAttribute('data-chosen'); okBtn.removeAttribute('data-lane'); }
-    };
-
-    window.loadModalConfirm = function loadModalConfirm() {
-        var okBtn = document.getElementById('loadModalOk');
-        var name = okBtn.getAttribute('data-chosen');
-        var lane = parseInt(okBtn.getAttribute('data-lane'));
-        if (!name) return;
-        hideLoadModal();
-        doLoadQueue(lane, name);
-    };
-
-    async function deleteQueue(name, lane) {
-        try {
-            const resp = await fetch('/deleteQueue', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ name: name })
-            });
-            const data = await resp.json();
-            if (data.ok) {
-                console.log('Queue deleted:', name);
-                // Refresh the modal to show updated list
-                hideLoadModal();
-                // Re-trigger the load button to refresh the list
-                setTimeout(() => {
-                    const loadBtn = document.querySelector('[onclick*="loadQueueForLane"]');
-                    if (loadBtn) loadBtn.click();
-                }, 100);
-            } else {
-                alert('Failed to delete queue: ' + (data.error || 'unknown error'));
-            }
-        } catch (err) {
-            console.error('Delete queue error:', err);
-            alert('Error deleting queue');
-        }
-    }
-
-    async function doLoadQueue(lane, name) {
-        try {
-            const payload = { lane: lane, name: name };
-            const resp = await fetch('/loadQueue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-            const j = await resp.json();
-            if (j.ok) {
-                if (j.failed > 0) {
-                    alert(`Could not load ${j.failed} set(s). They may be corrupted or incompatible.`);
-                }
-                reconcileQueueWithDevice();
-            } else {
-                alert('Load failed');
-            }
-        } catch (e) {
-            alert('Load failed (network): ' + e);
-        }
-    }
 }
 
 // Show the repeat selection modal and populate with current queue items

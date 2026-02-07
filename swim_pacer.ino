@@ -979,23 +979,208 @@ void setupWebServer() {
       server.send(200, "application/json", resp);
   });
 
+    // Static variables shared between upload handler and POST callback
+    static String uploadError = "";
+    static String uploadPath = "";
+
+    // Upload saved queue: POST /uploadQueue with multipart file
+    server.on("/uploadQueue", HTTP_POST, [](){
+      // This is the final callback after upload completes
+      if (uploadError.length() > 0) {
+        Serial.printf("[HTTP] /uploadQueue failed: %s\n", uploadError.c_str());
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"" + uploadError + "\"}");
+        uploadError = ""; // Clear for next upload
+        uploadPath = "";
+        return;
+      }
+
+      if (uploadPath.length() == 0) {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"No file uploaded\"}");
+        return;
+      }
+
+      // Validate the uploaded file is valid JSON and matches our swim set format
+      if (!SPIFFS.begin(true)) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"SPIFFS mount failed\"}");
+        uploadPath = "";
+        return;
+      }
+
+      File f = SPIFFS.open(uploadPath, FILE_READ);
+      if (!f) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"Failed to read uploaded file\"}");
+        uploadPath = "";
+        return;
+      }
+
+      size_t sz = f.size();
+      DynamicJsonDocument doc(sz + 1024);
+      DeserializationError err = deserializeJson(doc, f);
+      f.close();
+
+      if (err) {
+        SPIFFS.remove(uploadPath);
+        String errMsg = "Invalid JSON: ";
+        errMsg += err.c_str();
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"" + errMsg + "\"}");
+        Serial.printf("[HTTP] /uploadQueue: JSON parse error: %s\n", err.c_str());
+        uploadPath = "";
+        return;
+      }
+
+      // Validate it's an array
+      JsonArray arr = doc.as<JsonArray>();
+      if (!arr) {
+        SPIFFS.remove(uploadPath);
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"Not a valid swim set file\"}");
+        Serial.println("[HTTP] /uploadQueue: Not a JSON array");
+        uploadPath = "";
+        return;
+      }
+
+      // Validate array items have swim set structure
+      for (JsonObject obj : arr) {
+        if (!obj.containsKey("type") || !obj.containsKey("uniqueId") || !obj.containsKey("swimmers")) {
+          SPIFFS.remove(uploadPath);
+          server.send(200, "application/json", "{\"ok\":false,\"error\":\"Not a valid swim set file format\"}");
+          Serial.println("[HTTP] /uploadQueue: Missing required swim set fields");
+          uploadPath = "";
+          return;
+        }
+      }
+
+      Serial.printf("[HTTP] /uploadQueue completed successfully: %s\n", uploadPath.c_str());
+      server.send(200, "application/json", "{\"ok\":true}");
+      uploadPath = ""; // Clear for next upload
+    }, [](){
+      // This is the upload handler callback
+
+      HTTPUpload& upload = server.upload();
+      static File uploadFile;
+
+      if (upload.status == UPLOAD_FILE_START) {
+        // Clear any previous error/path
+        uploadError = "";
+        uploadPath = "";
+
+        String filename = upload.filename;
+        if (!filename.endsWith(".json")) {
+          filename += ".json";
+        }
+        // Sanitize the filename
+        String sanitized = sanitizeName(filename.substring(0, filename.length() - 5));
+        uploadPath = "/saves/" + sanitized + ".json";
+
+        Serial.printf("[HTTP] /uploadQueue start: %s -> %s\n", filename.c_str(), uploadPath.c_str());
+
+        if (!SPIFFS.begin(true)) {
+          Serial.println("[HTTP] /uploadQueue: SPIFFS mount failed");
+          uploadError = "SPIFFS mount failed";
+          uploadPath = "";
+          return;
+        }
+
+        // Check available space
+        size_t total = SPIFFS.totalBytes();
+        size_t used = SPIFFS.usedBytes();
+        size_t available = total - used;
+
+        Serial.printf("[HTTP] /uploadQueue: SPIFFS space: %u total, %u used, %u available\n",
+                      (unsigned)total, (unsigned)used, (unsigned)available);
+
+        // Reject if less than 10KB available
+        if (available < 10240) {
+          Serial.printf("[HTTP] /uploadQueue: Insufficient space (%u bytes available)\n", (unsigned)available);
+          uploadError = "Out of storage space on device";
+          uploadPath = "";
+          return;
+        }
+
+        // Ensure saves directory exists
+        if (!SPIFFS.exists("/saves")) {
+          SPIFFS.mkdir("/saves");
+        }
+
+        uploadFile = SPIFFS.open(uploadPath, FILE_WRITE);
+        if (!uploadFile) {
+          Serial.printf("[HTTP] /uploadQueue: failed to create file %s\n", uploadPath.c_str());
+          uploadError = "Failed to create file";
+          uploadPath = "";
+        }
+      } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (uploadFile) {
+          size_t written = uploadFile.write(upload.buf, upload.currentSize);
+          if (written != upload.currentSize) {
+            Serial.printf("[HTTP] /uploadQueue write error: expected %u, wrote %u\n",
+                          upload.currentSize, written);
+            uploadFile.close();
+            SPIFFS.remove(uploadPath);
+            uploadError = "Write failed - out of storage space";
+            uploadPath = "";
+            return;
+          }
+          Serial.printf("[HTTP] /uploadQueue write: %d bytes\n", upload.currentSize);
+        }
+      } else if (upload.status == UPLOAD_FILE_END) {
+        if (uploadFile) {
+          uploadFile.close();
+          Serial.printf("[HTTP] /uploadQueue complete: %d bytes total\n", upload.totalSize);
+          // uploadPath is already set and will be used by final handler
+        } else {
+          uploadError = "Upload file handle was null";
+          uploadPath = "";
+        }
+      }
+    });
+
+    // Download saved queue: GET /downloadQueue?name=...
+    server.on("/downloadQueue", HTTP_GET, [](){
+      String name = server.arg("name");
+      Serial.printf("[HTTP] /downloadQueue name=%s\n", name.c_str());
+
+      if (name.length() == 0) {
+        server.send(400, "text/plain", "Missing name parameter");
+        return;
+      }
+
+      if (!SPIFFS.begin(true)) {
+        server.send(500, "text/plain", "SPIFFS mount failed");
+        return;
+      }
+
+      String path = "/saves/" + name + ".json";
+      if (SPIFFS.exists(path)) {
+        File file = SPIFFS.open(path, "r");
+        if (file) {
+          server.streamFile(file, "application/json");
+          file.close();
+          Serial.printf("[HTTP] /downloadQueue: Successfully served %s\n", path.c_str());
+        } else {
+          server.send(500, "text/plain", "Failed to open file");
+        }
+      } else {
+        server.send(404, "text/plain", "File not found");
+        Serial.printf("[HTTP] /downloadQueue: File not found %s\n", path.c_str());
+      }
+    });
+
     // Delete saved queue: POST /deleteQueue { "name": "..." }
     server.on("/deleteQueue", HTTP_POST, [](){
       String body = server.arg("plain");
       String name = extractJsonString(body, "name", "");
       Serial.printf("[HTTP] /deleteQueue body=%s\n", body.c_str());
       Serial.printf("[HTTP] /deleteQueue parsed name=%s\n", name.c_str());
-      
+
       if (name.length() == 0) {
         server.send(200, "application/json", "{\"ok\":false,\"error\":\"missing name\"}");
         return;
       }
-      
+
       if (!SPIFFS.begin(true)) {
         server.send(200, "application/json", "{\"ok\":false,\"error\":\"SPIFFS mount failed\"}");
         return;
       }
-      
+
       String path = "/saves/" + name + ".json";
       if (SPIFFS.exists(path)) {
         bool removed = SPIFFS.remove(path);
