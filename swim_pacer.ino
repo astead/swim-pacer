@@ -110,7 +110,7 @@ const int DEFAULT_NUM_SWIMMERS = 3;
 struct GlobalConfigSettings {
   float poolLength = 25.0;                   // Pool length (in poolUnits - yards or meters)
   bool poolUnitsYards = true;                // true = yards, false = meters
-  float stripLengthMeters = 23.0;            // LED strip length in meters (75 feet)
+  float stripLengthMeters = 5.0;             // LED strip length in meters
   int ledsPerMeter = 30;                     // LEDs per meter
   int numLedStrips[MAX_LANES_SUPPORTED] = {1, 1, 1, 1}; // Number of LED strips per lane
   int gapBetweenStrips = 23;                 // gap inbetween LED strips that don't contain LEDs (centimeters)
@@ -150,7 +150,7 @@ GlobalConfigSettings globalConfigSettings;
 struct SwimSetSettings {
   float speedMetersPerSecond = 1.693;        // Speed in meters per second (~5.56 ft/s)
   int swimTimeSeconds = 30;                  // Swim time for laps in seconds
-  int restTimeSeconds = 5;                   // Rest time between laps in seconds
+  int restTimeSeconds = 10;                  // Rest time between laps in seconds
   int swimSetDistance = 50;                  // Distance for pace calculation (in pool's native units)
   int swimmerIntervalSeconds = 4;            // Interval between swimmers in seconds
   int numRounds = 10;                        // Number of numRounds/sets to complete
